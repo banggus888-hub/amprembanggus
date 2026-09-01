@@ -2,6 +2,9 @@
   "name": "amprem-vercel-app",
   "version": "1.0.0",
   "type": "module",
+  "scripts": {
+    "start": "node amprem.js"
+  },
   "dependencies": {
     "@xof/fetch": "latest",
     "express": "^4.19.2",
