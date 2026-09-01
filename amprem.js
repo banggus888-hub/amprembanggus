@@ -220,7 +220,7 @@ const htmlTemplate = `
                 <div class="p-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">⚡</div>
                 <span id="app-title-header" class="font-extrabold text-sm tracking-tight bg-gradient-to-r from-white to-emerald-400 bg-clip-text text-transparent cursor-pointer" onclick="switchView('generator')">AM Gateway</span>
             </div>
-            <!-- Tombol Menu Modern (Hanya Muncul Setelah Login) -->
+            <!-- Tombol Menu Modern -->
             <button id="header-menu-btn" onclick="toggleMenu()" class="group relative p-2.5 rounded-2xl bg-slate-900/90 border border-emerald-500/20 hover:border-emerald-500/60 text-slate-200 transition-all duration-300 flex items-center justify-center w-11 h-11 shadow-[0_0_15px_rgba(16,185,129,0.1)] hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] hidden">
                 <div class="flex flex-col justify-between items-center h-4 w-4 py-0.5 transition-transform duration-300 group-hover:scale-110">
                     <span class="w-1.5 h-1.5 bg-emerald-400 rounded-full shadow-[0_0_8px_#34d399]"></span>
@@ -230,7 +230,7 @@ const htmlTemplate = `
             </button>
         </header>
 
-        <!-- MENU DRAWER SLIDE SAMPING (BERFOKUS TUNGGAL PER MENU) -->
+        <!-- MENU DRAWER SLIDE SAMPING -->
         <div id="nav-drawer" class="fixed inset-y-0 right-0 z-50 w-full max-w-[300px] bg-[#090b10]/95 backdrop-blur-xl border-l border-white/10 p-5 flex flex-col justify-between shadow-2xl">
             <div class="space-y-6">
                 <div class="flex items-center justify-between pb-4 border-b border-white/10">
@@ -274,7 +274,7 @@ const htmlTemplate = `
                 🔴 Server sedang dalam mode OFFLINE. Fitur premium dinonaktifkan untuk User & VIP.
             </div>
 
-            <!-- VIEW 1: AUTHENTICATION (LOGIN / REGISTER) -->
+            <!-- VIEW 1: AUTHENTICATION -->
             <div id="auth-view" class="glass-panel p-7 rounded-3xl space-y-6">
                 <div class="text-center space-y-1">
                     <h1 class="text-xl font-extrabold tracking-tight text-white">Selamat Datang</h1>
@@ -388,7 +388,7 @@ const htmlTemplate = `
                 </div>
             </div>
 
-            <!-- VIEW 3: HALAMAN PROFIL KHUSUS AKUN (FOKUS TUNGGAL) -->
+            <!-- VIEW 3: HALAMAN PROFIL KHUSUS AKUN -->
             <div id="section-profile" class="glass-panel p-6 rounded-3xl space-y-5 hidden">
                 <div class="flex items-center justify-between pb-3 border-b border-white/10">
                     <h2 class="text-xs font-extrabold text-emerald-400 flex items-center gap-2"><span>👤</span> Halaman Akun & Profil</h2>
@@ -410,7 +410,7 @@ const htmlTemplate = `
                     </div>
                 </div>
 
-                <!-- KLAIM KODE REDEEM DI DALAM PROFIL -->
+                <!-- KLAIM KODE REDEEM -->
                 <div class="space-y-2.5 pt-2 border-t border-white/10">
                     <label class="text-[11px] font-bold tracking-wider text-slate-400 block flex items-center gap-1.5">
                         <span>🎁</span> Klaim Kode Redeem Kuota
@@ -421,7 +421,7 @@ const htmlTemplate = `
                     </div>
                 </div>
 
-                <!-- ADMIN CONTROL PANEL KHUSUS DI DALAM PROFIL ADMIN -->
+                <!-- ADMIN CONTROL PANEL -->
                 <div id="admin-control-panel" class="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-4 hidden pt-4">
                     <p class="text-xs font-extrabold text-amber-400 flex items-center gap-2">
                         <span>👑</span> Admin Master Control Panel
@@ -469,7 +469,7 @@ const htmlTemplate = `
                 </div>
             </div>
 
-            <!-- VIEW 4: HALAMAN PANDUAN PENGGUNAAN (FOKUS TUNGGAL) -->
+            <!-- VIEW 4: HALAMAN PANDUAN PENGGUNAAN -->
             <div id="section-guide" class="glass-panel p-6 rounded-3xl space-y-4 hidden">
                 <div class="flex items-center justify-between pb-3 border-b border-white/10">
                     <h2 class="text-xs font-extrabold text-emerald-400 flex items-center gap-2"><span>📖</span> Panduan Cara Menggunakan</h2>
@@ -485,7 +485,7 @@ const htmlTemplate = `
                 </ol>
             </div>
 
-            <!-- VIEW 5: HALAMAN INFORMASI & PENGUMUMAN (FOKUS TUNGGAL) -->
+            <!-- VIEW 5: HALAMAN INFORMASI & PENGUMUMAN -->
             <div id="section-announcement" class="glass-panel p-6 rounded-3xl space-y-4 hidden">
                 <div class="flex items-center justify-between pb-3 border-b border-white/10">
                     <h2 class="text-xs font-extrabold text-cyan-400 flex items-center gap-2"><span>📢</span> Informasi & Pengumuman Resmi</h2>
@@ -778,7 +778,7 @@ const htmlTemplate = `
                                     <span class="text-amber-300 font-bold">\${uname}</span>
                                     <span class="text-slate-400 block text-[9px]">Expired: \${new Date(val.vipUntil).toLocaleDateString()}</span>
                                 </div>
-                                <button onclick="handleRemoveVip('\${uname}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded border border-rose-500/30">Hapus</button>
+                                <button onclick="handleRemoveVip('\${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded border border-rose-500/30">Hapus</button>
                             </div>
                         \`;
                     }
