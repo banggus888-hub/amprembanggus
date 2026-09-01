@@ -1,9 +1,0 @@
-{
-  "name": "amprem-vercel-app",
-  "version": "1.0.0",
-  "dependencies": {
-    "@xof/fetch": "latest",
-    "express": "^4.19.2",
-    "firebase": "^10.12.0"
-  }
-}
