@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "express": "^4.19.2"
+    "@xof/fetch": "latest",
+    "express": "^4.19.2",
+    "firebase": "^10.12.0"
   }
 }
