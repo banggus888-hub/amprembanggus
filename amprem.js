@@ -1,16 +1,8 @@
-import express from 'express';
-import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, get, set, child } from 'firebase/database';
-// Jika menggunakan modul ESM, pastikan package @xof/fetch mendukung atau ganti dengan fetch standar / node-fetch jika diperlukan.
-import Go from '@xof/fetch';
+const http = require('http');
+const Go = require('@xof/fetch');
+const { initializeApp } = require('firebase/app');
+const { getDatabase, ref, get, set, child } = require('firebase/database');
 
-const app = express();
-
-// Middleware dasar Express
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Konfigurasi Database & API
 const config = {
   base: 'https://restapidhan.vercel.app',
   apikey: 'freeapikeydhan26'
@@ -238,7 +230,7 @@ const htmlTemplate = `
             </button>
         </header>
 
-        <!-- MENU DRAWER SLIDE SAMPING -->
+        <!-- MENU DRAWER SLIDE SAMPING (BERFOKUS TUNGGAL PER MENU) -->
         <div id="nav-drawer" class="fixed inset-y-0 right-0 z-50 w-full max-w-[300px] bg-[#090b10]/95 backdrop-blur-xl border-l border-white/10 p-5 flex flex-col justify-between shadow-2xl">
             <div class="space-y-6">
                 <div class="flex items-center justify-between pb-4 border-b border-white/10">
@@ -282,7 +274,7 @@ const htmlTemplate = `
                 🔴 Server sedang dalam mode OFFLINE. Fitur premium dinonaktifkan untuk User & VIP.
             </div>
 
-            <!-- VIEW 1: AUTHENTICATION -->
+            <!-- VIEW 1: AUTHENTICATION (LOGIN / REGISTER) -->
             <div id="auth-view" class="glass-panel p-7 rounded-3xl space-y-6">
                 <div class="text-center space-y-1">
                     <h1 class="text-xl font-extrabold tracking-tight text-white">Selamat Datang</h1>
@@ -329,6 +321,7 @@ const htmlTemplate = `
 
             <!-- VIEW 2: HALAMAN UTAMA / GENERATOR -->
             <div id="terminal-view" class="glass-panel p-6 rounded-3xl space-y-5 hidden">
+                
                 <div class="input-glow p-3.5 rounded-2xl flex items-center justify-between text-xs">
                     <div class="flex items-center gap-2.5 text-slate-300">
                         <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
@@ -367,6 +360,7 @@ const htmlTemplate = `
                     </div>
                 </div>
 
+                <!-- FORM GENERATOR UTAMA -->
                 <div class="space-y-4 pt-2 border-t border-white/10">
                     <p class="text-xs font-extrabold text-emerald-400 flex items-center gap-1.5"><span>⚡</span> Panel Generator Token</p>
                     
@@ -394,7 +388,7 @@ const htmlTemplate = `
                 </div>
             </div>
 
-            <!-- VIEW 3: HALAMAN PROFIL -->
+            <!-- VIEW 3: HALAMAN PROFIL KHUSUS AKUN (FOKUS TUNGGAL) -->
             <div id="section-profile" class="glass-panel p-6 rounded-3xl space-y-5 hidden">
                 <div class="flex items-center justify-between pb-3 border-b border-white/10">
                     <h2 class="text-xs font-extrabold text-emerald-400 flex items-center gap-2"><span>👤</span> Halaman Akun & Profil</h2>
@@ -407,6 +401,7 @@ const htmlTemplate = `
                     <p>Sisa Kuota Aktif: <strong id="profile-quota" class="text-cyan-400">0</strong></p>
                 </div>
 
+                <!-- UBAH USERNAME -->
                 <div class="space-y-2 pt-2 border-t border-white/10">
                     <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 pl-1">Ganti Username Akun</label>
                     <div class="flex gap-2">
@@ -415,6 +410,7 @@ const htmlTemplate = `
                     </div>
                 </div>
 
+                <!-- KLAIM KODE REDEEM DI DALAM PROFIL -->
                 <div class="space-y-2.5 pt-2 border-t border-white/10">
                     <label class="text-[11px] font-bold tracking-wider text-slate-400 block flex items-center gap-1.5">
                         <span>🎁</span> Klaim Kode Redeem Kuota
@@ -425,6 +421,7 @@ const htmlTemplate = `
                     </div>
                 </div>
 
+                <!-- ADMIN CONTROL PANEL KHUSUS DI DALAM PROFIL ADMIN -->
                 <div id="admin-control-panel" class="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-4 hidden pt-4">
                     <p class="text-xs font-extrabold text-amber-400 flex items-center gap-2">
                         <span>👑</span> Admin Master Control Panel
@@ -472,7 +469,7 @@ const htmlTemplate = `
                 </div>
             </div>
 
-            <!-- VIEW 4: HALAMAN PANDUAN -->
+            <!-- VIEW 4: HALAMAN PANDUAN PENGGUNAAN (FOKUS TUNGGAL) -->
             <div id="section-guide" class="glass-panel p-6 rounded-3xl space-y-4 hidden">
                 <div class="flex items-center justify-between pb-3 border-b border-white/10">
                     <h2 class="text-xs font-extrabold text-emerald-400 flex items-center gap-2"><span>📖</span> Panduan Cara Menggunakan</h2>
@@ -488,7 +485,7 @@ const htmlTemplate = `
                 </ol>
             </div>
 
-            <!-- VIEW 5: HALAMAN INFORMASI & PENGUMUMAN -->
+            <!-- VIEW 5: HALAMAN INFORMASI & PENGUMUMAN (FOKUS TUNGGAL) -->
             <div id="section-announcement" class="glass-panel p-6 rounded-3xl space-y-4 hidden">
                 <div class="flex items-center justify-between pb-3 border-b border-white/10">
                     <h2 class="text-xs font-extrabold text-cyan-400 flex items-center gap-2"><span>📢</span> Informasi & Pengumuman Resmi</h2>
@@ -499,6 +496,7 @@ const htmlTemplate = `
                     <p class="text-slate-500 italic">Memuat informasi...</p>
                 </div>
 
+                <!-- ADMIN KELOLA INFORMASI -->
                 <div id="admin-announcement-panel" class="space-y-3 pt-3 border-t border-white/10 hidden">
                     <p class="text-xs font-extrabold text-amber-400">Panel Tambah/Edit Pengumuman (Admin)</p>
                     <input type="hidden" id="info-edit-id" value="">
@@ -534,6 +532,7 @@ const htmlTemplate = `
 
         function switchView(viewName) {
             toggleMenu(); 
+            
             document.getElementById('terminal-view').classList.add('hidden');
             document.getElementById('section-profile').classList.add('hidden');
             document.getElementById('section-guide').classList.add('hidden');
@@ -700,6 +699,7 @@ const htmlTemplate = `
                     alert(result.message || 'Gagal mengubah username.');
                 }
             } catch (error) {
+                console.error('Terjadi kesalahan:', error);
                 alert('Terjadi kesalahan jaringan.');
             }
         }
@@ -1059,7 +1059,11 @@ const htmlTemplate = `
             resultText.innerText = "Memverifikasi token aktivasi...";
 
             try {
-                const res = await fetch('/api/verif?email=' + encodeURIComponent(email) + '&url=' + encodeURIComponent(magicUrl) + '&username=' + encodeURIComponent(loggedInUsername));
+                const res = await fetch('/api/verif', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, url: magicUrl, username: loggedInUsername })
+                });
                 const data = await res.json();
                 resultText.innerText = JSON.stringify(data, null, 2);
             } catch (err) {
@@ -1078,427 +1082,530 @@ const htmlTemplate = `
 `;
 
 // ==========================================
-// EXPRESS ROUTING (VERCEL SERVERLESS COMPATIBLE)
+// SERVER HTTP LOCALHOST
 // ==========================================
+const PORT = 3001;
 
-app.get('/', (req, res) => {
-  res.setHeader('Content-Type', 'text/html');
-  res.status(200).send(htmlTemplate);
-});
+const server = http.createServer(async (req, res) => {
+  const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
+  const queryUsername = parsedUrl.searchParams.get('username');
 
-app.get('/api/status', (req, res) => {
-  res.json({ status: serverStatus });
-});
-
-app.get('/api/announcements', async (req, res) => {
-  const announcements = await getAllAnnouncementsFromDb();
-  res.json({ success: true, announcements });
-});
-
-app.put('/api/user/username', async (req, res) => {
-  try {
-    const { currentUsername, newUsername } = req.body;
-    if (!currentUsername || !newUsername) {
-      return res.status(400).json({ success: false, message: 'Username lama dan baru diperlukan.' });
-    }
-
-    const cleanOld = currentUsername.toLowerCase();
-    const cleanNew = newUsername.trim().toLowerCase();
-
-    const existingUser = await getUserFromDb(cleanNew);
-    if (existingUser) {
-      return res.status(400).json({ success: false, message: 'Username sudah digunakan oleh akun lain.' });
-    }
-
-    const userData = await getUserFromDb(cleanOld);
-    if (!userData) {
-      return res.status(404).json({ success: false, message: 'User tidak ditemukan.' });
-    }
-
-    await saveUserToDb(cleanNew, userData);
-    await set(ref(db, `users/${cleanOld}`), null);
-
-    res.json({ success: true, newUsername: cleanNew });
-  } catch (e) {
-    res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server.' });
-  }
-});
-
-app.post('/api/admin/set-status', async (req, res) => {
-  try {
-    const { status, username } = req.body;
-    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-    if (!userObj || !userObj.isAdmin) {
-      return res.status(403).json({ success: false });
-    }
-    serverStatus = status;
-    res.json({ success: true, status: serverStatus });
-  } catch (e) {
-    res.status(400).json({ success: false });
-  }
-});
-
-app.post('/api/admin/set-vip', async (req, res) => {
-  try {
-    const { username, targetUser, days } = req.body;
-    const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-    if (!adminObj || !adminObj.isAdmin) {
-      return res.status(403).json({ success: false, message: 'Akses ditolak.' });
-    }
-
-    const cleanTarget = targetUser.toLowerCase();
-    const targetObj = await getUserFromDb(cleanTarget);
-    if (!targetObj) {
-      return res.status(400).json({ success: false, message: 'User target tidak ditemukan!' });
-    }
-
-    const vipExpiry = Date.now() + (days * 24 * 60 * 60 * 1000);
-    targetObj.vipUntil = vipExpiry;
-    await saveUserToDb(cleanTarget, targetObj);
-
-    res.json({ success: true, message: `Sukses memberikan VIP ke ${cleanTarget} selama ${days} hari!` });
-  } catch (e) {
-    res.status(400).json({ success: false });
-  }
-});
-
-app.get('/api/admin/get-vip-list', async (req, res) => {
-  const username = req.query.username;
-  const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-  if (!userObj || !userObj.isAdmin) {
-    return res.status(403).json({ success: false });
+  let isRequesterAdmin = false;
+  if (queryUsername) {
+    const userDoc = await getUserFromDb(queryUsername.toLowerCase());
+    if (userDoc && userDoc.isAdmin) isRequesterAdmin = true;
   }
 
-  const allUsers = await getAllUsersFromDb();
-  const vipUsers = {};
-  const now = Date.now();
-
-  for (let [uname, udata] of Object.entries(allUsers)) {
-    if (udata.vipUntil && udata.vipUntil > now) {
-      vipUsers[uname] = { vipUntil: udata.vipUntil };
-    }
-  }
-
-  res.json({ success: true, vipUsers });
-});
-
-app.post('/api/admin/remove-vip', async (req, res) => {
-  try {
-    const { username, targetUser } = req.body;
-    const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-    if (!adminObj || !adminObj.isAdmin) {
-      return res.status(403).json({ success: false });
-    }
-
-    const cleanTarget = targetUser.toLowerCase();
-    const targetObj = await getUserFromDb(cleanTarget);
-    if (targetObj) {
-      targetObj.vipUntil = 0;
-      await saveUserToDb(cleanTarget, targetObj);
-    }
-
-    res.json({ success: true });
-  } catch (e) {
-    res.status(400).json({ success: false });
-  }
-});
-
-app.post('/api/admin/create-announcement', async (req, res) => {
-  try {
-    const { username, title, content } = req.body;
-    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-    if (!userObj || !userObj.isAdmin) {
-      return res.status(403).json({ success: false });
-    }
-
-    const id = 'info_' + Date.now();
-    await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
-
-    res.json({ success: true, message: 'Informasi berhasil dipublikasikan!' });
-  } catch (e) {
-    res.status(400).json({ success: false });
-  }
-});
-
-app.post('/api/admin/update-announcement', async (req, res) => {
-  try {
-    const { username, id, title, content } = req.body;
-    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-    if (!userObj || !userObj.isAdmin) {
-      return res.status(403).json({ success: false });
-    }
-
-    await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
-    res.json({ success: true, message: 'Informasi diperbarui!' });
-  } catch (e) {
-    res.status(400).json({ success: false });
-  }
-});
-
-app.post('/api/admin/delete-announcement', async (req, res) => {
-  try {
-    const { username, id } = req.body;
-    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-    if (!userObj || !userObj.isAdmin) {
-      return res.status(403).json({ success: false });
-    }
-    await removeAnnouncementFromDb(id);
-    res.json({ success: true });
-  } catch (e) {
-    res.status(400).json({ success: false });
-  }
-});
-
-app.post('/api/admin/create-redeem', async (req, res) => {
-  try {
-    const { username, code, totalQuota, maxClaims } = req.body;
-    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-    if (!userObj || !userObj.isAdmin) {
-      return res.status(403).json({ success: false });
-    }
-
-    const existingCode = await getRedeemFromDb(code);
-    if (existingCode) {
-      return res.status(400).json({ success: false, message: 'Kode redeem sudah ada!' });
-    }
-
-    const redeemData = {
-      totalQuota: totalQuota,
-      maxClaims: maxClaims,
-      claimedCount: 0,
-      claimedUsers: []
-    };
-    await saveRedeemToDb(code, redeemData);
-
-    res.json({ success: true, message: `Kode ${code} berhasil dibuat!` });
-  } catch (e) {
-    res.status(400).json({ success: false });
-  }
-});
-
-app.get('/api/admin/get-redeems', async (req, res) => {
-  const username = req.query.username;
-  const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-  if (!userObj || !userObj.isAdmin) {
-    return res.status(403).json({ success: false });
-  }
-  const redeems = await getAllRedeemsFromDb();
-  res.json({ success: true, redeems });
-});
-
-app.post('/api/admin/delete-redeem', async (req, res) => {
-  try {
-    const { username, code } = req.body;
-    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-    if (!userObj || !userObj.isAdmin) {
-      return res.status(403).json({ success: false });
-    }
-    await removeRedeemFromDb(code);
-    res.json({ success: true });
-  } catch (e) {
-    res.status(400).json({ success: false });
-  }
-});
-
-app.post('/api/redeem', async (req, res) => {
-  try {
-    const { username, code } = req.body;
-    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-
-    if (serverStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
-      return res.status(403).json({ success: false, message: 'Pembuatan gagal: Server sedang offline. Fitur premium dinonaktifkan untuk user biasa & VIP.' });
-    }
-
-    const cleanUser = username.toLowerCase();
-    const redeemObj = await getRedeemFromDb(code);
-
-    if (!userObj || !redeemObj) {
-      return res.status(400).json({ success: false, message: 'User atau Kode Redeem tidak valid!' });
-    }
-
-    if (redeemObj.claimedUsers && redeemObj.claimedUsers.includes(cleanUser)) {
-      return res.status(400).json({ success: false, message: 'Anda sudah pernah klaim kode ini!' });
-    }
-
-    if (redeemObj.claimedCount >= redeemObj.maxClaims) {
-      return res.status(400).json({ success: false, message: 'Kuota kode redeem sudah habis terpakai!' });
-    }
-
-    const remainingClaims = redeemObj.maxClaims - redeemObj.claimedCount;
-    const remainingTotalQuota = redeemObj.totalQuota - (redeemObj.distributedQuota || 0);
-    let rewardQuota = Math.round(remainingTotalQuota / remainingClaims);
-    if (rewardQuota < 1) rewardQuota = 1;
-
-    if (!userObj.bonusQuota) userObj.bonusQuota = 0;
-    userObj.bonusQuota += rewardQuota;
-
-    redeemObj.claimedCount += 1;
-    if (!redeemObj.distributedQuota) redeemObj.distributedQuota = 0;
-    redeemObj.distributedQuota += rewardQuota;
-    if (!redeemObj.claimedUsers) redeemObj.claimedUsers = [];
-    redeemObj.claimedUsers.push(cleanUser);
-
-    await saveUserToDb(cleanUser, userObj);
-    await saveRedeemToDb(code, redeemObj);
-
-    res.json({ 
-      success: true, 
-      message: `Berhasil klaim! Anda mendapatkan bonus ${rewardQuota} kuota.`,
-      usedQuota: userObj.activatedEmails ? userObj.activatedEmails.length : 0,
-      bonusQuota: userObj.bonusQuota
-    });
-  } catch (e) {
-    res.status(400).json({ success: false });
-  }
-});
-
-app.post('/api/auth', async (req, res) => {
-  try {
-    const { mode, username, password, email, deviceToken } = req.body;
-    const cleanUser = username.trim().toLowerCase();
-    let existingUser = await getUserFromDb(cleanUser);
-
-    if (mode === 'register') {
-      if (cleanUser === 'adminbagus' || existingUser) {
-        return res.status(400).json({ success: false, message: 'Username tidak tersedia atau sudah terdaftar!' });
-      }
-
-      const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
-      const newUserData = { 
-        password, 
-        email, 
-        isAdmin: false, 
-        activatedEmails: [], 
-        bonusQuota: 0, 
-        lastResetTime: Date.now(),
-        vipUntil: 0,
-        deviceToken: newDeviceToken
-      };
-      await saveUserToDb(cleanUser, newUserData);
-      
-      const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
-
-      res.json({ 
-        success: true, 
-        message: 'Registrasi berhasil!', 
-        username: cleanUser, 
-        isAdmin: false, 
-        usedQuota: 0, 
-        bonusQuota: 0,
-        isVip: false,
-        serverStatus,
-        deviceToken: newDeviceToken,
-        token: fakeAuthToken
-      });
-    } else {
-      if (existingUser && existingUser.password === password) {
-        const now = Date.now();
-        const twentyFourHours = 24 * 60 * 60 * 1000;
-        if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
-
-        if (now - existingUser.lastResetTime >= twentyFourHours) {
-          existingUser.activatedEmails = [];
-          existingUser.lastResetTime = now;
-          await saveUserToDb(cleanUser, existingUser);
+  if (parsedUrl.pathname === '/' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(htmlTemplate);
+  } else if (parsedUrl.pathname === '/api/status') {
+    res.setHeader('Content-Type', 'application/json');
+    res.writeHead(200);
+    res.end(JSON.stringify({ status: serverStatus }));
+  } else if (parsedUrl.pathname === '/api/announcements') {
+    res.setHeader('Content-Type', 'application/json');
+    const announcements = await getAllAnnouncementsFromDb();
+    res.writeHead(200);
+    res.end(JSON.stringify({ success: true, announcements }));
+  } else if (parsedUrl.pathname === '/api/user/username' && req.method === 'PUT') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { currentUsername, newUsername } = JSON.parse(body);
+        if (!currentUsername || !newUsername) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'Username lama dan baru diperlukan.' }));
+          return;
         }
 
-        const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
-        const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
-        const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
+        const cleanOld = currentUsername.toLowerCase();
+        const cleanNew = newUsername.trim().toLowerCase();
 
-        res.json({ 
-          success: true, 
-          message: 'Login berhasil!', 
-          username: cleanUser, 
-          isAdmin: existingUser.isAdmin, 
-          usedQuota: usedCount,
-          bonusQuota: existingUser.bonusQuota || 0,
-          isVip: isVipActive,
-          vipUntil: existingUser.vipUntil || 0,
-          serverStatus,
-          token: fakeAuthToken
-        });
-      } else {
-        res.status(401).json({ success: false, message: 'Username atau password salah!' });
+        const existingUser = await getUserFromDb(cleanNew);
+        if (existingUser) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'Username sudah digunakan oleh akun lain.' }));
+          return;
+        }
+
+        const userData = await getUserFromDb(cleanOld);
+        if (!userData) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
+          return;
+        }
+
+        await saveUserToDb(cleanNew, userData);
+        await set(ref(db, `users/${cleanOld}`), null);
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, newUsername: cleanNew }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan pada server.' }));
       }
-    }
-  } catch (e) {
-    res.status(400).json({ success: false });
-  }
-});
-
-app.post('/api/magiclink', async (req, res) => {
-  try {
-    const { username, email } = req.body;
-    const cleanUser = username ? username.toLowerCase() : '';
-    const userObj = await getUserFromDb(cleanUser);
-
-    if (!userObj) {
-      return res.status(400).json({ success: false, message: 'User tidak ditemukan.' });
-    }
-
-    if (serverStatus !== 'online' && !userObj.isAdmin) {
-      return res.status(403).json({ success: false, message: 'Pembuatan gagal: Server sedang offline. Fitur premium dinonaktifkan untuk user biasa & VIP.' });
-    }
-
-    const now = Date.now();
-    const twentyFourHours = 24 * 60 * 60 * 1000;
-    if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
-      userObj.activatedEmails = [];
-      userObj.lastResetTime = now;
-    }
-
-    if (!userObj.activatedEmails) userObj.activatedEmails = [];
-    if (!userObj.bonusQuota) userObj.bonusQuota = 0;
-
-    const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
-    const maxAllowed = 3 + userObj.bonusQuota;
-
-    if (!userObj.isAdmin && !isVipActive) {
-      if (!userObj.activatedEmails.includes(email) && userObj.activatedEmails.length >= maxAllowed) {
-        return res.status(403).json({ success: false, message: 'Kuota aktivasi Anda habis! Gunakan kode redeem atau upgrade VIP.' });
-      }
-    }
-
-    const result = await am.magiclink(email);
-
-    if (!userObj.isAdmin && !isVipActive && !userObj.activatedEmails.includes(email)) {
-      userObj.activatedEmails.push(email);
-      await saveUserToDb(cleanUser, userObj);
-    }
-
-    res.json({ 
-      success: true, 
-      result, 
-      quotaInfo: { usedQuota: userObj.activatedEmails.length, bonusQuota: userObj.bonusQuota } 
     });
-  } catch (error) {
-    res.status(400).json({ success: false, message: error.message });
+  } else if (parsedUrl.pathname === '/api/admin/set-status' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { status, username } = JSON.parse(body);
+        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!userObj || !userObj.isAdmin) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false }));
+          return;
+        }
+        serverStatus = status;
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, status: serverStatus }));
+      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
+    });
+  } else if (parsedUrl.pathname === '/api/admin/set-vip' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, targetUser, days } = JSON.parse(body);
+        const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!adminObj || !adminObj.isAdmin) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, message: 'Akses ditolak.' }));
+          return;
+        }
+
+        const cleanTarget = targetUser.toLowerCase();
+        const targetObj = await getUserFromDb(cleanTarget);
+        if (!targetObj) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'User target tidak ditemukan!' }));
+          return;
+        }
+
+        const vipExpiry = Date.now() + (days * 24 * 60 * 60 * 1000);
+        targetObj.vipUntil = vipExpiry;
+        await saveUserToDb(cleanTarget, targetObj);
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, message: `Sukses memberikan VIP ke ${cleanTarget} selama ${days} hari!` }));
+      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
+    });
+  } else if (parsedUrl.pathname === '/api/admin/get-vip-list') {
+    res.setHeader('Content-Type', 'application/json');
+    const username = parsedUrl.searchParams.get('username');
+    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+    if (!userObj || !userObj.isAdmin) {
+      res.writeHead(403);
+      res.end(JSON.stringify({ success: false }));
+      return;
+    }
+
+    const allUsers = await getAllUsersFromDb();
+    const vipUsers = {};
+    const now = Date.now();
+
+    for (let [uname, udata] of Object.entries(allUsers)) {
+      if (udata.vipUntil && udata.vipUntil > now) {
+        vipUsers[uname] = { vipUntil: udata.vipUntil };
+      }
+    }
+
+    res.writeHead(200);
+    res.end(JSON.stringify({ success: true, vipUsers }));
+  } else if (parsedUrl.pathname === '/api/admin/remove-vip' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, targetUser } = JSON.parse(body);
+        const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!adminObj || !adminObj.isAdmin) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false }));
+          return;
+        }
+
+        const cleanTarget = targetUser.toLowerCase();
+        const targetObj = await getUserFromDb(cleanTarget);
+        if (targetObj) {
+          targetObj.vipUntil = 0;
+          await saveUserToDb(cleanTarget, targetObj);
+        }
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true }));
+      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
+    });
+  } else if (parsedUrl.pathname === '/api/admin/create-announcement' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, title, content } = JSON.parse(body);
+        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!userObj || !userObj.isAdmin) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false }));
+          return;
+        }
+
+        const id = 'info_' + Date.now();
+        await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, message: 'Informasi berhasil dipublikasikan!' }));
+      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
+    });
+  } else if (parsedUrl.pathname === '/api/admin/update-announcement' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, id, title, content } = JSON.parse(body);
+        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!userObj || !userObj.isAdmin) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false }));
+          return;
+        }
+
+        await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, message: 'Informasi diperbarui!' }));
+      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
+    });
+  } else if (parsedUrl.pathname === '/api/admin/delete-announcement' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, id } = JSON.parse(body);
+        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!userObj || !userObj.isAdmin) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false }));
+          return;
+        }
+        await removeAnnouncementFromDb(id);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true }));
+      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
+    });
+  } else if (parsedUrl.pathname === '/api/admin/create-redeem' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, code, totalQuota, maxClaims } = JSON.parse(body);
+        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!userObj || !userObj.isAdmin) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false }));
+          return;
+        }
+
+        const existingCode = await getRedeemFromDb(code);
+        if (existingCode) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'Kode redeem sudah ada!' }));
+          return;
+        }
+
+        const redeemData = {
+          totalQuota: totalQuota,
+          maxClaims: maxClaims,
+          claimedCount: 0,
+          claimedUsers: []
+        };
+        await saveRedeemToDb(code, redeemData);
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, message: `Kode ${code} berhasil dibuat!` }));
+      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
+    });
+  } else if (parsedUrl.pathname === '/api/admin/get-redeems') {
+    res.setHeader('Content-Type', 'application/json');
+    const username = parsedUrl.searchParams.get('username');
+    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+    if (!userObj || !userObj.isAdmin) {
+      res.writeHead(403);
+      res.end(JSON.stringify({ success: false }));
+      return;
+    }
+    const redeems = await getAllRedeemsFromDb();
+    res.writeHead(200);
+    res.end(JSON.stringify({ success: true, redeems }));
+  } else if (parsedUrl.pathname === '/api/admin/delete-redeem' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, code } = JSON.parse(body);
+        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!userObj || !userObj.isAdmin) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false }));
+          return;
+        }
+        await removeRedeemFromDb(code);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true }));
+      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
+    });
+  } else if (parsedUrl.pathname === '/api/redeem' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const parsedBody = JSON.parse(body);
+        const { username } = parsedBody;
+        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+
+        if (serverStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, message: 'Pembuatan gagal: Server sedang offline. Fitur premium dinonaktifkan untuk user biasa & VIP.' }));
+          return;
+        }
+
+        const { code } = parsedBody;
+        const cleanUser = username.toLowerCase();
+        const redeemObj = await getRedeemFromDb(code);
+
+        if (!userObj || !redeemObj) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'User atau Kode Redeem tidak valid!' }));
+          return;
+        }
+
+        if (redeemObj.claimedUsers && redeemObj.claimedUsers.includes(cleanUser)) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'Anda sudah pernah klaim kode ini!' }));
+          return;
+        }
+
+        if (redeemObj.claimedCount >= redeemObj.maxClaims) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'Kuota kode redeem sudah habis terpakai!' }));
+          return;
+        }
+
+        const remainingClaims = redeemObj.maxClaims - redeemObj.claimedCount;
+        const remainingTotalQuota = redeemObj.totalQuota - (redeemObj.distributedQuota || 0);
+        let rewardQuota = Math.round(remainingTotalQuota / remainingClaims);
+        if (rewardQuota < 1) rewardQuota = 1;
+
+        if (!userObj.bonusQuota) userObj.bonusQuota = 0;
+        userObj.bonusQuota += rewardQuota;
+
+        redeemObj.claimedCount += 1;
+        if (!redeemObj.distributedQuota) redeemObj.distributedQuota = 0;
+        redeemObj.distributedQuota += rewardQuota;
+        if (!redeemObj.claimedUsers) redeemObj.claimedUsers = [];
+        redeemObj.claimedUsers.push(cleanUser);
+
+        await saveUserToDb(cleanUser, userObj);
+        await saveRedeemToDb(code, redeemObj);
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ 
+          success: true, 
+          message: `Berhasil klaim! Anda mendapatkan bonus ${rewardQuota} kuota.`,
+          usedQuota: userObj.activatedEmails ? userObj.activatedEmails.length : 0,
+          bonusQuota: userObj.bonusQuota
+        }));
+      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
+    });
+  } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { mode, username, password, email, deviceToken } = JSON.parse(body);
+        const cleanUser = username.trim().toLowerCase();
+        let existingUser = await getUserFromDb(cleanUser);
+
+        if (mode === 'register') {
+          if (cleanUser === 'adminbagus' || existingUser) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ success: false, message: 'Username tidak tersedia atau sudah terdaftar!' }));
+            return;
+          }
+
+          const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
+          const newUserData = { 
+            password, 
+            email, 
+            isAdmin: false, 
+            activatedEmails: [], 
+            bonusQuota: 0, 
+            lastResetTime: Date.now(),
+            vipUntil: 0,
+            deviceToken: newDeviceToken
+          };
+          await saveUserToDb(cleanUser, newUserData);
+          
+          const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
+
+          res.writeHead(200);
+          res.end(JSON.stringify({ 
+            success: true, 
+            message: 'Registrasi berhasil!', 
+            username: cleanUser, 
+            isAdmin: false, 
+            usedQuota: 0, 
+            bonusQuota: 0,
+            isVip: false,
+            serverStatus,
+            deviceToken: newDeviceToken,
+            token: fakeAuthToken
+          }));
+        } else {
+          if (existingUser && existingUser.password === password) {
+            const now = Date.now();
+            const twentyFourHours = 24 * 60 * 60 * 1000;
+            if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
+
+            if (now - existingUser.lastResetTime >= twentyFourHours) {
+              existingUser.activatedEmails = [];
+              existingUser.lastResetTime = now;
+              await saveUserToDb(cleanUser, existingUser);
+            }
+
+            const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
+            const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
+            const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
+
+            res.writeHead(200);
+            res.end(JSON.stringify({ 
+              success: true, 
+              message: 'Login berhasil!', 
+              username: cleanUser, 
+              isAdmin: existingUser.isAdmin, 
+              usedQuota: usedCount,
+              bonusQuota: existingUser.bonusQuota || 0,
+              isVip: isVipActive,
+              vipUntil: existingUser.vipUntil || 0,
+              serverStatus,
+              token: fakeAuthToken
+            }));
+          } else {
+            res.writeHead(401);
+            res.end(JSON.stringify({ success: false, message: 'Username atau password salah!' }));
+          }
+        }
+      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
+    });
+  } else if (parsedUrl.pathname === '/api/magiclink' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, email } = JSON.parse(body);
+        const cleanUser = username ? username.toLowerCase() : '';
+        const userObj = await getUserFromDb(cleanUser);
+
+        if (!userObj) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
+          return;
+        }
+
+        if (serverStatus !== 'online' && !userObj.isAdmin) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, message: 'Pembuatan gagal: Server sedang offline. Fitur premium dinonaktifkan untuk user biasa & VIP.' }));
+          return;
+        }
+
+        const now = Date.now();
+        const twentyFourHours = 24 * 60 * 60 * 1000;
+        if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
+          userObj.activatedEmails = [];
+          userObj.lastResetTime = now;
+        }
+
+        if (!userObj.activatedEmails) userObj.activatedEmails = [];
+        if (!userObj.bonusQuota) userObj.bonusQuota = 0;
+
+        const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+        const maxAllowed = 3 + userObj.bonusQuota;
+
+        if (!userObj.isAdmin && !isVipActive) {
+          if (!userObj.activatedEmails.includes(email) && userObj.activatedEmails.length >= maxAllowed) {
+            res.writeHead(403);
+            res.end(JSON.stringify({ success: false, message: 'Kuota aktivasi Anda habis! Gunakan kode redeem atau upgrade VIP.' }));
+            return;
+          }
+        }
+
+        const result = await am.magiclink(email);
+
+        if (!userObj.isAdmin && !isVipActive && !userObj.activatedEmails.includes(email)) {
+          userObj.activatedEmails.push(email);
+          await saveUserToDb(cleanUser, userObj);
+        }
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ 
+          success: true, 
+          result, 
+          quotaInfo: { usedQuota: userObj.activatedEmails.length, bonusQuota: userObj.bonusQuota } 
+        }));
+      } catch (error) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ success: false, message: error.message }));
+      }
+    });
+  } else if (parsedUrl.pathname === '/api/verif' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { email, url: verifyUrl, username } = JSON.parse(body);
+
+        let userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (serverStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ error: 'Pembuatan gagal: Server sedang offline. Fitur premium dinonaktifkan untuk user biasa & VIP.' }));
+          return;
+        }
+
+        if (!email || !verifyUrl) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'Parameter email dan url diperlukan.' }));
+          return;
+        }
+
+        const result = await am.verif(email, verifyUrl);
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
+      } catch (error) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: error.message }));
+      }
+    });
+  } else {
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Endpoint tidak ditemukan.');
   }
 });
 
-app.get('/api/verif', async (req, res) => {
-  const email = req.query.email;
-  const verifyUrl = req.query.url;
-  const username = req.query.username;
-
-  let userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-  if (serverStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
-    return res.status(403).json({ error: 'Pembuatan gagal: Server sedang offline. Fitur premium dinonaktifkan untuk user biasa & VIP.' });
-  }
-
-  if (!email || !verifyUrl) {
-    return res.status(400).json({ error: 'Parameter email dan url diperlukan.' });
-  }
-
-  try {
-    const result = await am.verif(email, verifyUrl);
-    res.json(result);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
+server.listen(PORT, () => {
+  console.log(`Server web AM Premium berjalan di: http://localhost:${PORT}`);
 });
-
-// PENTING: Jangan gunakan app.listen() untuk production di Vercel.
-// Cukup ekspor app sebagai module agar bisa dibaca oleh Vercel[cite: 3].
-export default app;
