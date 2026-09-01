@@ -74,7 +74,7 @@ async function getRedeemFromDb(code) {
   return null;
 }
 
-async function saveRedeemFromDb(code, redeemData) {
+async function saveRedeemToDb(code, redeemData) {
   await set(ref(db, `redeems/${code}`), redeemData);
 }
 
@@ -111,31 +111,6 @@ async function getAllUsersFromDb() {
   return {};
 }
 
-async function getSystemSettingFromDb(key, defaultValue) {
-  const dbRef = ref(db);
-  const snapshot = await get(child(dbRef, `system_settings/${key}`));
-  if (snapshot.exists()) return snapshot.val();
-  return defaultValue;
-}
-
-async function saveSystemSettingToDb(key, value) {
-  await set(ref(db, `system_settings/${key}`), value);
-}
-
-// Fungsi Database untuk List Gmail Premium Publik
-async function getVerifiedAmUserFromDb(email) {
-  const cleanEmail = email.toLowerCase().replace(/[.$#[\]/]/g, '_');
-  const dbRef = ref(db);
-  const snapshot = await get(child(dbRef, `verified_am_users/${cleanEmail}`));
-  if (snapshot.exists()) return snapshot.val();
-  return null;
-}
-
-async function saveVerifiedAmUserToDb(email, userData) {
-  const cleanEmail = email.toLowerCase().replace(/[.$#[\]/]/g, '_');
-  await set(ref(db, `verified_am_users/${cleanEmail}`), userData);
-}
-
 async function initAdmin() {
   const adminData = await getUserFromDb('adminbaguss');
   if (!adminData) {
@@ -148,13 +123,11 @@ async function initAdmin() {
       vipUntil: 0
     });
   }
-  const defaultQuota = await getSystemSettingFromDb('default_user_quota', 1);
-  await saveSystemSettingToDb('default_user_quota', defaultQuota);
 }
 initAdmin();
 
 // ==========================================
-// KODE HTML UI MODERN & PENGATURAN KUOTA PHP
+// KODE HTML UI MODERN & SISTEM TITIK TIGA BERFOKUS TUNGGAL
 // ==========================================
 const htmlTemplate = `
 <!DOCTYPE html>
@@ -162,7 +135,7 @@ const htmlTemplate = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AM Premium • Cyber Gateway & Pengaturan Kuota</title>
+    <title>AM Premium • Cyber Gateway</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -247,6 +220,7 @@ const htmlTemplate = `
                 <div class="p-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">⚡</div>
                 <span id="app-title-header" class="font-extrabold text-sm tracking-tight bg-gradient-to-r from-white to-emerald-400 bg-clip-text text-transparent cursor-pointer" onclick="switchView('generator')">AM Gateway</span>
             </div>
+            <!-- Tombol Menu Modern -->
             <button id="header-menu-btn" onclick="toggleMenu()" class="group relative p-2.5 rounded-2xl bg-slate-900/90 border border-emerald-500/20 hover:border-emerald-500/60 text-slate-200 transition-all duration-300 flex items-center justify-center w-11 h-11 shadow-[0_0_15px_rgba(16,185,129,0.1)] hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] hidden">
                 <div class="flex flex-col justify-between items-center h-4 w-4 py-0.5 transition-transform duration-300 group-hover:scale-110">
                     <span class="w-1.5 h-1.5 bg-emerald-400 rounded-full shadow-[0_0_8px_#34d399]"></span>
@@ -270,9 +244,6 @@ const htmlTemplate = `
                 <nav class="space-y-2 text-xs font-semibold">
                     <button onclick="switchView('generator')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-500/10 hover:text-emerald-400 text-slate-300 transition text-left">
                         <span>⚡</span> Generator Utama
-                    </button>
-                    <button onclick="switchView('checker')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-500/10 hover:text-emerald-400 text-slate-300 transition text-left">
-                        <span>🔍</span> Cek & Daftar Premium (Public)
                     </button>
                     <button onclick="switchView('profile')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-500/10 hover:text-emerald-400 text-slate-300 transition text-left">
                         <span>👤</span> Halaman Akun & Profil
@@ -417,43 +388,6 @@ const htmlTemplate = `
                 </div>
             </div>
 
-            <!-- VIEW BARU: FITUR CEK & DAFTAR AM PREMIUM (PUBLIC) -->
-            <div id="section-checker" class="glass-panel p-6 rounded-3xl space-y-5 hidden">
-                <div class="flex items-center justify-between pb-3 border-b border-white/10">
-                    <h2 class="text-xs font-extrabold text-emerald-400 flex items-center gap-2"><span>🔍</span> Cek & Daftar AM Premium</h2>
-                    <button onclick="switchView('generator')" class="text-[10px] text-slate-400 hover:text-white underline">← Kembali</button>
-                </div>
-                
-                <p class="text-[11px] text-slate-300">
-                    Fitur ini terbuka untuk semua pengguna. Masukkan Gmail Anda untuk meminta Magic Link verifikasi AM Premium secara otomatis.
-                </p>
-
-                <div class="space-y-3">
-                    <div class="space-y-1.5">
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 pl-1">Masukkan Gmail Anda</label>
-                        <input type="email" id="public-check-email" placeholder="contoh@gmail.com" class="input-glow w-full px-4 py-3.5 rounded-2xl text-xs text-slate-200">
-                    </div>
-
-                    <button onclick="handlePublicRequestMagic()" id="public-btn-send" class="cyber-btn w-full py-3.5 rounded-2xl text-slate-950 font-extrabold text-xs uppercase tracking-widest flex items-center justify-center gap-2">
-                        <span>✉️</span> <span>Kirim Magic Link & Cek Status</span>
-                    </button>
-                </div>
-
-                <div id="public-verify-container" class="space-y-3 pt-3 border-t border-white/10 hidden">
-                    <p class="text-[11px] text-amber-400 font-bold">⚠️ Masukkan Magic Link yang masuk ke Gmail Anda untuk menyelesaikan proses:</p>
-                    <div class="space-y-1.5">
-                        <input type="text" id="public-magic-url" placeholder="Paste magic link verifikasi disini..." class="input-glow w-full px-4 py-3 rounded-2xl text-xs text-emerald-400">
-                    </div>
-                    <button onclick="handlePublicVerifyAndAdd()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-extrabold rounded-xl text-xs transition flex items-center justify-center gap-2">
-                        <span>✅</span> Verifikasi & Simpan ke List Premium
-                    </button>
-                </div>
-
-                <div id="public-result-box" class="input-glow p-3.5 rounded-2xl text-[11px] hidden text-emerald-300 break-all bg-emerald-950/20 border-emerald-500/20 mono">
-                    <p id="public-result-text"></p>
-                </div>
-            </div>
-
             <!-- VIEW 3: HALAMAN PROFIL KHUSUS AKUN -->
             <div id="section-profile" class="glass-panel p-6 rounded-3xl space-y-5 hidden">
                 <div class="flex items-center justify-between pb-3 border-b border-white/10">
@@ -492,17 +426,6 @@ const htmlTemplate = `
                     <p class="text-xs font-extrabold text-amber-400 flex items-center gap-2">
                         <span>👑</span> Admin Master Control Panel
                     </p>
-
-                    <!-- PENGATURAN KUOTA DEFAULT PHP INTEGRATION -->
-                    <div class="border-b border-amber-500/20 pb-3 space-y-2">
-                        <p class="text-[11px] text-amber-300 font-bold">⚙️ Pengaturan Kuota Default User Baru:</p>
-                        <div id="setting-success-msg" class="text-[10px] text-emerald-400 font-semibold hidden"></div>
-                        <div class="flex gap-2">
-                            <input type="number" id="input-default-quota" min="0" class="input-glow flex-1 px-3 py-2 rounded-xl text-xs text-slate-200" placeholder="Default Kuota">
-                            <button onclick="handleUpdateDefaultQuota()" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-xl text-xs transition">Simpan</button>
-                        </div>
-                    </div>
-
                     <div class="grid grid-cols-2 gap-2">
                         <button onclick="changeServerState('online')" class="py-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 rounded-xl text-[10px] text-emerald-300 font-bold transition">🟢 Online</button>
                         <button onclick="changeServerState('offline')" class="py-2 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 rounded-xl text-[10px] text-rose-300 font-bold transition">🔴 Offline</button>
@@ -559,7 +482,6 @@ const htmlTemplate = `
                     <li>Klik tombol <strong>Kirim Magic Link</strong> untuk memicu token verifikasi.</li>
                     <li>Salin tautan Magic Link yang masuk ke email Anda, lalu tempel (*paste*) pada kolom Magic Link URL.</li>
                     <li>Klik <strong>Aktivasi Token</strong> dan proses selesai dengan sempurna!</li>
-                    <li>Gunakan fitur <strong>Cek & Daftar AM Premium (Public)</strong> untuk memeriksa dan mencatat email Anda ke dalam list verified secara otomatis.</li>
                 </ol>
             </div>
 
@@ -574,6 +496,7 @@ const htmlTemplate = `
                     <p class="text-slate-500 italic">Memuat informasi...</p>
                 </div>
 
+                <!-- ADMIN KELOLA INFORMASI -->
                 <div id="admin-announcement-panel" class="space-y-3 pt-3 border-t border-white/10 hidden">
                     <p class="text-xs font-extrabold text-amber-400">Panel Tambah/Edit Pengumuman (Admin)</p>
                     <input type="hidden" id="info-edit-id" value="">
@@ -600,16 +523,17 @@ const htmlTemplate = `
         let loggedInUsername = '';
         let isAdminUser = false;
 
-        document.addEventListener("DOMContentLoaded", async () => {
+        // Cek Sesi Tersimpan Saat Halaman Dimuat (Auto-Login / Persistent Session)
+        window.addEventListener('DOMContentLoaded', async () => {
             const savedToken = localStorage.getItem('authToken');
-            const savedUsername = localStorage.getItem('savedUsername');
+            const savedUser = localStorage.getItem('authUsername');
 
-            if (savedToken && savedUsername) {
+            if (savedToken && savedUser) {
                 try {
-                    const res = await fetch('/api/check-session', {
+                    const res = await fetch('/api/verify-session', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username: savedUsername, token: savedToken })
+                        body: JSON.stringify({ username: savedUser, token: savedToken })
                     });
                     const data = await res.json();
 
@@ -619,18 +543,20 @@ const htmlTemplate = `
 
                         document.getElementById('auth-view').classList.add('hidden');
                         document.getElementById('terminal-view').classList.remove('hidden');
+                        
                         document.getElementById('header-menu-btn').classList.remove('hidden');
                         document.getElementById('logged-username').innerText = data.username;
                         
                         document.getElementById('profile-uname').innerText = data.username;
                         document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'Standard User');
-                        document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (data.defaultQuota + (data.bonusQuota || 0) - data.usedQuota);
+                        document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (3 + (data.bonusQuota || 0) - data.usedQuota);
 
                         document.getElementById('drawer-status-role').innerText = data.username + ' (' + (data.isAdmin ? 'Admin' : 'User') + ')';
                         document.getElementById('drawer-logout-btn').classList.remove('hidden');
 
                         updateQuotaDisplay(data);
                         checkVipStatus(data);
+                        loadUserAnnouncements();
                         updateStatusUI(data.serverStatus);
 
                         if(data.isAdmin) {
@@ -638,16 +564,15 @@ const htmlTemplate = `
                             document.getElementById('role-badge').innerText = "👑 Admin Master";
                             document.getElementById('admin-control-panel').classList.remove('hidden');
                             document.getElementById('admin-announcement-panel').classList.remove('hidden');
-                            loadSystemSettings();
                             loadAdminRedeems();
                             loadAdminAnnouncements();
                             loadAdminVipList();
                         }
                     } else {
-                        handleLogout();
+                        handleLogout(); // Bersihkan sesi jika token tidak valid/kadaluarsa
                     }
-                } catch (err) {
-                    console.error("Gagal memulihkan sesi:", err);
+                } catch (e) {
+                    console.error("Gagal verifikasi sesi:", e);
                 }
             }
         });
@@ -663,15 +588,12 @@ const htmlTemplate = `
             toggleMenu(); 
             
             document.getElementById('terminal-view').classList.add('hidden');
-            document.getElementById('section-checker').classList.add('hidden');
             document.getElementById('section-profile').classList.add('hidden');
             document.getElementById('section-guide').classList.add('hidden');
             document.getElementById('section-announcement').classList.add('hidden');
 
             if (viewName === 'generator') {
                 document.getElementById('terminal-view').classList.remove('hidden');
-            } else if (viewName === 'checker') {
-                document.getElementById('section-checker').classList.remove('hidden');
             } else if (viewName === 'profile') {
                 document.getElementById('section-profile').classList.remove('hidden');
             } else if (viewName === 'guide') {
@@ -763,7 +685,7 @@ const htmlTemplate = `
                     }
                     if (data.token) {
                         localStorage.setItem('authToken', data.token);
-                        localStorage.setItem('savedUsername', data.username);
+                        localStorage.setItem('authUsername', data.username);
                     }
                     alert(data.message);
                     loggedInUsername = data.username;
@@ -777,7 +699,7 @@ const htmlTemplate = `
                     
                     document.getElementById('profile-uname').innerText = data.username;
                     document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'Standard User');
-                    document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (data.defaultQuota + (data.bonusQuota || 0) - data.usedQuota);
+                    document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (3 + (data.bonusQuota || 0) - data.usedQuota);
 
                     document.getElementById('drawer-status-role').innerText = data.username + ' (' + (data.isAdmin ? 'Admin' : 'User') + ')';
                     document.getElementById('drawer-logout-btn').classList.remove('hidden');
@@ -792,7 +714,6 @@ const htmlTemplate = `
                         document.getElementById('role-badge').innerText = "👑 Admin Master";
                         document.getElementById('admin-control-panel').classList.remove('hidden');
                         document.getElementById('admin-announcement-panel').classList.remove('hidden');
-                        loadSystemSettings();
                         loadAdminRedeems();
                         loadAdminAnnouncements();
                         loadAdminVipList();
@@ -803,40 +724,6 @@ const htmlTemplate = `
             } catch (err) {
                 alert('Terjadi kesalahan koneksi server.');
             }
-        }
-
-        async function loadSystemSettings() {
-            if (!isAdminUser) return;
-            try {
-                const res = await fetch('/api/admin/get-settings?username=' + encodeURIComponent(loggedInUsername));
-                const data = await res.json();
-                if (data.success) {
-                    document.getElementById('input-default-quota').value = data.default_user_quota;
-                }
-            } catch(e) {}
-        }
-
-        async function handleUpdateDefaultQuota() {
-            if (!isAdminUser) return;
-            const newQuota = parseInt(document.getElementById('input-default-quota').value);
-            if (isNaN(newQuota) || newQuota < 0) return alert('Masukkan nilai kuota yang valid!');
-
-            try {
-                const res = await fetch('/api/admin/update-settings', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: loggedInUsername, default_quota: newQuota })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    const msgBox = document.getElementById('setting-success-msg');
-                    msgBox.innerText = data.message;
-                    msgBox.classList.remove('hidden');
-                    setTimeout(() => msgBox.classList.add('hidden'), 4000);
-                } else {
-                    alert(data.message);
-                }
-            } catch(e) { alert('Gagal memperbarui pengaturan kuota.'); }
         }
 
         async function triggerUpdateUsername() {
@@ -860,7 +747,7 @@ const htmlTemplate = `
                 if (response.ok && result.success) {
                     alert('Username berhasil diubah!');
                     loggedInUsername = result.newUsername;
-                    localStorage.setItem('savedUsername', loggedInUsername);
+                    localStorage.setItem('authUsername', loggedInUsername);
                     document.getElementById('logged-username').innerText = loggedInUsername;
                     document.getElementById('profile-uname').innerText = loggedInUsername;
                     document.getElementById('new-username-input').value = '';
@@ -868,6 +755,7 @@ const htmlTemplate = `
                     alert(result.message || 'Gagal mengubah username.');
                 }
             } catch (error) {
+                console.error('Terjadi kesalahan:', error);
                 alert('Terjadi kesalahan jaringan.');
             }
         }
@@ -876,7 +764,7 @@ const htmlTemplate = `
             if(data.isAdmin || data.isVip) {
                 document.getElementById('quota-display').innerText = "UNLIMITED (VIP/Admin)";
             } else {
-                document.getElementById('quota-display').innerText = data.usedQuota + "/" + data.defaultQuota + " (Bonus: +" + data.bonusQuota + ")";
+                document.getElementById('quota-display').innerText = data.usedQuota + "/3 (Bonus: +" + data.bonusQuota + ")";
             }
         }
 
@@ -940,7 +828,7 @@ const htmlTemplate = `
 
                 if (data.success && Object.keys(data.vipUsers).length > 0) {
                     for (let [uname, val] of Object.entries(data.vipUsers)) {
-                        container.innerHTML +="
+                        container.innerHTML += `
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
                                     <span class="text-amber-300 font-bold">${uname}</span>
@@ -948,14 +836,14 @@ const htmlTemplate = `
                                 </div>
                                 <button onclick="handleRemoveVip('${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded border border-rose-500/30">Hapus</button>
                             </div>
-                        ";
+                        `;
                     }
                 } else {
-                    container.innerHTML = "<p class="text-slate-500 italic">Tidak ada akun VIP aktif.</p>";
+                    container.innerHTML = '<p class="text-slate-500 italic">Tidak ada akun VIP aktif.</p>';
                 }
             } catch(e) {}
         }
-        
+
         async function handleRemoveVip(targetUser) {
             if (!confirm('Cabut status VIP untuk user ' + targetUser + '?')) return;
             try {
@@ -1239,69 +1127,9 @@ const htmlTemplate = `
             }
         }
 
-        async function handlePublicRequestMagic() {
-            const email = document.getElementById('public-check-email').value.trim();
-            const resultBox = document.getElementById('public-result-box');
-            const resultText = document.getElementById('public-result-text');
-
-            if (!email) return alert('Masukkan alamat Gmail Anda terlebih dahulu!');
-
-            resultBox.classList.remove('hidden');
-            resultText.innerText = "Mengirim Magic Link ke Gmail Anda...";
-
-            try {
-                const res = await fetch('/api/public/request-magic', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email })
-                });
-                const data = await res.json();
-
-                if (data.success) {
-                    resultText.innerText = "Magic link berhasil dikirim! Silakan cek kotak masuk Gmail Anda.";
-                    document.getElementById('public-verify-container').classList.remove('hidden');
-                } else {
-                    resultText.innerText = "Error: " + data.message;
-                }
-            } catch (err) {
-                resultText.innerText = "Error: " + err.message;
-            }
-        }
-
-        async function handlePublicVerifyAndAdd() {
-            const email = document.getElementById('public-check-email').value.trim();
-            const url = document.getElementById('public-magic-url').value.trim();
-            const resultBox = document.getElementById('public-result-box');
-            const resultText = document.getElementById('public-result-text');
-
-            if (!email || !url) return alert('Email dan Magic Link URL wajib diisi!');
-
-            resultBox.classList.remove('hidden');
-            resultText.innerText = "Memverifikasi magic link dan mendaftarkan Gmail...";
-
-            try {
-                const res = await fetch('/api/public/verify-and-add', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, url })
-                });
-                const data = await res.json();
-
-                if (data.success) {
-                    resultText.innerText = "SUKSES! Email " + email + " berhasil diverifikasi dan otomatis terdaftar ke dalam list AM Premium. ✅";
-                    document.getElementById('public-verify-container').classList.add('hidden');
-                    document.getElementById('public-magic-url').value = '';
-                } else {
-                    resultText.innerText = "Verifikasi Gagal: " + (data.message || JSON.stringify(data));
-                }
-            } catch (err) {
-                resultText.innerText = "Error: " + err.message;
-            }
-        }
-
         function handleLogout() {
             localStorage.removeItem('authToken');
-            localStorage.removeItem('savedUsername');
+            localStorage.removeItem('authUsername');
             sessionStorage.clear();
             window.location.reload();
         }
@@ -1337,7 +1165,7 @@ const server = http.createServer(async (req, res) => {
     const announcements = await getAllAnnouncementsFromDb();
     res.writeHead(200);
     res.end(JSON.stringify({ success: true, announcements }));
-  } else if (parsedUrl.pathname === '/api/check-session' && req.method === 'POST') {
+  } else if (parsedUrl.pathname === '/api/verify-session' && req.method === 'POST') {
     res.setHeader('Content-Type', 'application/json');
     let body = '';
     req.on('data', chunk => { body += chunk; });
@@ -1346,14 +1174,14 @@ const server = http.createServer(async (req, res) => {
         const { username, token } = JSON.parse(body);
         if (!username || !token) {
           res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Data tidak lengkap.' }));
+          res.end(JSON.stringify({ success: false }));
           return;
         }
 
         const cleanUser = username.toLowerCase();
-        const existingUser = await getUserFromDb(cleanUser);
+        const userObj = await getUserFromDb(cleanUser);
 
-        if (!existingUser) {
+        if (!userObj) {
           res.writeHead(404);
           res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
           return;
@@ -1361,33 +1189,31 @@ const server = http.createServer(async (req, res) => {
 
         const now = Date.now();
         const twentyFourHours = 24 * 60 * 60 * 1000;
-        if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
+        if (!userObj.lastResetTime) userObj.lastResetTime = now;
 
-        if (now - existingUser.lastResetTime >= twentyFourHours) {
-          existingUser.activatedEmails = [];
-          existingUser.lastResetTime = now;
-          await saveUserToDb(cleanUser, existingUser);
+        if (now - userObj.lastResetTime >= twentyFourHours) {
+          userObj.activatedEmails = [];
+          userObj.lastResetTime = now;
+          await saveUserToDb(cleanUser, userObj);
         }
 
-        const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
-        const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
-        const defaultQuota = await getSystemSettingFromDb('default_user_quota', 1);
+        const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+        const usedCount = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
 
         res.writeHead(200);
-        res.end(JSON.stringify({ 
-          success: true, 
-          username: cleanUser, 
-          isAdmin: existingUser.isAdmin, 
+        res.end(JSON.stringify({
+          success: true,
+          username: cleanUser,
+          isAdmin: userObj.isAdmin,
           usedQuota: usedCount,
-          bonusQuota: existingUser.bonusQuota || 0,
-          defaultQuota: defaultQuota,
+          bonusQuota: userObj.bonusQuota || 0,
           isVip: isVipActive,
-          vipUntil: existingUser.vipUntil || 0,
+          vipUntil: userObj.vipUntil || 0,
           serverStatus
         }));
       } catch (e) {
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: 'Kesalahan server.' }));
+        res.end(JSON.stringify({ success: false }));
       }
     });
   } else if (parsedUrl.pathname === '/api/user/username' && req.method === 'PUT') {
@@ -1429,39 +1255,6 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(500);
         res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan pada server.' }));
       }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/get-settings') {
-    res.setHeader('Content-Type', 'application/json');
-    const username = parsedUrl.searchParams.get('username');
-    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-    if (!userObj || !userObj.isAdmin) {
-      res.writeHead(403);
-      res.end(JSON.stringify({ success: false }));
-      return;
-    }
-    const defaultQuota = await getSystemSettingFromDb('default_user_quota', 1);
-    res.writeHead(200);
-    res.end(JSON.stringify({ success: true, default_user_quota: defaultQuota }));
-  } else if (parsedUrl.pathname === '/api/admin/update-settings' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, default_quota } = JSON.parse(body);
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!userObj || !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Akses ditolak.' }));
-          return;
-        }
-
-        const newQuota = parseInt(default_quota);
-        await saveSystemSettingToDb('default_user_quota', newQuota);
-
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: `Kuota default user baru berhasil diubah menjadi ${newQuota}` }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
     });
   } else if (parsedUrl.pathname === '/api/admin/set-status' && req.method === 'POST') {
     res.setHeader('Content-Type', 'application/json');
@@ -1644,7 +1437,7 @@ const server = http.createServer(async (req, res) => {
           claimedCount: 0,
           claimedUsers: []
         };
-        await saveRedeemFromDb(code, redeemData);
+        await saveRedeemToDb(code, redeemData);
 
         res.writeHead(200);
         res.end(JSON.stringify({ success: true, message: `Kode ${code} berhasil dibuat!` }));
@@ -1733,17 +1526,14 @@ const server = http.createServer(async (req, res) => {
         redeemObj.claimedUsers.push(cleanUser);
 
         await saveUserToDb(cleanUser, userObj);
-        await saveRedeemFromDb(code, redeemObj);
-
-        const defaultQuota = await getSystemSettingFromDb('default_user_quota', 1);
+        await saveRedeemToDb(code, redeemObj);
 
         res.writeHead(200);
         res.end(JSON.stringify({ 
           success: true, 
           message: `Berhasil klaim! Anda mendapatkan bonus ${rewardQuota} kuota.`,
           usedQuota: userObj.activatedEmails ? userObj.activatedEmails.length : 0,
-          bonusQuota: userObj.bonusQuota,
-          defaultQuota: defaultQuota
+          bonusQuota: userObj.bonusQuota
         }));
       } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
     });
@@ -1756,7 +1546,6 @@ const server = http.createServer(async (req, res) => {
         const { mode, username, password, email, deviceToken } = JSON.parse(body);
         const cleanUser = username.trim().toLowerCase();
         let existingUser = await getUserFromDb(cleanUser);
-        const defaultQuota = await getSystemSettingFromDb('default_user_quota', 1);
 
         if (mode === 'register') {
           if (cleanUser === 'adminbagus' || existingUser) {
@@ -1774,8 +1563,7 @@ const server = http.createServer(async (req, res) => {
             bonusQuota: 0, 
             lastResetTime: Date.now(),
             vipUntil: 0,
-            deviceToken: newDeviceToken,
-            quota: defaultQuota
+            deviceToken: newDeviceToken
           };
           await saveUserToDb(cleanUser, newUserData);
           
@@ -1789,7 +1577,6 @@ const server = http.createServer(async (req, res) => {
             isAdmin: false, 
             usedQuota: 0, 
             bonusQuota: 0,
-            defaultQuota: defaultQuota,
             isVip: false,
             serverStatus,
             deviceToken: newDeviceToken,
@@ -1819,7 +1606,6 @@ const server = http.createServer(async (req, res) => {
               isAdmin: existingUser.isAdmin, 
               usedQuota: usedCount,
               bonusQuota: existingUser.bonusQuota || 0,
-              defaultQuota: defaultQuota,
               isVip: isVipActive,
               vipUntil: existingUser.vipUntil || 0,
               serverStatus,
@@ -1865,8 +1651,7 @@ const server = http.createServer(async (req, res) => {
         if (!userObj.bonusQuota) userObj.bonusQuota = 0;
 
         const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
-        const defaultQuota = await getSystemSettingFromDb('default_user_quota', 1);
-        const maxAllowed = defaultQuota + userObj.bonusQuota;
+        const maxAllowed = 3 + userObj.bonusQuota;
 
         if (!userObj.isAdmin && !isVipActive) {
           if (!userObj.activatedEmails.includes(email) && userObj.activatedEmails.length >= maxAllowed) {
@@ -1887,7 +1672,7 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ 
           success: true, 
           result, 
-          quotaInfo: { usedQuota: userObj.activatedEmails.length, bonusQuota: userObj.bonusQuota, defaultQuota: defaultQuota } 
+          quotaInfo: { usedQuota: userObj.activatedEmails.length, bonusQuota: userObj.bonusQuota } 
         }));
       } catch (error) {
         res.writeHead(400);
@@ -1921,56 +1706,6 @@ const server = http.createServer(async (req, res) => {
       } catch (error) {
         res.writeHead(400);
         res.end(JSON.stringify({ error: error.message }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/public/request-magic' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { email } = JSON.parse(body);
-        if (!email) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Email wajib diisi.' }));
-          return;
-        }
-
-        const result = await am.magiclink(email);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, result }));
-      } catch (error) {
-        res.writeHead(400);
-        res.end(JSON.stringify({ success: false, message: error.message }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/public/verify-and-add' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { email, url } = JSON.parse(body);
-        if (!email || !url) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Email dan URL verifikasi wajib diisi.' }));
-          return;
-        }
-
-        const result = await am.verif(email, url);
-
-        await saveVerifiedAmUserToDb(email, {
-          email: email,
-          status_premium: 'ACTIVE',
-          verified_at: Date.now(),
-          apiResult: result
-        });
-
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, result }));
-      } catch (error) {
-        res.writeHead(400);
-        res.end(JSON.stringify({ success: false, message: error.message }));
       }
     });
   } else {
