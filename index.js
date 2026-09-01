@@ -940,7 +940,7 @@ const htmlTemplate = `
 
                 if (data.success && Object.keys(data.vipUsers).length > 0) {
                     for (let [uname, val] of Object.entries(data.vipUsers)) {
-                        container.innerHTML += `
+                        container.innerHTML +="
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
                                     <span class="text-amber-300 font-bold">${uname}</span>
@@ -948,14 +948,14 @@ const htmlTemplate = `
                                 </div>
                                 <button onclick="handleRemoveVip('${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded border border-rose-500/30">Hapus</button>
                             </div>
-                        `;
+                        ";
                     }
                 } else {
-                    container.innerHTML = '<p class="text-slate-500 italic">Tidak ada akun VIP aktif.</p>';
+                    container.innerHTML = "<p class="text-slate-500 italic">Tidak ada akun VIP aktif.</p>";
                 }
             } catch(e) {}
         }
-
+        
         async function handleRemoveVip(targetUser) {
             if (!confirm('Cabut status VIP untuk user ' + targetUser + '?')) return;
             try {
