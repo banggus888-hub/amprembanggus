@@ -1,13 +1,12 @@
 {
   "name": "amprem-vercel-app",
   "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "start": "node amprem.js"
-  },
   "dependencies": {
     "@xof/fetch": "latest",
     "express": "^4.19.2",
     "firebase": "^10.12.0"
   }
 }
+```[cite: 3]
+
+Setelah menghapus baris `"type": "module"`[cite: 3], simpan perubahannya, lakukan *commit* ulang ke repository, dan deploy kembali di Railway. Aplikasi kamu akan berjalan normal menggunakan sistem CommonJS standar.
