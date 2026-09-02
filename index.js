@@ -218,7 +218,7 @@ const htmlTemplate = `
         <header class="w-full flex items-center justify-between py-3 px-1 border-b border-white/5 mb-4">
             <div class="flex items-center gap-2">
                 <div class="p-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">⚡</div>
-                <span id="app-title-header" class="font-extrabold text-sm tracking-tight bg-gradient-to-r from-white to-emerald-400 bg-clip-text text-transparent cursor-pointer" onclick="switchView('generator')">AM Gateway</span>
+                <span id="app-title-header" class="font-extrabold text-sm tracking-tight bg-gradient-to-r from-white to-emerald-400 bg-clip-text text-transparent cursor-pointer" onclick="switchView('generator')">UPGRADE AM KE PREMIUM</span>
             </div>
             <!-- Tombol Menu Modern -->
             <button id="header-menu-btn" onclick="toggleMenu()" class="group relative p-2.5 rounded-2xl bg-slate-900/90 border border-emerald-500/20 hover:border-emerald-500/60 text-slate-200 transition-all duration-300 flex items-center justify-center w-11 h-11 shadow-[0_0_15px_rgba(16,185,129,0.1)] hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] hidden">
@@ -235,7 +235,7 @@ const htmlTemplate = `
             <div class="space-y-6">
                 <div class="flex items-center justify-between pb-4 border-b border-white/10">
                     <div class="flex items-center gap-2">
-                        <span class="text-xl">📂</span>
+                        <span class="text-xl"></span>
                         <h3 class="text-xs font-black uppercase tracking-widest text-emerald-400">Navigasi Fokus</h3>
                     </div>
                     <button onclick="toggleMenu()" class="w-8 h-8 rounded-xl bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white">✕</button>
@@ -243,16 +243,16 @@ const htmlTemplate = `
 
                 <nav class="space-y-2 text-xs font-semibold">
                     <button onclick="switchView('generator')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-500/10 hover:text-emerald-400 text-slate-300 transition text-left">
-                        <span>⚡</span> Generator Utama
+                        <span></span> Generator Utama
                     </button>
                     <button onclick="switchView('profile')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-500/10 hover:text-emerald-400 text-slate-300 transition text-left">
-                        <span>👤</span> Halaman Akun & Profil
+                        <span></span> Halaman Akun & Profil
                     </button>
                     <button onclick="switchView('guide')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-500/10 hover:text-emerald-400 text-slate-300 transition text-left">
-                        <span>📖</span> Panduan Penggunaan
+                        <span></span> Panduan Penggunaan
                     </button>
                     <button onclick="switchView('announcement')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-500/10 hover:text-emerald-400 text-slate-300 transition text-left">
-                        <span>📢</span> Informasi & Pengumuman
+                        <span></span> Informasi & Pengumuman
                     </button>
                 </nav>
             </div>
@@ -291,7 +291,7 @@ const htmlTemplate = `
                     <div class="space-y-1.5">
                         <label class="text-[11px] font-bold uppercase tracking-widest text-slate-400 pl-1">Username ID</label>
                         <div class="relative">
-                            <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-500 text-xs">👤</span>
+                            <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-500 text-xs"></span>
                             <input type="text" id="auth-username" placeholder="Masukkan username unik..." class="input-glow w-full pl-11 pr-4 py-3.5 rounded-2xl text-xs text-slate-200 font-medium placeholder:text-slate-600">
                         </div>
                     </div>
@@ -299,7 +299,7 @@ const htmlTemplate = `
                     <div class="space-y-1.5">
                         <label class="text-[11px] font-bold uppercase tracking-widest text-slate-400 pl-1">Security Password</label>
                         <div class="relative">
-                            <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-500 text-xs">🔒</span>
+                            <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-500 text-xs"></span>
                             <input type="password" id="auth-password" placeholder="••••••••" class="input-glow w-full pl-11 pr-4 py-3.5 rounded-2xl text-xs text-slate-200 font-medium placeholder:text-slate-600">
                         </div>
                     </div>
@@ -307,7 +307,7 @@ const htmlTemplate = `
                     <div id="email-field-container" class="space-y-1.5 hidden transition-all duration-300">
                         <label class="text-[11px] font-bold uppercase tracking-widest text-slate-400 pl-1">Recovery Email</label>
                         <div class="relative">
-                            <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-500 text-xs">✉️</span>
+                            <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-500 text-xs"></span>
                             <input type="email" id="auth-email" placeholder="nama@domain.com" class="input-glow w-full pl-11 pr-4 py-3.5 rounded-2xl text-xs text-slate-200 font-medium placeholder:text-slate-600">
                         </div>
                         <p class="text-[10px] text-amber-400/80 pl-1 pt-0.5">⚠️ Setiap perangkat/HP hanya diizinkan membuat 1 akun.</p>
@@ -315,7 +315,7 @@ const htmlTemplate = `
                 </div>
 
                 <button onclick="handleAuthAction()" id="auth-submit-btn" class="cyber-btn w-full py-4 rounded-2xl text-slate-950 font-extrabold text-xs uppercase tracking-widest flex items-center justify-center gap-2">
-                    <span>⚡</span> <span id="auth-btn-text">Masuk ke Terminal</span>
+                    <span></span> <span id="auth-btn-text">Masuk ke Terminal</span>
                 </button>
             </div>
 
@@ -349,20 +349,20 @@ const htmlTemplate = `
 
                 <div class="input-glow p-4 rounded-2xl flex items-center justify-between">
                     <div class="flex items-center gap-3">
-                        <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">🛡️</div>
+                        <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm"></div>
                         <div>
                             <p class="text-xs font-bold text-slate-200">Activation Quota</p>
                             <p class="text-[10px] text-slate-400">Reset otomatis setiap 24 Jam</p>
                         </div>
                     </div>
                     <div class="flex items-center gap-1.5 text-emerald-400 text-xs font-extrabold bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20 mono">
-                        <span>🔒</span> <span id="quota-display">0/3</span>
+                        <span></span> <span id="quota-display">0/3</span>
                     </div>
                 </div>
 
                 <!-- FORM GENERATOR UTAMA -->
                 <div class="space-y-4 pt-2 border-t border-white/10">
-                    <p class="text-xs font-extrabold text-emerald-400 flex items-center gap-1.5"><span>⚡</span> Panel Generator Token</p>
+                    <p class="text-xs font-extrabold text-emerald-400 flex items-center gap-1.5"><span></span> Panel Generator Token</p>
                     
                     <div class="space-y-1.5">
                         <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 pl-1">Email Target (Gmail)</label>
@@ -379,7 +379,7 @@ const htmlTemplate = `
                     </div>
 
                     <button onclick="handleActivate()" class="cyber-btn w-full py-4 rounded-2xl text-slate-950 font-extrabold text-xs uppercase tracking-widest flex items-center justify-center gap-2">
-                        <span>⚡</span> Aktivasi Token
+                        <span></span> Aktivasi Token
                     </button>
                 </div>
 
@@ -391,7 +391,7 @@ const htmlTemplate = `
             <!-- VIEW 3: HALAMAN PROFIL KHUSUS AKUN -->
             <div id="section-profile" class="glass-panel p-6 rounded-3xl space-y-5 hidden">
                 <div class="flex items-center justify-between pb-3 border-b border-white/10">
-                    <h2 class="text-xs font-extrabold text-emerald-400 flex items-center gap-2"><span>👤</span> Halaman Akun & Profil</h2>
+                    <h2 class="text-xs font-extrabold text-emerald-400 flex items-center gap-2"><span></span> Halaman Akun & Profil</h2>
                     <button onclick="switchView('generator')" class="text-[10px] text-slate-400 hover:text-white underline">← Kembali</button>
                 </div>
                 
@@ -413,7 +413,7 @@ const htmlTemplate = `
                 <!-- KLAIM KODE REDEEM -->
                 <div class="space-y-2.5 pt-2 border-t border-white/10">
                     <label class="text-[11px] font-bold tracking-wider text-slate-400 block flex items-center gap-1.5">
-                        <span>🎁</span> Klaim Kode Redeem Kuota
+                        <span></span> Klaim Kode Redeem Kuota
                     </label>
                     <div class="flex gap-2">
                         <input type="text" id="redeem-code-input" placeholder="KODE-XXXX..." class="input-glow flex-1 px-3.5 py-3 rounded-xl text-xs text-emerald-400 font-bold uppercase tracking-widest">
@@ -472,7 +472,7 @@ const htmlTemplate = `
             <!-- VIEW 4: HALAMAN PANDUAN PENGGUNAAN -->
             <div id="section-guide" class="glass-panel p-6 rounded-3xl space-y-4 hidden">
                 <div class="flex items-center justify-between pb-3 border-b border-white/10">
-                    <h2 class="text-xs font-extrabold text-emerald-400 flex items-center gap-2"><span>📖</span> Panduan Cara Menggunakan</h2>
+                    <h2 class="text-xs font-extrabold text-emerald-400 flex items-center gap-2"><span></span> Panduan Cara Menggunakan</h2>
                     <button onclick="switchView('generator')" class="text-[10px] text-slate-400 hover:text-white underline">← Kembali</button>
                 </div>
                 <ol class="list-decimal list-inside space-y-2 text-xs text-slate-300 leading-relaxed">
@@ -488,7 +488,7 @@ const htmlTemplate = `
             <!-- VIEW 5: HALAMAN INFORMASI & PENGUMUMAN -->
             <div id="section-announcement" class="glass-panel p-6 rounded-3xl space-y-4 hidden">
                 <div class="flex items-center justify-between pb-3 border-b border-white/10">
-                    <h2 class="text-xs font-extrabold text-cyan-400 flex items-center gap-2"><span>📢</span> Informasi & Pengumuman Resmi</h2>
+                    <h2 class="text-xs font-extrabold text-cyan-400 flex items-center gap-2"><span></span> Informasi & Pengumuman Resmi</h2>
                     <button onclick="switchView('generator')" class="text-[10px] text-slate-400 hover:text-white underline">← Kembali</button>
                 </div>
                 
@@ -631,6 +631,7 @@ const htmlTemplate = `
                     }
                     if (data.token) {
                         localStorage.setItem('authToken', data.token);
+                        localStorage.setItem('savedUsername', data.username);
                     }
                     alert(data.message);
                     loggedInUsername = data.username;
@@ -671,6 +672,54 @@ const htmlTemplate = `
             }
         }
 
+        async function checkSavedSession() {
+            const token = localStorage.getItem('authToken');
+            const savedUname = localStorage.getItem('savedUsername');
+            if (!token || !savedUname) return;
+
+            try {
+                const res = await fetch('/api/auth/session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: savedUname, token })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    loggedInUsername = data.username;
+                    isAdminUser = data.isAdmin;
+
+                    document.getElementById('auth-view').classList.add('hidden');
+                    document.getElementById('terminal-view').classList.remove('hidden');
+                    
+                    document.getElementById('header-menu-btn').classList.remove('hidden');
+                    document.getElementById('logged-username').innerText = data.username;
+                    
+                    document.getElementById('profile-uname').innerText = data.username;
+                    document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'Standard User');
+                    document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (3 + (data.bonusQuota || 0) - data.usedQuota);
+
+                    document.getElementById('drawer-status-role').innerText = data.username + ' (' + (data.isAdmin ? 'Admin' : 'User') + ')';
+                    document.getElementById('drawer-logout-btn').classList.remove('hidden');
+
+                    updateQuotaDisplay(data);
+                    checkVipStatus(data);
+                    loadUserAnnouncements();
+                    updateStatusUI(data.serverStatus);
+
+                    if(data.isAdmin) {
+                        document.getElementById('role-badge').className = "px-2.5 py-1 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-extrabold";
+                        document.getElementById('role-badge').innerText = "👑 Admin Master";
+                        document.getElementById('admin-control-panel').classList.remove('hidden');
+                        document.getElementById('admin-announcement-panel').classList.remove('hidden');
+                        loadAdminRedeems();
+                        loadAdminAnnouncements();
+                        loadAdminVipList();
+                    }
+                }
+            } catch (e) {}
+        }
+        checkSavedSession();
+
         async function triggerUpdateUsername() {
             const newUsername = document.getElementById('new-username-input').value.trim();
             if (!newUsername) return alert('Masukkan username baru!');
@@ -692,6 +741,7 @@ const htmlTemplate = `
                 if (response.ok && result.success) {
                     alert('Username berhasil diubah!');
                     loggedInUsername = result.newUsername;
+                    localStorage.setItem('savedUsername', loggedInUsername);
                     document.getElementById('logged-username').innerText = loggedInUsername;
                     document.getElementById('profile-uname').innerText = loggedInUsername;
                     document.getElementById('new-username-input').value = '';
@@ -1073,6 +1123,7 @@ const htmlTemplate = `
 
         function handleLogout() {
             localStorage.removeItem('authToken');
+            localStorage.removeItem('savedUsername');
             sessionStorage.clear();
             window.location.reload();
         }
@@ -1428,6 +1479,55 @@ const server = http.createServer(async (req, res) => {
           bonusQuota: userObj.bonusQuota
         }));
       } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
+    });
+  } else if (parsedUrl.pathname === '/api/auth/session' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, token } = JSON.parse(body);
+        if (!username || !token) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false }));
+          return;
+        }
+        const cleanUser = username.toLowerCase();
+        const existingUser = await getUserFromDb(cleanUser);
+        if (!existingUser) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ success: false }));
+          return;
+        }
+
+        const now = Date.now();
+        const twentyFourHours = 24 * 60 * 60 * 1000;
+        if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
+
+        if (now - existingUser.lastResetTime >= twentyFourHours) {
+          existingUser.activatedEmails = [];
+          existingUser.lastResetTime = now;
+          await saveUserToDb(cleanUser, existingUser);
+        }
+
+        const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
+        const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ 
+          success: true, 
+          username: cleanUser, 
+          isAdmin: existingUser.isAdmin, 
+          usedQuota: usedCount,
+          bonusQuota: existingUser.bonusQuota || 0,
+          isVip: isVipActive,
+          vipUntil: existingUser.vipUntil || 0,
+          serverStatus
+        }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false }));
+      }
     });
   } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
     res.setHeader('Content-Type', 'application/json');
