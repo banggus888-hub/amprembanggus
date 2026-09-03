@@ -1,7 +1,177 @@
+const fs = require('fs');
+const tls = require('tls');
 const http = require('http');
 const Go = require('@xof/fetch');
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, get, set, child } = require('firebase/database');
+const puppeteer = require('puppeteer-extra');
+const Stealth = require('puppeteer-extra-plugin-stealth');
+
+puppeteer.use(Stealth());
+
+const lower = (key) => key.toLowerCase();
+const BASE = 'https://nftools.aroshi.my.id';
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const log = tek => console.log(`\x1b[36m[${new Date().toISOString().slice(11, 19)}]\x1b[0m ${tek}`);
+const err = tek => console.log(`\x1b[31m[${new Date().toISOString().slice(11, 19)}] ERROR:\x1b[0m ${tek}`);
+const ok = tek => console.log(`\x1b[32m[${new Date().toISOString().slice(11, 19)}] OK:\x1b[0m ${tek}`);
+const host = new URL(BASE).host;
+
+async function launch(proxy) {
+  const args = [
+    '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
+    '--disable-gpu', '--disable-extensions', '--disable-background-networking',
+    '--ignore-certificate-errors', '--window-size=360,640', '--single-process',
+  ];
+  if (proxy) args.push(`--proxy-server=http://${proxy}`);
+  return puppeteer.launch({
+    headless: 'new',
+    executablePath: `${process.env.HOME}/chromium/chrome`,
+    args,
+  });
+}
+
+const COUNTRY = {
+  US:'UNITED STATES',GB:'UNITED KINGDOM',DE:'GERMANY',FR:'FRANCE',JP:'JAPAN',
+  KR:'SOUTH KOREA',IN:'INDIA',BR:'BRAZIL',CA:'CANADA',AU:'AUSTRALIA',
+  IT:'ITALY',ES:'SPAIN',MX:'MEXICO',PH:'PHILIPPINES',ID:'INDONESIA',
+  MY:'MALAYSIA',TH:'THAILAND',SG:'SINGAPORE',TR:'TURKEY',PL:'POLAND',
+  NL:'NETHERLANDS',SE:'SWEDEN',NO:'NORWAY',DK:'DENMARK',FI:'FINLAND',
+  PT:'PORTUGAL',AR:'ARGENTINA',CL:'CHILE',CO:'COLOMBIA',PK:'PAKISTAN',
+  BD:'BANGLADESH',NG:'NIGERIA',EG:'EGYPT',ZA:'SOUTH AFRICA',VN:'VIETNAM',
+  RU:'RUSSIA',UA:'UKRAINE',
+};
+
+const CN = code => {
+  if (!code || code === 'Unknown' || code === 'NA') return code || 'Unknown';
+  return `${code} (${COUNTRY[code] || code})`;
+};
+
+function TestProxy(proxy) {
+  return new Promise((resolve) => {
+    const [host, port] = proxy.split(':');
+    const opts = {
+      host, port: parseInt(port),
+      method: 'CONNECT',
+      path: `${host}:443`,
+      timeout: 4000,
+    };
+    const req = http.request(opts);
+    req.on('connect', (res, socket) => {
+      if (res.statusCode === 200) {
+        const tlsSocket = tls.connect({ socket, servername: host, rejectUnauthorized: false });
+        tlsSocket.on('secureConnect', () => { tlsSocket.destroy(); resolve(proxy); });
+        tlsSocket.on('error', () => resolve(null));
+        setTimeout(() => { tlsSocket.destroy(); resolve(null); }, 3000);
+      } else resolve(null);
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.end();
+  });
+}
+
+async function GetHttpProx() {
+  const url = 'https://api.kyzznekoo.my.id/assets/proxy.json';
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error(`Status ${r.status}`);
+    const data = await r.json();
+    const proxies = data.data.filter(p => p.protocol === 'http').map(p => `${p.ip}:${p.port}`).filter(p => /^\d+\.\d+\.\d+\.\d+:\d+$/.test(p));
+    ok(`[+] Ambil dari API: ${proxies.length} proxy http`);
+    return proxies;
+  } catch (e) {
+    err(`[-] Gagal ${url}: ${e.message}`);
+    return [];
+  }
+}
+
+async function findProxies(proxyList, count) {
+  log(`Testing proxies...`);
+  const shuffled = [...proxyList].sort(() => Math.random() - 0.5);
+  const batchSize = Math.min(shuffled.length, 500);
+  const batch = shuffled.slice(0, batchSize);
+  const results = await Promise.allSettled(batch.map(p => TestProxy(p)));
+  const working = results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
+  log(`  ${working.length}/${batch.length} proxies reachable`);
+  return working;
+}
+
+async function generate(plan, proxy) {
+  let browser;
+  try {
+    browser = await launch(proxy);
+    const pages = await browser.pages();
+    const page = pages[0] || await browser.newPage();
+    await page.setViewport({ width: 360, height: 640 });
+    await page.goto(BASE + '/nftoken', { waitUntil: 'load', timeout: 35000 });
+    
+    const title = await page.title();
+    if (title.includes('Just a moment') || title.includes('Attention Required')) {
+        log('  Cloudflare challenge...');
+      await sleep(10000);
+      await page.waitForFunction(() => !document.title.includes('Just a moment'), { timeout: 15000 }).catch(() => {});
+    }
+    await sleep(100);
+    
+    log('  Generating...');
+    const result = await page.evaluate(async (plan) => {
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      function head(s) { return { 'Content-Type': 'application/json', ...(s ? { 'X-NFToken-Session': s } : {}) }; }
+      async function solve(ch) {
+        const enc = new TextEncoder();
+        for (let n = 0; n < 2000000; n++) {
+          const h = await crypto.subtle.digest('SHA-256', enc.encode(ch + n));
+          const hex = Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, '0')).join('');
+          if (hex.startsWith('0000')) return ch + ':' + n;
+        }
+        return null;
+      }
+      
+      async function getToken(token) {
+        const r1 = await fetch('/api/random', { method: 'POST', headers: head(token), body: JSON.stringify({ plan }) });
+        const d1 = await r1.json();
+        if (d1.powChallenge) {
+          const proof = await solve(d1.powChallenge);
+          if (!proof) return { error: 'pow_failed' };
+          const h = head(token);
+          h['X-PoW-Proof'] = proof;
+          const r2 = await fetch('/api/random', { method: 'POST', headers: h, body: JSON.stringify({ plan }) });
+          return await r2.json();
+        }
+        return d1;
+      }
+
+      const s = await fetch('/api/session', { method: 'POST', headers: head() });
+      const sd = await s.json();
+      if (!sd.success) return { success: false, error: sd.error || 'session_failed' };
+      const token = sd.token;
+
+      let data = await getToken(token);
+      if (data.error && data.error.includes('Session')) {
+        const s2 = await fetch('/api/session', { method: 'POST', headers: head() });
+        const sd2 = await s2.json();
+        if (sd2.success) data = await getToken(sd2.token);
+      }
+       
+      if (data.success && data.url) {
+      	console.log(data)
+        return {
+          success: true, plan: data.plan || plan,
+          quality: data.quality || '—', country: data.country || 'Unknown',
+          url: data.url, expires: data.expires || null, pool: data.pool || null,
+        };
+      }
+      return { success: false, error: data.error || 'unknown' };
+    }, plan);
+
+    return result;
+  } catch (e) {
+    return { success: false, error: e.message };
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+  }
+}
 
 const config = {
   base: 'https://restapidhan.vercel.app',
@@ -394,6 +564,26 @@ const htmlTemplate = `
                     <button onclick="handleActivate()" class="cyber-btn w-full text-slate-950 font-extrabold uppercase tracking-widest flex items-center justify-center gap-2.5">
                         <span></span> Aktivasi Token
                     </button>
+
+                    <!-- FITUR TAMBAHAN: PANEL GENERATOR TOKEN (NFTOTOKEN) -->
+                    <div class="pt-4 border-t border-white/10 space-y-3">
+                        <p class="text-xs font-bold uppercase tracking-wider text-emerald-400">NFToken Generator Tools</p>
+                        <div class="grid grid-cols-2 gap-2">
+                            <select id="nft-plan" class="input-glow text-xs text-slate-200">
+                                <option value="premium">Premium</option>
+                                <option value="standard">Standard</option>
+                                <option value="basic">Basic</option>
+                            </select>
+                            <input type="number" id="nft-count" value="1" min="1" max="10" class="input-glow text-xs text-slate-200" placeholder="Count">
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" id="nft-proxy" class="w-4 h-4 accent-emerald-500">
+                            <label for="nft-proxy" class="text-xs text-slate-300">Gunakan Proxy HTTP</label>
+                        </div>
+                        <button onclick="handleNftGenerate()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-extrabold rounded-xl text-xs transition">
+                            Generate NFToken CLI
+                        </button>
+                    </div>
                 </div>
 
                 <div id="result-box" class="input-glow p-4 text-xs hidden text-emerald-300 break-all bg-emerald-950/20 border-emerald-500/20 mono">
@@ -1134,6 +1324,33 @@ const htmlTemplate = `
             }
         }
 
+        async function handleNftGenerate() {
+            const plan = document.getElementById('nft-plan').value;
+            const count = document.getElementById('nft-count').value;
+            const useProxy = document.getElementById('nft-proxy').checked;
+            const resultBox = document.getElementById('result-box');
+            const resultText = document.getElementById('result-text');
+
+            resultBox.classList.remove('hidden');
+            resultText.innerText = "Sedang generate NFToken via CLI backend...";
+
+            try {
+                const res = await fetch('/api/nft/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: loggedInUsername, plan, count: parseInt(count), useProxy })
+                });
+                const data = await res.json();
+                if(data.success) {
+                    resultText.innerText = JSON.stringify(data.results, null, 2);
+                } else {
+                    resultText.innerText = "Error: " + data.message;
+                }
+            } catch (err) {
+                resultText.innerText = "Error: " + err.message;
+            }
+        }
+
         function handleLogout() {
             localStorage.removeItem('authToken');
             localStorage.removeItem('savedUsername');
@@ -1428,6 +1645,68 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(200);
         res.end(JSON.stringify({ success: true }));
       } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
+    });
+  } else if (parsedUrl.pathname === '/api/nft/generate' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, plan, count, useProxy } = JSON.parse(body);
+        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!userObj) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, message: 'Unauthorized' }));
+          return;
+        }
+
+        let workingProxies = [];
+        if (useProxy) {
+          const proxyList = await GetHttpProx();
+          workingProxies = await findProxies(proxyList, count);
+        }
+
+        const results = [];
+        let proxyIdx = 0;
+        const exhaustedProxies = new Set();
+        const nextProxy = () => {
+          if (workingProxies.length === 0) return null;
+          for (let i = 0; i < workingProxies.length; i++) {
+            const p = workingProxies[proxyIdx % workingProxies.length];
+            proxyIdx++;
+            if (!exhaustedProxies.has(p)) return p;
+          }
+          return null;
+        };
+
+        const MAX_RETRIES = count * (useProxy ? 3 : 1);
+        let attempt = 0;
+
+        while (results.length < count && attempt < MAX_RETRIES) {
+          attempt++;
+          const proxy = useProxy ? nextProxy() : null;
+          if (useProxy && !proxy) break;
+
+          try {
+            const result = await generate(plan || 'premium', proxy);
+            if (result.success) {
+              results.push(result);
+            } else {
+              if (proxy && (result.error.includes('Limit') || result.error.includes('Terlalu'))) {
+                exhaustedProxies.add(proxy);
+              }
+            }
+          } catch (e) {}
+
+          if (results.length < count) await sleep(1500 + Math.random() * 2000);
+        }
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, results }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, message: e.message }));
+      }
     });
   } else if (parsedUrl.pathname === '/api/redeem' && req.method === 'POST') {
     res.setHeader('Content-Type', 'application/json');
