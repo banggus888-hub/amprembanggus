@@ -272,7 +272,7 @@ const htmlTemplate = `
             <div class="space-y-6">
                 <div class="flex items-center justify-between pb-4 border-b border-purple-500/20">
                     <div class="flex items-center gap-2">
-                        <h3 class="text-sm font-black uppercase tracking-widest text-purple-400">Navigasi Fokus</h3>
+                        <h3 class="text-sm font-black uppercase tracking-widest text-purple-400">MENU DASBOARD</h3>
                     </div>
                     <button onclick="toggleMenu()" class="w-10 h-10 rounded-xl bg-purple-950/50 border border-purple-500/30 flex items-center justify-center text-slate-300 hover:text-white text-base">✕</button>
                 </div>
@@ -419,7 +419,7 @@ const htmlTemplate = `
                     </div>
 
                     <button onclick="handleActivate()" class="cyber-btn-green w-full text-slate-950 font-extrabold flex items-center justify-center gap-2">
-                        <span>✓</span> Verify
+                        <span>✓</span> Verifikasi
                     </button>
                 </div>
 
@@ -1182,8 +1182,8 @@ const htmlTemplate = `
                 const data = await res.json();
 
                 if(data.success) {
-                    sendText.innerText = "Send";
-                    sendIcon.innerText = "📤";
+                    sendText.innerText = "KIRIM";
+                    sendIcon.innerText = "🚀";
                     resultText.innerText = JSON.stringify(data.result, null, 2);
 
                     if(!isAdminUser && data.quotaInfo) {
