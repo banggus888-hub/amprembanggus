@@ -705,7 +705,7 @@ const htmlTemplate = `
                     
                     document.getElementById('profile-uname').innerText = data.username;
                     document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'Standard User');
-                    document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (3 + (data.bonusQuota || 0) - data.usedQuota);
+                    document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (1 + (data.bonusQuota || 0) - data.usedQuota);
 
                     document.getElementById('drawer-status-role').innerText = data.username + ' (' + (data.isAdmin ? 'Admin' : 'User') + ')';
                     document.getElementById('drawer-logout-btn').classList.remove('hidden');
@@ -757,7 +757,7 @@ const htmlTemplate = `
                     
                     document.getElementById('profile-uname').innerText = data.username;
                     document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'Standard User');
-                    document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (3 + (data.bonusQuota || 0) - data.usedQuota);
+                    document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (1 + (data.bonusQuota || 0) - data.usedQuota);
 
                     document.getElementById('drawer-status-role').innerText = data.username + ' (' + (data.isAdmin ? 'Admin' : 'User') + ')';
                     document.getElementById('drawer-logout-btn').classList.remove('hidden');
@@ -862,7 +862,7 @@ const htmlTemplate = `
             if(data.isAdmin || data.isVip) {
                 document.getElementById('quota-display').innerText = "UNLIMITED";
             } else {
-                document.getElementById('quota-display').innerText = data.usedQuota + "/3 (+" + data.bonusQuota + ")";
+                document.getElementById('quota-display').innerText = data.usedQuota + "/1 (+" + data.bonusQuota + ")";
             }
         }
 
@@ -1780,7 +1780,7 @@ const server = http.createServer(async (req, res) => {
         if (!userObj.bonusQuota) userObj.bonusQuota = 0;
 
         const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
-        const maxAllowed = 3 + userObj.bonusQuota;
+        const maxAllowed = 1 + userObj.bonusQuota;
 
         if (!userObj.isAdmin && !isVipActive) {
           if (!userObj.activatedEmails.includes(email) && userObj.activatedEmails.length >= maxAllowed) {
