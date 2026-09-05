@@ -146,7 +146,7 @@ const htmlTemplate = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AM Premium • Cyber Gateway</title>
+    <title>AM Premium Banggus</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -255,7 +255,7 @@ const htmlTemplate = `
         <header class="w-full flex items-center justify-between py-3 px-2 border-b border-purple-500/10 mb-4">
             <div class="flex items-center gap-3">
                 <div class="p-2.5 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-400 text-base">⚡</div>
-                <span id="app-title-header" class="font-extrabold text-sm tracking-tight bg-gradient-to-r from-white to-purple-400 bg-clip-text text-transparent cursor-pointer" onclick="switchView('generator')">AM PREMIUM GATEWAY</span>
+                <span id="app-title-header" class="font-extrabold text-sm tracking-tight bg-gradient-to-r from-white to-purple-400 bg-clip-text text-transparent cursor-pointer" onclick="switchView('generator')">UPGRADE AM MENJADI PREMIUM</span>
             </div>
             <!-- Tombol Menu Modern -->
             <button id="header-menu-btn" onclick="toggleMenu()" class="group relative p-3 rounded-2xl bg-slate-900/90 border border-purple-500/20 hover:border-purple-500/60 text-slate-200 transition-all duration-300 flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.1)] hover:shadow-[0_0_20px_rgba(168,85,247,0.3)] hidden" style="width: 3.25rem; height: 3.25rem;">
@@ -336,7 +336,7 @@ const htmlTemplate = `
 
                     <div id="email-field-container" class="space-y-1.5 hidden transition-all duration-300">
                         <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-2">Recovery Email</label>
-                        <input type="email" id="auth-email" placeholder="nama@domain.com" class="input-glow w-full text-slate-200 font-medium placeholder:text-slate-600">
+                        <input type="email" id="auth-email" placeholder="Masukan Gmail Anda" class="input-glow w-full text-slate-200 font-medium placeholder:text-slate-600">
                         <p class="text-[10px] text-amber-400/90 pl-2 pt-0.5">⚠️ Setiap perangkat/HP hanya diizinkan membuat 1 akun.</p>
                     </div>
                 </div>
@@ -400,19 +400,19 @@ const htmlTemplate = `
                     <!-- Kirim ke Alight Motion -->
                     <div class="space-y-1.5">
                         <label class="text-xs font-bold text-purple-300 flex items-center gap-2 pl-1">
-                            <span>✈️</span> Kirim ke Alight Motion
+                            <span>✉️</span> Kirim ke Alight Motion
                         </label>
-                        <input type="email" id="target-email" placeholder="masha2091082@gmail.com" class="input-glow w-full text-slate-200">
+                        <input type="email" id="target-email" placeholder="contoh@gmail.com" class="input-glow w-full text-slate-200">
                     </div>
 
                     <button id="btn-send" onclick="handleSendEmail()" class="cyber-btn w-full text-white font-extrabold flex items-center justify-center gap-2">
-                        <span id="send-icon">📤</span> <span id="send-text">Send</span>
+                        <span id="send-icon">🚀</span> <span id="send-text">Kirim</span>
                     </button>
 
                     <!-- Verify Section -->
                     <div class="space-y-3 pt-2">
                         <label class="text-xs font-bold text-emerald-400 flex items-center gap-2 pl-1">
-                            <span>✅</span> Verify
+                            <span>✅</span> Verifikasi
                         </label>
                         
                         <input type="text" id="magic-url" placeholder="https://alight-creative.firebaseapp.com/_..." class="input-glow w-full text-emerald-300 font-medium text-xs placeholder:text-slate-600">
@@ -558,7 +558,7 @@ const htmlTemplate = `
             </div>
 
             <div class="text-center pt-1">
-                <p class="text-[10px] text-slate-500 tracking-wider font-medium">AM Premium • Secure Gateway v2.6</p>
+                <p class="text-[10px] text-slate-500 tracking-wider font-medium">AM Premium • By Banggus</p>
             </div>
         </div>
     </div>
