@@ -115,7 +115,7 @@ async function getVideoFromDb() {
   const dbRef = ref(db);
   const snapshot = await get(child(dbRef, `settings/featuredVideo`));
   if (snapshot.exists()) return snapshot.val();
-  return 'https://assets.mixkit.co/videos/preview/mixkit-digital-animation-of-screens-and-lights-31910-large.mp4'; // Default video
+  return 'https://assets.mixkit.co/videos/preview/mixkit-digital-animation-of-screens-and-lights-31910-large.mp4';
 }
 
 async function saveVideoToDb(videoUrl) {
@@ -146,7 +146,7 @@ const htmlTemplate = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AM Premium • Cyber Gateway</title>
+    <title>AM Premium • By Banggus</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -255,7 +255,7 @@ const htmlTemplate = `
         <header class="w-full flex items-center justify-between py-3 px-2 border-b border-purple-500/10 mb-4">
             <div class="flex items-center gap-3">
                 <div class="p-2.5 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-400 text-base">⚡</div>
-                <span id="app-title-header" class="font-extrabold text-sm tracking-tight bg-gradient-to-r from-white to-purple-400 bg-clip-text text-transparent cursor-pointer" onclick="switchView('generator')">AM PREMIUM GATEWAY</span>
+                <span id="app-title-header" class="font-extrabold text-sm tracking-tight bg-gradient-to-r from-white to-purple-400 bg-clip-text text-transparent cursor-pointer" onclick="switchView('generator')">UPGRADE AM MENJADI PREMIUM</span>
             </div>
             <!-- Tombol Menu Modern -->
             <button id="header-menu-btn" onclick="toggleMenu()" class="group relative p-3 rounded-2xl bg-slate-900/90 border border-purple-500/20 hover:border-purple-500/60 text-slate-200 transition-all duration-300 flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.1)] hover:shadow-[0_0_20px_rgba(168,85,247,0.3)] hidden" style="width: 3.25rem; height: 3.25rem;">
@@ -289,6 +289,10 @@ const htmlTemplate = `
                     </button>
                     <button onclick="switchView('announcement')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
                         Informasi & Pengumuman
+                    </button>
+                    <!-- FITUR PANEL ADMIN (Hanya bisa dilihat oleh admin) -->
+                    <button id="nav-admin-panel-btn" onclick="switchView('admin-panel')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 text-amber-400 transition text-left hidden">
+                        👑 Panel Admin
                     </button>
                 </nav>
             </div>
@@ -349,7 +353,7 @@ const htmlTemplate = `
             <!-- VIEW 2: HALAMAN UTAMA / GENERATOR -->
             <div id="terminal-view" class="space-y-4 hidden">
                 
-                <!-- BANNER VIDEO UTAMA (BISA DIUBAH ADMIN) -->
+                <!-- BANNER VIDEO UTAMA -->
                 <div class="w-full h-44 rounded-2xl overflow-hidden relative border border-purple-500/30 shadow-[0_0_25px_rgba(168,85,247,0.2)] bg-black">
                     <video id="main-display-video" src="" autoplay loop muted playsinline class="w-full h-full object-cover"></video>
                     <div class="absolute inset-0 bg-gradient-to-t from-[#0b0614] via-transparent to-transparent opacity-60 pointer-events-none"></div>
@@ -397,22 +401,20 @@ const htmlTemplate = `
                 <!-- FORM GENERATOR UTAMA -->
                 <div class="glass-panel space-y-3.5">
                     
-                    <!-- Kirim ke Alight Motion -->
                     <div class="space-y-1.5">
                         <label class="text-xs font-bold text-purple-300 flex items-center gap-2 pl-1">
-                            <span>✈️</span> Kirim ke Alight Motion
+                            <span>✉️</span> Kirim ke Alight Motion
                         </label>
-                        <input type="email" id="target-email" placeholder="masha2091082@gmail.com" class="input-glow w-full text-slate-200">
+                        <input type="email" id="target-email" placeholder="contoh@gmail.com" class="input-glow w-full text-slate-200">
                     </div>
 
                     <button id="btn-send" onclick="handleSendEmail()" class="cyber-btn w-full text-white font-extrabold flex items-center justify-center gap-2">
-                        <span id="send-icon">📤</span> <span id="send-text">Send</span>
+                        <span id="send-icon">🚀</span> <span id="send-text">KIRIM</span>
                     </button>
 
-                    <!-- Verify Section -->
                     <div class="space-y-3 pt-2">
                         <label class="text-xs font-bold text-emerald-400 flex items-center gap-2 pl-1">
-                            <span>✅</span> Verify
+                            <span>✅</span> Verifikasi
                         </label>
                         
                         <input type="text" id="magic-url" placeholder="https://alight-creative.firebaseapp.com/_..." class="input-glow w-full text-emerald-300 font-medium text-xs placeholder:text-slate-600">
@@ -441,7 +443,6 @@ const htmlTemplate = `
                     <p>Sisa Kuota Aktif: <strong id="profile-quota" class="text-cyan-400">0</strong></p>
                 </div>
 
-                <!-- UBAH USERNAME -->
                 <div class="space-y-2 pt-2 border-t border-purple-500/10">
                     <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-1">Ganti Username Akun</label>
                     <div class="flex gap-2">
@@ -450,7 +451,6 @@ const htmlTemplate = `
                     </div>
                 </div>
 
-                <!-- KLAIM KODE REDEEM -->
                 <div class="space-y-2 pt-2 border-t border-purple-500/10">
                     <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-1">Klaim Kode Redeem Kuota</label>
                     <div class="flex gap-2">
@@ -458,26 +458,37 @@ const htmlTemplate = `
                         <button onclick="handleRedeemCode()" class="px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-full text-xs transition">Klaim</button>
                     </div>
                 </div>
+            </div>
 
-                <!-- ADMIN CONTROL PANEL -->
-                <div id="admin-control-panel" class="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3.5 hidden">
-                    <p class="text-xs font-extrabold text-amber-400 flex items-center gap-2">
-                        <span>👑</span> Admin Master Control Panel
-                    </p>
-                    <div class="grid grid-cols-2 gap-2">
-                        <button onclick="changeServerState('online')" class="py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 rounded-full text-[11px] text-emerald-300 font-bold transition">🟢 Online</button>
-                        <button onclick="changeServerState('offline')" class="py-2.5 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 rounded-full text-[11px] text-rose-300 font-bold transition">🔴 Offline</button>
+            <!-- VIEW: PANEL ADMIN (Pindahan Semua Fitur Admin) -->
+            <div id="section-admin-panel" class="glass-panel space-y-5 hidden">
+                <div class="flex items-center justify-between pb-3 border-b border-amber-500/30">
+                    <h2 class="text-xs font-extrabold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                        <span>👑</span> Panel Admin Terpusat
+                    </h2>
+                    <button onclick="switchView('generator')" class="text-xs text-slate-400 hover:text-white underline">← Kembali</button>
+                </div>
+
+                <div class="space-y-4">
+                    <!-- Status Server -->
+                    <div class="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3">
+                        <p class="text-xs font-extrabold text-amber-400">Kontrol Status Server</p>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="changeServerState('online')" class="py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 rounded-full text-[11px] text-emerald-300 font-bold transition">🟢 Online</button>
+                            <button onclick="changeServerState('offline')" class="py-2.5 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 rounded-full text-[11px] text-rose-300 font-bold transition">🔴 Offline</button>
+                        </div>
                     </div>
 
-                    <!-- FITUR UBAH VIDEO KHUSUS ADMIN -->
-                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
-                        <p class="text-[11px] text-amber-300 font-bold">Ubah Video Tampilan Utama (Upload File):</p>
+                    <!-- Ubah Video -->
+                    <div class="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3">
+                        <p class="text-xs font-extrabold text-amber-400">Ubah Video Tampilan Utama (Upload File)</p>
                         <input type="file" id="admin-video-file" accept="video/*" class="w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer">
                         <button onclick="handleUploadVideo()" id="btn-upload-video" class="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-full text-xs transition">Upload & Perbarui Video</button>
                     </div>
 
-                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
-                        <p class="text-[11px] text-amber-300 font-bold">Pengaturan VIP User (Jumlah Hari):</p>
+                    <!-- Pengaturan VIP User -->
+                    <div class="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3">
+                        <p class="text-xs font-extrabold text-amber-400">Pengaturan VIP User (Jumlah Hari)</p>
                         <input type="text" id="vip-target-user" placeholder="Username Target..." class="input-glow w-full px-4 py-2.5 text-slate-200 text-xs">
                         <div class="flex gap-2">
                             <input type="number" id="vip-duration-days" placeholder="Jumlah Hari (Cth: 30)" class="input-glow flex-1 px-4 py-2.5 text-slate-200 text-xs">
@@ -492,23 +503,38 @@ const htmlTemplate = `
                         </div>
                     </div>
 
-                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
-                        <p class="text-[11px] text-amber-300 font-bold">Buat Kode Redeem Random:</p>
+                    <!-- Buat Kode Redeem -->
+                    <div class="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3">
+                        <p class="text-xs font-extrabold text-amber-400">Buat Kode Redeem Random</p>
                         <input type="text" id="gen-code" placeholder="Nama Kode (Cth: BONUSRAYA)" class="input-glow w-full px-4 py-2.5 text-slate-200 uppercase text-xs">
                         <div class="grid grid-cols-2 gap-2">
                             <input type="number" id="gen-total-quota" placeholder="Total Kuota" class="input-glow px-4 py-2.5 text-slate-200 text-xs">
                             <input type="number" id="gen-max-claims" placeholder="Maks Orang" class="input-glow px-4 py-2.5 text-slate-200 text-xs">
                         </div>
                         <button onclick="handleCreateRedeem()" class="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-full text-xs transition">Generate Kode Redeem</button>
+                        <div class="border-t border-amber-500/20 pt-2 space-y-1">
+                            <div class="flex justify-between items-center text-[10px] text-amber-300">
+                                <span>Daftar Kode Aktif:</span>
+                                <button onclick="loadAdminRedeems()" class="text-slate-400 hover:text-white underline">Refresh</button>
+                            </div>
+                            <div id="admin-redeem-list" class="space-y-1.5 max-h-28 overflow-y-auto text-[11px]">
+                                <p class="text-slate-500 italic">Memuat...</p>
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
-                        <div class="flex justify-between items-center text-[10px] text-amber-300">
-                            <span>Daftar Kode Aktif:</span>
-                            <button onclick="loadAdminRedeems()" class="text-slate-400 hover:text-white underline">Refresh</button>
+                    <!-- Panel Kelola Pengumuman -->
+                    <div class="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3">
+                        <p class="text-xs font-extrabold text-amber-400">Panel Tambah/Edit Pengumuman</p>
+                        <input type="hidden" id="info-edit-id" value="">
+                        <input type="text" id="info-title" placeholder="Judul Informasi" class="input-glow w-full px-4 py-2.5 text-slate-200 text-xs">
+                        <textarea id="info-content" placeholder="Isi pesan informasi..." class="input-glow w-full px-4 py-2.5 text-slate-200 h-24 resize-none text-xs rounded-2xl"></textarea>
+                        <div class="flex gap-2">
+                            <button id="info-submit-btn" onclick="handleSaveAnnouncement()" class="flex-1 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-full text-xs transition">Publikasikan Info</button>
+                            <button id="info-cancel-btn" onclick="resetInfoForm()" class="px-3 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-full text-xs hidden">Batal</button>
                         </div>
-                        <div id="admin-redeem-list" class="space-y-1.5 max-h-28 overflow-y-auto text-[11px]">
-                            <p class="text-slate-500 italic">Memuat...</p>
+                        <div id="admin-info-list" class="space-y-1.5 max-h-28 overflow-y-auto text-[11px] pt-1">
+                            <p class="text-slate-500 italic">Memuat list kelola info...</p>
                         </div>
                     </div>
                 </div>
@@ -540,25 +566,10 @@ const htmlTemplate = `
                 <div id="user-announcement-container" class="space-y-3 max-h-72 overflow-y-auto text-xs pr-1">
                     <p class="text-slate-500 italic">Memuat informasi...</p>
                 </div>
-
-                <!-- ADMIN KELOLA INFORMASI -->
-                <div id="admin-announcement-panel" class="space-y-3 pt-3 border-t border-purple-500/20 hidden">
-                    <p class="text-xs font-extrabold text-amber-400">Panel Tambah/Edit Pengumuman (Admin)</p>
-                    <input type="hidden" id="info-edit-id" value="">
-                    <input type="text" id="info-title" placeholder="Judul Informasi" class="input-glow w-full px-4 py-2.5 text-slate-200 text-xs">
-                    <textarea id="info-content" placeholder="Isi pesan informasi..." class="input-glow w-full px-4 py-2.5 text-slate-200 h-24 resize-none text-xs rounded-2xl"></textarea>
-                    <div class="flex gap-2">
-                        <button id="info-submit-btn" onclick="handleSaveAnnouncement()" class="flex-1 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-full text-xs transition">Publikasikan Info</button>
-                        <button id="info-cancel-btn" onclick="resetInfoForm()" class="px-3 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-full text-xs hidden">Batal</button>
-                    </div>
-                    <div id="admin-info-list" class="space-y-1.5 max-h-28 overflow-y-auto text-[11px] pt-1">
-                        <p class="text-slate-500 italic">Memuat list kelola info...</p>
-                    </div>
-                </div>
             </div>
 
             <div class="text-center pt-1">
-                <p class="text-[10px] text-slate-500 tracking-wider font-medium">AM Premium • Secure Gateway v2.6</p>
+                <p class="text-[10px] text-slate-500 tracking-wider font-medium">AM Premium • By Banggus</p>
             </div>
         </div>
     </div>
@@ -582,6 +593,8 @@ const htmlTemplate = `
             document.getElementById('section-profile').classList.add('hidden');
             document.getElementById('section-guide').classList.add('hidden');
             document.getElementById('section-announcement').classList.add('hidden');
+            const adminPanelEl = document.getElementById('section-admin-panel');
+            if(adminPanelEl) adminPanelEl.classList.add('hidden');
 
             if (viewName === 'generator') {
                 document.getElementById('terminal-view').classList.remove('hidden');
@@ -592,6 +605,11 @@ const htmlTemplate = `
             } else if (viewName === 'announcement') {
                 document.getElementById('section-announcement').classList.remove('hidden');
                 loadUserAnnouncements();
+            } else if (viewName === 'admin-panel' && isAdminUser) {
+                if(adminPanelEl) adminPanelEl.classList.remove('hidden');
+                loadAdminRedeems();
+                loadAdminAnnouncements();
+                loadAdminVipList();
             }
         }
 
@@ -719,11 +737,7 @@ const htmlTemplate = `
                     if(data.isAdmin) {
                         document.getElementById('role-badge').className = "px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-extrabold";
                         document.getElementById('role-badge').innerText = "👑 Admin Master";
-                        document.getElementById('admin-control-panel').classList.remove('hidden');
-                        document.getElementById('admin-announcement-panel').classList.remove('hidden');
-                        loadAdminRedeems();
-                        loadAdminAnnouncements();
-                        loadAdminVipList();
+                        document.getElementById('nav-admin-panel-btn').classList.remove('hidden');
                     }
                 } else {
                     alert('Gagal: ' + data.message);
@@ -771,11 +785,7 @@ const htmlTemplate = `
                     if(data.isAdmin) {
                         document.getElementById('role-badge').className = "px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-extrabold";
                         document.getElementById('role-badge').innerText = "👑 Admin Master";
-                        document.getElementById('admin-control-panel').classList.remove('hidden');
-                        document.getElementById('admin-announcement-panel').classList.remove('hidden');
-                        loadAdminRedeems();
-                        loadAdminAnnouncements();
-                        loadAdminVipList();
+                        document.getElementById('nav-admin-panel-btn').classList.remove('hidden');
                     }
                 }
             } catch (e) {}
@@ -926,15 +936,15 @@ const htmlTemplate = `
 
                 if (data.success && Object.keys(data.vipUsers).length > 0) {
                     for (let [uname, val] of Object.entries(data.vipUsers)) {
-                        container.innerHTML += \`
+                        container.innerHTML += `
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">\${uname}</span>
-                                    <span class="text-slate-400 block text-[9px]">Expired: \${new Date(val.vipUntil).toLocaleDateString()}</span>
+                                    <span class="text-amber-300 font-bold">${uname}</span>
+                                    <span class="text-slate-400 block text-[9px]">Expired: ${new Date(val.vipUntil).toLocaleDateString()}</span>
                                 </div>
-                                <button onclick="handleRemoveVip('\${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                <button onclick="handleRemoveVip('${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Tidak ada akun VIP aktif.</p>';
@@ -968,15 +978,15 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += \`
+                        container.innerHTML += `
                             <div class="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/20 space-y-1">
                                 <div class="flex justify-between items-center text-cyan-300 font-bold text-xs">
-                                    <span>\${val.title}</span>
-                                    <span class="text-[9px] text-slate-400 font-mono">\${new Date(val.timestamp).toLocaleDateString()}</span>
+                                    <span>${val.title}</span>
+                                    <span class="text-[9px] text-slate-400 font-mono">${new Date(val.timestamp).toLocaleDateString()}</span>
                                 </div>
-                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">\${val.content}</p>
+                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">${val.content}</p>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi terbaru.</p>';
@@ -995,18 +1005,18 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += \`
+                        container.innerHTML += `
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div class="truncate mr-2">
-                                    <span class="text-amber-300 font-bold block truncate">\${val.title}</span>
-                                    <span class="text-slate-400 truncate block text-[9px]">\${val.content.substring(0, 30)}...</span>
+                                    <span class="text-amber-300 font-bold block truncate">${val.title}</span>
+                                    <span class="text-slate-400 truncate block text-[9px]">${val.content.substring(0, 30)}...</span>
                                 </div>
                                 <div class="flex gap-1 shrink-0">
-                                    <button onclick="editAnnouncement('\${id}', '\${encodeURIComponent(val.title)}', '\${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
-                                    <button onclick="deleteAnnouncement('\${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                    <button onclick="editAnnouncement('${id}', '${encodeURIComponent(val.title)}', '${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
+                                    <button onclick="deleteAnnouncement('${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                                 </div>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi.</p>';
@@ -1108,15 +1118,15 @@ const htmlTemplate = `
 
                 if(data.success && Object.keys(data.redeems).length > 0) {
                     for(let [code, val] of Object.entries(data.redeems)) {
-                        listContainer.innerHTML += \`
+                        listContainer.innerHTML += `
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">\${code}</span>
-                                    <span class="text-slate-400 block text-[9px]">Kuota: \${val.totalQuota} | Klaim: \${val.claimedCount}/\${val.maxClaims}</span>
+                                    <span class="text-amber-300 font-bold">${code}</span>
+                                    <span class="text-slate-400 block text-[9px]">Kuota: ${val.totalQuota} | Klaim: ${val.claimedCount}/${val.maxClaims}</span>
                                 </div>
-                                <button onclick="handleDeleteRedeem('\${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                <button onclick="handleDeleteRedeem('${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     listContainer.innerHTML = '<p class="text-slate-500 italic">Belum ada kode aktif.</p>';
