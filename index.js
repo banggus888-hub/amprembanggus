@@ -123,9 +123,9 @@ async function saveVideoToDb(videoUrl) {
 }
 
 async function initAdmin() {
-  const adminData = await getUserFromDb('adminbaguss');
+  const adminData = await getUserFromDb('adminbanggus');
   if (!adminData) {
-    await saveUserToDb('adminbaguss', {
+    await saveUserToDb('adminbanggus', {
       password: 'baguss',
       isAdmin: true,
       activatedEmails: [],
@@ -423,6 +423,19 @@ const htmlTemplate = `
                     </button>
                 </div>
 
+                <!-- FITUR CEK GMAIL YANG SUDAH TERDAFTAR AM PREMIUM (KHUSUS USER MASING-MASING) -->
+                <div class="glass-panel space-y-3">
+                    <div class="flex items-center justify-between">
+                        <label class="text-xs font-bold text-purple-300 flex items-center gap-2 pl-1">
+                            <span>📋</span> List Gmail AM Premium Anda
+                        </label>
+                        <button onclick="loadMyRegisteredEmails()" class="text-[11px] text-purple-400 hover:text-purple-300 underline">Refresh List</button>
+                    </div>
+                    <div id="my-registered-emails-list" class="space-y-2 max-h-36 overflow-y-auto text-xs pr-1">
+                        <p class="text-slate-500 italic">Memuat list Gmail terdaftar...</p>
+                    </div>
+                </div>
+
                 <div id="result-box" class="input-glow p-3 text-xs hidden text-purple-300 break-all bg-purple-950/20 border-purple-500/30 mono rounded-2xl">
                     <p id="result-text"></p>
                 </div>
@@ -467,6 +480,17 @@ const htmlTemplate = `
                     <div class="grid grid-cols-2 gap-2">
                         <button onclick="changeServerState('online')" class="py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 rounded-full text-[11px] text-emerald-300 font-bold transition">🟢 Online</button>
                         <button onclick="changeServerState('offline')" class="py-2.5 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 rounded-full text-[11px] text-rose-300 font-bold transition">🔴 Offline</button>
+                    </div>
+
+                    <!-- FITUR MELIHAT SEMUA USERNAME YANG TERDAFTAR (KHUSUS ADMIN) -->
+                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
+                        <div class="flex justify-between items-center text-[11px] text-amber-300 font-bold">
+                            <span>Daftar Semua Username Terdaftar:</span>
+                            <button onclick="loadAdminRegisteredUsernames()" class="text-slate-400 hover:text-white underline">Refresh</button>
+                        </div>
+                        <div id="admin-registered-usernames-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px]">
+                            <p class="text-slate-500 italic">Memuat list username...</p>
+                        </div>
                     </div>
 
                     <!-- FITUR UBAH VIDEO KHUSUS ADMIN -->
@@ -585,8 +609,12 @@ const htmlTemplate = `
 
             if (viewName === 'generator') {
                 document.getElementById('terminal-view').classList.remove('hidden');
+                loadMyRegisteredEmails();
             } else if (viewName === 'profile') {
                 document.getElementById('section-profile').classList.remove('hidden');
+                if(isAdminUser) {
+                    loadAdminRegisteredUsernames();
+                }
             } else if (viewName === 'guide') {
                 document.getElementById('section-guide').classList.remove('hidden');
             } else if (viewName === 'announcement') {
@@ -713,6 +741,7 @@ const htmlTemplate = `
                     updateQuotaDisplay(data);
                     checkVipStatus(data);
                     loadUserAnnouncements();
+                    loadMyRegisteredEmails();
                     updateStatusUI(data.serverStatus);
                     fetchFeaturedVideo();
 
@@ -721,6 +750,7 @@ const htmlTemplate = `
                         document.getElementById('role-badge').innerText = "👑 Admin Master";
                         document.getElementById('admin-control-panel').classList.remove('hidden');
                         document.getElementById('admin-announcement-panel').classList.remove('hidden');
+                        loadAdminRegisteredUsernames();
                         loadAdminRedeems();
                         loadAdminAnnouncements();
                         loadAdminVipList();
@@ -765,6 +795,7 @@ const htmlTemplate = `
                     updateQuotaDisplay(data);
                     checkVipStatus(data);
                     loadUserAnnouncements();
+                    loadMyRegisteredEmails();
                     updateStatusUI(data.serverStatus);
                     fetchFeaturedVideo();
 
@@ -773,6 +804,7 @@ const htmlTemplate = `
                         document.getElementById('role-badge').innerText = "👑 Admin Master";
                         document.getElementById('admin-control-panel').classList.remove('hidden');
                         document.getElementById('admin-announcement-panel').classList.remove('hidden');
+                        loadAdminRegisteredUsernames();
                         loadAdminRedeems();
                         loadAdminAnnouncements();
                         loadAdminVipList();
@@ -781,6 +813,55 @@ const htmlTemplate = `
             } catch (e) {}
         }
         checkSavedSession();
+
+        async function loadMyRegisteredEmails() {
+            if (!loggedInUsername) return;
+            try {
+                const res = await fetch('/api/user/emails?username=' + encodeURIComponent(loggedInUsername));
+                const data = await res.json();
+                const container = document.getElementById('my-registered-emails-list');
+                container.innerHTML = '';
+
+                if (data.success && data.emails && data.emails.length > 0) {
+                    data.emails.forEach((email, index) => {
+                        container.innerHTML += \`
+                            <div class="flex justify-between items-center bg-purple-950/30 p-2.5 rounded-xl border border-purple-500/20">
+                                <span class="text-slate-200 mono">\${index + 1}. \${email}</span>
+                                <span class="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full text-[10px] font-bold">Terdaftar</span>
+                            </div>
+                        \`;
+                    });
+                } else {
+                    container.innerHTML = '<p class="text-slate-500 italic">Belum ada Gmail yang terdaftar pada akun Anda.</p>';
+                }
+            } catch (e) {
+                const container = document.getElementById('my-registered-emails-list');
+                if(container) container.innerHTML = '<p class="text-rose-400 italic">Gagal memuat list Gmail.</p>';
+            }
+        }
+
+        async function loadAdminRegisteredUsernames() {
+            if (!isAdminUser) return;
+            try {
+                const res = await fetch('/api/admin/get-usernames?username=' + encodeURIComponent(loggedInUsername));
+                const data = await res.json();
+                const container = document.getElementById('admin-registered-usernames-list');
+                container.innerHTML = '';
+
+                if (data.success && data.usernames && data.usernames.length > 0) {
+                    data.usernames.forEach((uname, index) => {
+                        container.innerHTML += \`
+                            <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
+                                <span class="text-amber-300 font-bold">\${index + 1}. \${uname}</span>
+                                <span class="text-slate-400 text-[10px]">Active ID</span>
+                            </div>
+                        \`;
+                    });
+                } else {
+                    container.innerHTML = '<p class="text-slate-500 italic">Belum ada username terdaftar.</p>';
+                }
+            } catch (e) {}
+        }
 
         async function triggerUpdateUsername() {
             const newUsername = document.getElementById('new-username-input').value.trim();
@@ -1189,6 +1270,7 @@ const htmlTemplate = `
                     if(!isAdminUser && data.quotaInfo) {
                         updateQuotaDisplay(data.quotaInfo);
                     }
+                    loadMyRegisteredEmails();
                 } else {
                     sendText.innerText = "Gagal";
                     sendIcon.innerText = "✕";
@@ -1221,6 +1303,7 @@ const htmlTemplate = `
                 });
                 const data = await res.json();
                 resultText.innerText = JSON.stringify(data, null, 2);
+                loadMyRegisteredEmails();
             } catch (err) {
                 resultText.innerText = "Error: " + err.message;
             }
@@ -1269,6 +1352,35 @@ const server = http.createServer(async (req, res) => {
     const announcements = await getAllAnnouncementsFromDb();
     res.writeHead(200);
     res.end(JSON.stringify({ success: true, announcements }));
+  } else if (parsedUrl.pathname === '/api/user/emails') {
+    res.setHeader('Content-Type', 'application/json');
+    const username = parsedUrl.searchParams.get('username');
+    if (!username) {
+      res.writeHead(400);
+      res.end(JSON.stringify({ success: false, message: 'Username diperlukan.' }));
+      return;
+    }
+    const userObj = await getUserFromDb(username.toLowerCase());
+    if (!userObj) {
+      res.writeHead(404);
+      res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
+      return;
+    }
+    res.writeHead(200);
+    res.end(JSON.stringify({ success: true, emails: userObj.activatedEmails || [] }));
+  } else if (parsedUrl.pathname === '/api/admin/get-usernames') {
+    res.setHeader('Content-Type', 'application/json');
+    const username = parsedUrl.searchParams.get('username');
+    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+    if (!userObj || !userObj.isAdmin) {
+      res.writeHead(403);
+      res.end(JSON.stringify({ success: false, message: 'Akses ditolak.' }));
+      return;
+    }
+    const allUsers = await getAllUsersFromDb();
+    const usernames = Object.keys(allUsers);
+    res.writeHead(200);
+    res.end(JSON.stringify({ success: true, usernames }));
   } else if (parsedUrl.pathname === '/api/user/username' && req.method === 'PUT') {
     res.setHeader('Content-Type', 'application/json');
     let body = '';
