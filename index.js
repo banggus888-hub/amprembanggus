@@ -3,6 +3,7 @@ const Go = require('@xof/fetch');
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, get, set, child } = require('firebase/database');
 
+const config = {
   base: 'https://restapidhan.vercel.app',
   apikey: 'freeapikeydhan26'
 };
