@@ -3,10 +3,8 @@ const Go = require('@xof/fetch');
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, get, set, child } = require('firebase/database');
 
-const config = {
   base: 'https://restapidhan.vercel.app',
-  apikey: 'freeapikeydhan26',
-  tempMailBase: 'https://api.tempmail.ing'
+  apikey: 'freeapikeydhan26'
 };
 
 const firebaseConfig = {
@@ -24,13 +22,6 @@ const db = getDatabase(firebaseApp);
 
 const go = Go.create({
 	baseURL: config.base,
-	browser: true,
-	cookieJar: true,
-	keepAlive: true
-});
-
-const tempMailGo = Go.create({
-	baseURL: config.tempMailBase,
 	browser: true,
 	cookieJar: true,
 	keepAlive: true
@@ -60,17 +51,6 @@ const am = {
         url: url
       }
     });
-    return data;
-  }
-};
-
-const tempMailApi = {
-  async createEmail() {
-    const { data } = await tempMailGo.get('/api/create');
-    return data;
-  },
-  async getInbox(email) {
-    const { data } = await tempMailGo.get(`/api/inbox/${email}`);
     return data;
   }
 };
@@ -243,19 +223,6 @@ const htmlTemplate = `
             transform: translateY(-2px);
             box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.6);
         }
-        .cyber-btn-blue {
-            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-            box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.4);
-            transition: all 0.3s ease;
-            border-radius: 9999px;
-            padding-top: 0.95rem;
-            padding-bottom: 0.95rem;
-            font-size: 0.95rem;
-        }
-        .cyber-btn-blue:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 15px 30px -5px rgba(59, 130, 246, 0.6);
-        }
         @keyframes pulseGlow {
             0%, 100% { opacity: 0.3; }
             50% { opacity: 0.6; }
@@ -312,9 +279,6 @@ const htmlTemplate = `
                 <nav class="space-y-3 text-sm font-semibold">
                     <button onclick="switchView('generator')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
                         Generator Utama
-                    </button>
-                    <button onclick="switchView('tempmail')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
-                        Temp Mail & Otomatis Kode
                     </button>
                     <button onclick="switchView('profile')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
                         Halaman Akun & Profil
@@ -463,46 +427,6 @@ const htmlTemplate = `
                 </div>
             </div>
 
-            <!-- VIEW NEW: TEMP MAIL & AUTO CODE -->
-            <div id="section-tempmail" class="glass-panel space-y-4 hidden">
-                <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
-                    <h2 class="text-xs font-extrabold text-blue-400 uppercase tracking-wider">Temp Mail & Otomatis Kode</h2>
-                    <button onclick="switchView('generator')" class="text-xs text-slate-400 hover:text-white underline">← Kembali</button>
-                </div>
-
-                <div class="space-y-3">
-                    <button onclick="handleCreateTempMail()" class="cyber-btn-blue w-full text-white font-extrabold flex items-center justify-center gap-2 text-xs">
-                        <span>📧</span> Buat Email Otomatis (Temp Mail)
-                    </button>
-
-                    <div class="space-y-1.5">
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-blue-300 pl-1">Email Aktif</label>
-                        <div class="flex gap-2">
-                            <input type="text" id="temp-email-input" readonly placeholder="Belum ada email dibuat..." class="input-glow flex-1 text-slate-200 text-xs mono">
-                            <button onclick="copyTempEmail()" class="px-3 py-2 bg-blue-600/30 border border-blue-500/40 text-blue-300 rounded-full text-xs hover:bg-blue-600/50">Salin</button>
-                        </div>
-                    </div>
-
-                    <button onclick="handleSendToTempMail()" class="cyber-btn w-full text-white font-extrabold flex items-center justify-center gap-2 text-xs">
-                        <span>🚀</span> Kirim Magic Link ke Temp Mail Ini
-                    </button>
-
-                    <div class="space-y-1.5 pt-2 border-t border-purple-500/10">
-                        <div class="flex justify-between items-center">
-                            <label class="text-[11px] font-bold uppercase tracking-wider text-emerald-300 pl-1">Inbox & Dapatkan Kode Otomatis</label>
-                            <button onclick="handleCheckInbox()" class="text-xs text-emerald-400 hover:underline">🔄 Cek Inbox</button>
-                        </div>
-                        <div id="tempmail-inbox-box" class="input-glow p-3 text-xs text-slate-300 bg-purple-950/20 border-purple-500/30 mono rounded-2xl min-h-[100px] max-h-48 overflow-y-auto">
-                            <p class="text-slate-500 italic">Inbox masih kosong. Klik 'Cek Inbox' setelah mengirim magic link.</p>
-                        </div>
-                    </div>
-
-                    <button onclick="handleAutoVerifyFromInbox()" class="cyber-btn-green w-full text-slate-950 font-extrabold flex items-center justify-center gap-2 text-xs">
-                        <span>⚡</span> Ekstrak Link & Verifikasi Otomatis
-                    </button>
-                </div>
-            </div>
-
             <!-- VIEW 3: HALAMAN PROFIL KHUSUS AKUN -->
             <div id="section-profile" class="glass-panel space-y-5 hidden">
                 <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
@@ -597,9 +521,11 @@ const htmlTemplate = `
                 </div>
                 <ol class="list-decimal list-inside space-y-2.5 text-xs text-slate-300 leading-relaxed">
                     <li>Pastikan Anda sudah berhasil masuk ke dalam sistem menggunakan akun Anda.</li>
-                    <li>Beralih ke menu <strong>Generator Utama</strong> atau <strong>Temp Mail & Otomatis Kode</strong>.</li>
-                    <li>Gunakan fitur Temp Mail untuk membuat email instan secara otomatis dan dapatkan kode verifikasinya langsung dari inbox.</li>
-                    <li>Klik tombol hijau <strong>Verifikasi</strong> dan proses selesai dengan sempurna!</li>
+                    <li>Beralih ke menu <strong>Generator Utama</strong> untuk mulai memproses token.</li>
+                    <li>Masukkan email target Google/Gmail Anda pada kolom yang telah disediakan.</li>
+                    <li>Klik tombol <strong>Send</strong> untuk memicu token verifikasi.</li>
+                    <li>Salin tautan Magic Link yang masuk ke email Anda, lalu tempel (*paste*) pada kolom URL.</li>
+                    <li>Klik tombol hijau <strong>Verify</strong> dan proses selesai dengan sempurna!</li>
                 </ol>
             </div>
 
@@ -640,8 +566,6 @@ const htmlTemplate = `
         let currentAuthMode = 'login';
         let loggedInUsername = '';
         let isAdminUser = false;
-        let currentTempEmail = '';
-        let latestInboxData = null;
 
         function toggleMenu() {
             const drawer = document.getElementById('nav-drawer');
@@ -654,15 +578,12 @@ const htmlTemplate = `
             toggleMenu(); 
             
             document.getElementById('terminal-view').classList.add('hidden');
-            document.getElementById('section-tempmail').classList.add('hidden');
             document.getElementById('section-profile').classList.add('hidden');
             document.getElementById('section-guide').classList.add('hidden');
             document.getElementById('section-announcement').classList.add('hidden');
 
             if (viewName === 'generator') {
                 document.getElementById('terminal-view').classList.remove('hidden');
-            } else if (viewName === 'tempmail') {
-                document.getElementById('section-tempmail').classList.remove('hidden');
             } else if (viewName === 'profile') {
                 document.getElementById('section-profile').classList.remove('hidden');
             } else if (viewName === 'guide') {
@@ -1004,7 +925,7 @@ const htmlTemplate = `
 
                 if (data.success && Object.keys(data.vipUsers).length > 0) {
                     for (let [uname, val] of Object.entries(data.vipUsers)) {
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
                                     <span class="text-amber-300 font-bold">\${uname}</span>
@@ -1012,7 +933,7 @@ const htmlTemplate = `
                                 </div>
                                 <button onclick="handleRemoveVip('\${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Tidak ada akun VIP aktif.</p>';
@@ -1046,7 +967,7 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/20 space-y-1">
                                 <div class="flex justify-between items-center text-cyan-300 font-bold text-xs">
                                     <span>\${val.title}</span>
@@ -1054,7 +975,7 @@ const htmlTemplate = `
                                 </div>
                                 <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">\${val.content}</p>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi terbaru.</p>';
@@ -1073,7 +994,7 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div class="truncate mr-2">
                                     <span class="text-amber-300 font-bold block truncate">\${val.title}</span>
@@ -1084,7 +1005,7 @@ const htmlTemplate = `
                                     <button onclick="deleteAnnouncement('\${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                                 </div>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi.</p>';
@@ -1186,7 +1107,7 @@ const htmlTemplate = `
 
                 if(data.success && Object.keys(data.redeems).length > 0) {
                     for(let [code, val] of Object.entries(data.redeems)) {
-                        listContainer.innerHTML += `
+                        listContainer.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
                                     <span class="text-amber-300 font-bold">\${code}</span>
@@ -1194,7 +1115,7 @@ const htmlTemplate = `
                                 </div>
                                 <button onclick="handleDeleteRedeem('\${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     listContainer.innerHTML = '<p class="text-slate-500 italic">Belum ada kode aktif.</p>';
@@ -1235,76 +1156,6 @@ const htmlTemplate = `
                     updateQuotaDisplay(data);
                 } else { alert(data.message); }
             } catch(e) { alert('Gagal memproses redeem.'); }
-        }
-
-        async function handleCreateTempMail() {
-            try {
-                const res = await fetch('/api/tempmail/create');
-                const data = await res.json();
-                if (data.success && data.email) {
-                    currentTempEmail = data.email;
-                    document.getElementById('temp-email-input').value = currentTempEmail;
-                    document.getElementById('target-email').value = currentTempEmail;
-                    alert('Berhasil membuat email sementara: ' + currentTempEmail);
-                } else {
-                    alert('Gagal membuat temp mail: ' + (data.message || 'Unknown error'));
-                }
-            } catch (e) {
-                alert('Terjadi kesalahan koneksi saat membuat temp mail.');
-            }
-        }
-
-        function copyTempEmail() {
-            const emailInput = document.getElementById('temp-email-input');
-            if (!emailInput.value) return alert('Belum ada email yang dibuat!');
-            navigator.clipboard.writeText(emailInput.value);
-            alert('Email disalin ke clipboard!');
-        }
-
-        async function handleSendToTempMail() {
-            if (!currentTempEmail) return alert('Buat temp mail terlebih dahulu!');
-            document.getElementById('target-email').value = currentTempEmail;
-            switchView('generator');
-            await handleSendEmail();
-        }
-
-        async function handleCheckInbox() {
-            if (!currentTempEmail) return alert('Buat atau tentukan temp mail terlebih dahulu!');
-            const inboxBox = document.getElementById('tempmail-inbox-box');
-            inboxBox.innerText = 'Memeriksa inbox...';
-
-            try {
-                const res = await fetch('/api/tempmail/inbox?email=' + encodeURIComponent(currentTempEmail));
-                const data = await res.json();
-                if (data.success) {
-                    latestInboxData = data.inbox;
-                    inboxBox.innerText = JSON.stringify(data.inbox, null, 2);
-                } else {
-                    inboxBox.innerText = 'Gagal memuat inbox: ' + (data.message || 'Unknown error');
-                }
-            } catch (e) {
-                inboxBox.innerText = 'Terjadi kesalahan jaringan saat mengambil inbox.';
-            }
-        }
-
-        function handleAutoVerifyFromInbox() {
-            if (!latestInboxData) return alert('Silakan cek inbox terlebih dahulu!');
-            try {
-                let jsonStr = JSON.stringify(latestInboxData);
-                let urlRegex = /https?:\/\/[^\s"'<>]+firebaseapp\.[^\s"'<>]+/g;
-                let matches = jsonStr.match(urlRegex);
-
-                if (matches && matches.length > 0) {
-                    let foundUrl = matches[0];
-                    document.getElementById('magic-url').value = foundUrl;
-                    switchView('generator');
-                    alert('Berhasil mengekstrak link verifikasi secara otomatis!');
-                } else {
-                    alert('Link firebase belum ditemukan di dalam inbox. Coba cek ulang beberapa saat lagi.');
-                }
-            } catch (e) {
-                alert('Gagal mengurai inbox untuk mendapatkan link.');
-            }
         }
 
         async function handleSendEmail() {
@@ -1417,32 +1268,6 @@ const server = http.createServer(async (req, res) => {
     const announcements = await getAllAnnouncementsFromDb();
     res.writeHead(200);
     res.end(JSON.stringify({ success: true, announcements }));
-  } else if (parsedUrl.pathname === '/api/tempmail/create' && req.method === 'GET') {
-    res.setHeader('Content-Type', 'application/json');
-    try {
-      const data = await tempMailApi.createEmail();
-      res.writeHead(200);
-      res.end(JSON.stringify({ success: true, ...data }));
-    } catch (e) {
-      res.writeHead(500);
-      res.end(JSON.stringify({ success: false, message: e.message }));
-    }
-  } else if (parsedUrl.pathname === '/api/tempmail/inbox' && req.method === 'GET') {
-    res.setHeader('Content-Type', 'application/json');
-    const email = parsedUrl.searchParams.get('email');
-    if (!email) {
-      res.writeHead(400);
-      res.end(JSON.stringify({ success: false, message: 'Parameter email diperlukan.' }));
-      return;
-    }
-    try {
-      const data = await tempMailApi.getInbox(email);
-      res.writeHead(200);
-      res.end(JSON.stringify({ success: true, inbox: data }));
-    } catch (e) {
-      res.writeHead(500);
-      res.end(JSON.stringify({ success: false, message: e.message }));
-    }
   } else if (parsedUrl.pathname === '/api/user/username' && req.method === 'PUT') {
     res.setHeader('Content-Type', 'application/json');
     let body = '';
