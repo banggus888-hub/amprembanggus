@@ -67,6 +67,10 @@ async function saveUserToDb(username, userData) {
   await set(ref(db, `users/${username}`), userData);
 }
 
+async function removeUserFromDb(username) {
+  await set(ref(db, `users/${username}`), null);
+}
+
 async function getRedeemFromDb(code) {
   const dbRef = ref(db);
   const snapshot = await get(child(dbRef, `redeems/${code}`));
@@ -423,19 +427,6 @@ const htmlTemplate = `
                     </button>
                 </div>
 
-                <!-- FITUR CEK GMAIL YANG SUDAH TERDAFTAR AM PREMIUM (KHUSUS USER MASING-MASING) -->
-                <div class="glass-panel space-y-3">
-                    <div class="flex items-center justify-between">
-                        <label class="text-xs font-bold text-purple-300 flex items-center gap-2 pl-1">
-                            <span>📋</span> List Gmail AM Premium Anda
-                        </label>
-                        <button onclick="loadMyRegisteredEmails()" class="text-[11px] text-purple-400 hover:text-purple-300 underline">Refresh List</button>
-                    </div>
-                    <div id="my-registered-emails-list" class="space-y-2 max-h-36 overflow-y-auto text-xs pr-1">
-                        <p class="text-slate-500 italic">Memuat list Gmail terdaftar...</p>
-                    </div>
-                </div>
-
                 <div id="result-box" class="input-glow p-3 text-xs hidden text-purple-300 break-all bg-purple-950/20 border-purple-500/30 mono rounded-2xl">
                     <p id="result-text"></p>
                 </div>
@@ -482,7 +473,7 @@ const htmlTemplate = `
                         <button onclick="changeServerState('offline')" class="py-2.5 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 rounded-full text-[11px] text-rose-300 font-bold transition">🔴 Offline</button>
                     </div>
 
-                    <!-- FITUR MELIHAT SEMUA USERNAME YANG TERDAFTAR (KHUSUS ADMIN) -->
+                    <!-- FITUR MELIHAT & MENGHAPUS USERNAME YANG TERDAFTAR (KHUSUS ADMIN) -->
                     <div class="border-t border-amber-500/20 pt-3 space-y-2">
                         <div class="flex justify-between items-center text-[11px] text-amber-300 font-bold">
                             <span>Daftar Semua Username Terdaftar:</span>
@@ -609,7 +600,6 @@ const htmlTemplate = `
 
             if (viewName === 'generator') {
                 document.getElementById('terminal-view').classList.remove('hidden');
-                loadMyRegisteredEmails();
             } else if (viewName === 'profile') {
                 document.getElementById('section-profile').classList.remove('hidden');
                 if(isAdminUser) {
@@ -741,7 +731,6 @@ const htmlTemplate = `
                     updateQuotaDisplay(data);
                     checkVipStatus(data);
                     loadUserAnnouncements();
-                    loadMyRegisteredEmails();
                     updateStatusUI(data.serverStatus);
                     fetchFeaturedVideo();
 
@@ -795,7 +784,6 @@ const htmlTemplate = `
                     updateQuotaDisplay(data);
                     checkVipStatus(data);
                     loadUserAnnouncements();
-                    loadMyRegisteredEmails();
                     updateStatusUI(data.serverStatus);
                     fetchFeaturedVideo();
 
@@ -814,32 +802,6 @@ const htmlTemplate = `
         }
         checkSavedSession();
 
-        async function loadMyRegisteredEmails() {
-            if (!loggedInUsername) return;
-            try {
-                const res = await fetch('/api/user/emails?username=' + encodeURIComponent(loggedInUsername));
-                const data = await res.json();
-                const container = document.getElementById('my-registered-emails-list');
-                container.innerHTML = '';
-
-                if (data.success && data.emails && data.emails.length > 0) {
-                    data.emails.forEach((email, index) => {
-                        container.innerHTML += \`
-                            <div class="flex justify-between items-center bg-purple-950/30 p-2.5 rounded-xl border border-purple-500/20">
-                                <span class="text-slate-200 mono">\${index + 1}. \${email}</span>
-                                <span class="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full text-[10px] font-bold">Terdaftar</span>
-                            </div>
-                        \`;
-                    });
-                } else {
-                    container.innerHTML = '<p class="text-slate-500 italic">Belum ada Gmail yang terdaftar pada akun Anda.</p>';
-                }
-            } catch (e) {
-                const container = document.getElementById('my-registered-emails-list');
-                if(container) container.innerHTML = '<p class="text-rose-400 italic">Gagal memuat list Gmail.</p>';
-            }
-        }
-
         async function loadAdminRegisteredUsernames() {
             if (!isAdminUser) return;
             try {
@@ -851,9 +813,12 @@ const htmlTemplate = `
                 if (data.success && data.usernames && data.usernames.length > 0) {
                     data.usernames.forEach((uname, index) => {
                         container.innerHTML += \`
-                            <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
-                                <span class="text-amber-300 font-bold">\${index + 1}. \${uname}</span>
-                                <span class="text-slate-400 text-[10px]">Active ID</span>
+                            <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/25">
+                                <div>
+                                    <span class="text-amber-300 font-bold">\${index + 1}. \${uname}</span>
+                                    <span class="text-slate-400 block text-[9px]">Active ID</span>
+                                </div>
+                                \${uname !== 'adminbanggus' ? \`<button onclick="handleAdminDeleteUser('\${uname}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus Akun</button>\` : ''}
                             </div>
                         \`;
                     });
@@ -861,6 +826,28 @@ const htmlTemplate = `
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada username terdaftar.</p>';
                 }
             } catch (e) {}
+        }
+
+        async function handleAdminDeleteUser(targetUser) {
+            if (!isAdminUser) return alert('Akses ditolak!');
+            if (!confirm('Apakah Anda yakin ingin menghapus akun user: ' + targetUser + '?')) return;
+
+            try {
+                const res = await fetch('/api/admin/delete-user', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: loggedInUsername, targetUser })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('Akun ' + targetUser + ' berhasil dihapus.');
+                    loadAdminRegisteredUsernames();
+                } else {
+                    alert(data.message || 'Gagal menghapus akun.');
+                }
+            } catch (e) {
+                alert('Terjadi kesalahan jaringan.');
+            }
         }
 
         async function triggerUpdateUsername() {
@@ -1270,7 +1257,6 @@ const htmlTemplate = `
                     if(!isAdminUser && data.quotaInfo) {
                         updateQuotaDisplay(data.quotaInfo);
                     }
-                    loadMyRegisteredEmails();
                 } else {
                     sendText.innerText = "Gagal";
                     sendIcon.innerText = "✕";
@@ -1303,7 +1289,6 @@ const htmlTemplate = `
                 });
                 const data = await res.json();
                 resultText.innerText = JSON.stringify(data, null, 2);
-                loadMyRegisteredEmails();
             } catch (err) {
                 resultText.innerText = "Error: " + err.message;
             }
@@ -1352,22 +1337,6 @@ const server = http.createServer(async (req, res) => {
     const announcements = await getAllAnnouncementsFromDb();
     res.writeHead(200);
     res.end(JSON.stringify({ success: true, announcements }));
-  } else if (parsedUrl.pathname === '/api/user/emails') {
-    res.setHeader('Content-Type', 'application/json');
-    const username = parsedUrl.searchParams.get('username');
-    if (!username) {
-      res.writeHead(400);
-      res.end(JSON.stringify({ success: false, message: 'Username diperlukan.' }));
-      return;
-    }
-    const userObj = await getUserFromDb(username.toLowerCase());
-    if (!userObj) {
-      res.writeHead(404);
-      res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
-      return;
-    }
-    res.writeHead(200);
-    res.end(JSON.stringify({ success: true, emails: userObj.activatedEmails || [] }));
   } else if (parsedUrl.pathname === '/api/admin/get-usernames') {
     res.setHeader('Content-Type', 'application/json');
     const username = parsedUrl.searchParams.get('username');
@@ -1381,6 +1350,42 @@ const server = http.createServer(async (req, res) => {
     const usernames = Object.keys(allUsers);
     res.writeHead(200);
     res.end(JSON.stringify({ success: true, usernames }));
+  } else if (parsedUrl.pathname === '/api/admin/delete-user' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, targetUser } = JSON.parse(body);
+        const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!adminObj || !adminObj.isAdmin) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, message: 'Akses ditolak! Hanya admin.' }));
+          return;
+        }
+
+        const cleanTarget = targetUser ? targetUser.toLowerCase() : '';
+        if (cleanTarget === 'adminbanggus') {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'Tidak dapat menghapus akun admin utama.' }));
+          return;
+        }
+
+        const targetObj = await getUserFromDb(cleanTarget);
+        if (!targetObj) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ success: false, message: 'User target tidak ditemukan.' }));
+          return;
+        }
+
+        await removeUserFromDb(cleanTarget);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, message: 'Akun berhasil dihapus.' }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan pada server.' }));
+      }
+    });
   } else if (parsedUrl.pathname === '/api/user/username' && req.method === 'PUT') {
     res.setHeader('Content-Type', 'application/json');
     let body = '';
