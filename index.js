@@ -202,7 +202,7 @@ const htmlTemplate = `
             overflow-x: hidden;
             margin: 0;
             padding: 0;
-            background-color: #07030e;
+            background-color: #0b0614;
             font-family: 'Plus Jakarta Sans', sans-serif;
             font-size: 1.125rem;
         }
@@ -364,59 +364,39 @@ const htmlTemplate = `
                 🔴 Server sedang dalam mode OFFLINE. Fitur premium dinonaktifkan.
             </div>
 
-            <!-- VIEW 1: AUTHENTICATION (DIPERBARUI MENJADI LEBIH MODERN & ELEGAN) -->
-            <div id="auth-view" class="glass-panel relative overflow-hidden space-y-6 p-6 sm:p-8 border border-purple-500/30 shadow-[0_0_40px_rgba(168,85,247,0.15)] rounded-[2rem]">
-                <!-- Background Glowing Ornaments -->
-                <div class="absolute -top-24 -right-24 w-48 h-48 bg-purple-500/20 rounded-full blur-3xl pointer-events-none"></div>
-                <div class="absolute -bottom-24 -left-24 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none"></div>
-
-                <!-- Header Branding / Logo Icon -->
-                <div class="relative text-center space-y-2">
-                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-purple-600/30 to-indigo-500/20 border border-purple-500/40 text-purple-300 text-2xl shadow-[0_0_20px_rgba(168,85,247,0.3)] mb-1">
-                        🔒
-                    </div>
-                    <h1 class="text-2xl font-black tracking-tight text-white">Selamat Datang</h1>
-                    <p class="text-xs text-slate-400 max-w-[260px] mx-auto leading-relaxed">Silakan masuk ke terminal atau daftarkan akun baru untuk menikmati akses penuh</p>
+            <!-- VIEW 1: AUTHENTICATION -->
+            <div id="auth-view" class="glass-panel space-y-5">
+                <div class="text-center space-y-1">
+                    <h1 class="text-xl font-extrabold tracking-tight text-white">Selamat Datang</h1>
+                    <p class="text-xs text-slate-400">Silakan masuk atau daftar untuk mengakses sistem</p>
                 </div>
                 
-                <!-- Modern Segmented Tab Switcher -->
-                <div class="relative flex rounded-full bg-black/50 p-1.5 border border-purple-500/30 shadow-inner">
-                    <div id="tab-indicator" class="absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full transition-all duration-300 shadow-[0_0_15px_rgba(168,85,247,0.5)]"></div>
-                    <button onclick="switchAuthTab('login')" id="tab-login-btn" class="relative z-10 flex-1 py-3 text-xs font-extrabold tracking-wider rounded-full transition-colors text-white">LOGIN</button>
-                    <button onclick="switchAuthTab('register')" id="tab-reg-btn" class="relative z-10 flex-1 py-3 text-xs font-extrabold tracking-wider rounded-full transition-colors text-slate-400 hover:text-white">REGISTER</button>
+                <div class="relative flex rounded-full bg-[#07040d] p-1.5 border border-purple-500/20">
+                    <div id="tab-indicator" class="absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full transition-all duration-300 shadow-lg shadow-purple-500/20"></div>
+                    <button onclick="switchAuthTab('login')" id="tab-login-btn" class="relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-white">LOGIN</button>
+                    <button onclick="switchAuthTab('register')" id="tab-reg-btn" class="relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-slate-400 hover:text-white">REGISTER</button>
                 </div>
 
-                <!-- Form Container -->
-                <div class="relative space-y-4">
+                <div class="space-y-4">
                     <div class="space-y-1.5">
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300/90 pl-3 flex items-center gap-1.5">
-                            <span>👤</span> Username ID
-                        </label>
-                        <input type="text" id="auth-username" placeholder="Masukkan username unik Anda..." class="input-glow w-full text-slate-100 font-medium placeholder:text-slate-600 bg-black/40 border-purple-500/30 focus:border-purple-400 focus:bg-black/60">
+                        <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-2">Username ID</label>
+                        <input type="text" id="auth-username" placeholder="Masukkan username unik..." class="input-glow w-full text-slate-200 font-medium placeholder:text-slate-600">
                     </div>
 
                     <div class="space-y-1.5">
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300/90 pl-3 flex items-center gap-1.5">
-                            <span>🔑</span> Security Password
-                        </label>
-                        <input type="password" id="auth-password" placeholder="••••••••••••" class="input-glow w-full text-slate-100 font-medium placeholder:text-slate-600 bg-black/40 border-purple-500/30 focus:border-purple-400 focus:bg-black/60">
+                        <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-2">Security Password</label>
+                        <input type="password" id="auth-password" placeholder="••••••••" class="input-glow w-full text-slate-200 font-medium placeholder:text-slate-600">
                     </div>
 
                     <div id="email-field-container" class="space-y-1.5 hidden transition-all duration-300">
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300/90 pl-3 flex items-center gap-1.5">
-                            <span>✉️</span> Recovery Email
-                        </label>
-                        <input type="email" id="auth-email" placeholder="namaemail@gmail.com" class="input-glow w-full text-slate-100 font-medium placeholder:text-slate-600 bg-black/40 border-purple-500/30 focus:border-purple-400 focus:bg-black/60">
-                        <p class="text-[10px] text-amber-400/90 pl-3 pt-1 flex items-center gap-1">
-                            <span>⚠️</span> Setiap perangkat/HP hanya diizinkan membuat 1 akun.
-                        </p>
+                        <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-2">Recovery Email</label>
+                        <input type="email" id="auth-email" placeholder="Masukan Gmail Anda" class="input-glow w-full text-slate-200 font-medium placeholder:text-slate-600">
+                        <p class="text-[10px] text-amber-400/90 pl-2 pt-0.5">⚠️ Setiap perangkat/HP hanya diizinkan membuat 1 akun.</p>
                     </div>
                 </div>
 
-                <!-- Action Button -->
-                <button onclick="handleAuthAction()" id="auth-submit-btn" class="cyber-btn w-full text-white font-extrabold uppercase tracking-widest flex items-center justify-center gap-2 relative overflow-hidden group shadow-[0_10px_30px_rgba(168,85,247,0.4)]">
-                    <span class="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"></span>
-                    <span id="auth-btn-text" class="relative z-10">Masuk ke Terminal</span>
+                <button onclick="handleAuthAction()" id="auth-submit-btn" class="cyber-btn w-full text-white font-extrabold uppercase tracking-widest flex items-center justify-center gap-2">
+                    <span id="auth-btn-text">Masuk ke Terminal</span>
                 </button>
             </div>
 
@@ -829,14 +809,14 @@ const htmlTemplate = `
 
             if(mode === 'login') {
                 indicator.style.transform = 'translateX(0%)';
-                loginBtn.className = "relative z-10 flex-1 py-3 text-xs font-extrabold tracking-wider rounded-full transition-colors text-white";
-                regBtn.className = "relative z-10 flex-1 py-3 text-xs font-extrabold tracking-wider rounded-full transition-colors text-slate-400 hover:text-white";
+                loginBtn.className = "relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-white";
+                regBtn.className = "relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-slate-400 hover:text-white";
                 emailField.classList.add('hidden');
                 btnText.innerText = "Masuk ke Terminal";
             } else {
                 indicator.style.transform = 'translateX(100%)';
-                regBtn.className = "relative z-10 flex-1 py-3 text-xs font-extrabold tracking-wider rounded-full transition-colors text-white";
-                loginBtn.className = "relative z-10 flex-1 py-3 text-xs font-extrabold tracking-wider rounded-full transition-colors text-slate-400 hover:text-white";
+                regBtn.className = "relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-white";
+                loginBtn.className = "relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-slate-400 hover:text-white";
                 emailField.classList.remove('hidden');
                 btnText.innerText = "Daftar Akun Baru";
             }
@@ -1090,18 +1070,18 @@ const htmlTemplate = `
 
                 if (data.success && Object.keys(data.requests).length > 0) {
                     for (let [uname, val] of Object.entries(data.requests)) {
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">@${uname}</span>
+                                    <span class="text-amber-300 font-bold">@\${uname}</span>
                                     <span class="text-slate-400 block text-[9px]">Status: Pendaftar Creator</span>
                                 </div>
                                 <div class="flex gap-1">
-                                    <button onclick="handleAdminCreatorAction('${uname}', 'approve')" class="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 rounded-lg border border-emerald-500/30 text-[10px] font-bold">Terima</button>
-                                    <button onclick="handleAdminCreatorAction('${uname}', 'reject')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px] font-bold">Tolak</button>
+                                    <button onclick="handleAdminCreatorAction('\${uname}', 'approve')" class="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 rounded-lg border border-emerald-500/30 text-[10px] font-bold">Terima</button>
+                                    <button onclick="handleAdminCreatorAction('\${uname}', 'reject')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px] font-bold">Tolak</button>
                                 </div>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Tidak ada pendaftar creator baru.</p>';
@@ -1182,9 +1162,9 @@ const htmlTemplate = `
             selectEl.innerHTML = '';
             
             if (!hasWithdrawn100) {
-                selectEl.innerHTML += `<option value="100">Rp 100 (Penarikan Kreator Baru - 1x)</option>`;
+                selectEl.innerHTML += \`<option value="100">Rp 100 (Penarikan Kreator Baru - 1x)</option>\`;
             }
-            selectEl.innerHTML += `<option value="20000">Rp 20.000 (Minimal Tukar)</option>`;
+            selectEl.innerHTML += \`<option value="20000">Rp 20.000 (Minimal Tukar)</option>\`;
         }
 
         async function handleRequestWithdrawal() {
@@ -1238,29 +1218,29 @@ const htmlTemplate = `
                     for (let [wid, val] of Object.entries(data.withdrawals)) {
                         let statusBadge = '';
                         if (val.status === 'pending') {
-                            statusBadge = `<span class="text-amber-400">Pending</span>`;
+                            statusBadge = \`<span class="text-amber-400">Pending</span>\`;
                         } else if (val.status === 'approved') {
-                            statusBadge = `<span class="text-emerald-400">Diterima</span>`;
+                            statusBadge = \`<span class="text-emerald-400">Diterima</span>\`;
                         } else {
-                            statusBadge = `<span class="text-rose-400">Ditolak</span>`;
+                            statusBadge = \`<span class="text-rose-400">Ditolak</span>\`;
                         }
 
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="bg-slate-900/80 p-2.5 rounded-xl border border-amber-500/20 space-y-1">
                                 <div class="flex justify-between items-center text-xs">
-                                    <span class="text-amber-300 font-bold">@${val.username}</span>
-                                    <span>${statusBadge}</span>
+                                    <span class="text-amber-300 font-bold">@\${val.username}</span>
+                                    <span>\${statusBadge}</span>
                                 </div>
-                                <p class="text-[11px] text-slate-200">Nominal: <strong class="text-emerald-400">Rp ${val.amount.toLocaleString('id-ID')}</strong></p>
-                                <p class="text-[10px] text-slate-300">DANA: ${val.danaPhone} (a.n ${val.danaName})</p>
-                                ${val.status === 'pending' ? `
+                                <p class="text-[11px] text-slate-200">Nominal: <strong class="text-emerald-400">Rp \{val.amount.toLocaleString('id-ID')}</strong></p>
+                                <p class="text-[10px] text-slate-300">DANA: \${val.danaPhone} (a.n \${val.danaName})</p>
+                                \${val.status === 'pending' ? \`
                                     <div class="flex gap-2 pt-1">
-                                        <button onclick="handleAdminWithdrawalAction('${wid}', 'approve')" class="flex-1 py-1 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 rounded-lg border border-emerald-500/30 text-[10px] font-bold">Terima</button>
-                                        <button onclick="handleAdminWithdrawalAction('${wid}', 'reject')" class="flex-1 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px] font-bold">Tolak</button>
+                                        <button onclick="handleAdminWithdrawalAction('\${wid}', 'approve')" class="flex-1 py-1 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 rounded-lg border border-emerald-500/30 text-[10px] font-bold">Terima</button>
+                                        <button onclick="handleAdminWithdrawalAction('\${wid}', 'reject')" class="flex-1 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px] font-bold">Tolak</button>
                                     </div>
-                                ` : ''}
+                                \` : ''}
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Tidak ada list penarikan saldo.</p>';
@@ -1304,45 +1284,45 @@ const htmlTemplate = `
                         let commentsHtml = '';
                         if (val.comments) {
                             for (let [cid, cval] of Object.entries(val.comments)) {
-                                commentsHtml += `<div class="bg-slate-900/60 p-2 rounded-xl text-[11px] mb-1"><strong>${cval.username}:</strong> ${cval.text}</div>`;
+                                commentsHtml += \`<div class="bg-slate-900/60 p-2 rounded-xl text-[11px] mb-1"><strong>\${cval.username}:</strong> \${cval.text}</div>\`;
                             }
                         }
 
                         // Cek apakah user yang login adalah creator pemilik preset ini atau admin
                         const canDelete = isAdminUser || (isCreatorUser && val.creator.toLowerCase() === loggedInUsername.toLowerCase());
 
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="glass-panel space-y-3 p-4 border border-purple-500/30 relative">
                                 <div class="flex justify-between items-center text-xs">
-                                    <span class="font-bold text-purple-300">@${val.creator}</span>
+                                    <span class="font-bold text-purple-300">@\${val.creator}</span>
                                     <div class="flex items-center gap-2">
-                                        <span class="text-[10px] text-slate-400">${new Date(val.timestamp).toLocaleDateString()}</span>
-                                        ${canDelete ? `<button onclick="handleDeletePreset('${id}')" class="px-2 py-0.5 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/30 rounded-lg text-[10px] font-bold transition">🗑️ Hapus</button>` : ''}
+                                        <span class="text-[10px] text-slate-400">\${new Date(val.timestamp).toLocaleDateString()}</span>
+                                        \${canDelete ? \`<button onclick="handleDeletePreset('\${id}')" class="px-2 py-0.5 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/30 rounded-lg text-[10px] font-bold transition">🗑️ Hapus</button>\` : ''}
                                     </div>
                                 </div>
-                                <p class="text-xs font-semibold text-white">${val.title}</p>
+                                <p class="text-xs font-semibold text-white">\${val.title}</p>
                                 
                                 <div class="w-full h-48 rounded-xl overflow-hidden bg-black relative">
-                                    <video src="${val.videoUrl}" controls loop playsinline class="w-full h-full object-cover"></video>
+                                    <video src="\${val.videoUrl}" controls loop playsinline class="w-full h-full object-cover"></video>
                                 </div>
 
                                 <div class="flex items-center justify-between pt-1">
-                                    <a href="${val.link}" target="_blank" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-full font-bold text-xs transition">🔗 Unduh Link Preset</a>
-                                    <button onclick="handleLikePreset('${id}')" class="px-3 py-2 rounded-full border ${isLiked ? 'bg-rose-500/20 border-rose-500 text-rose-300' : 'bg-slate-900 border-purple-500/30 text-slate-300'} text-xs font-bold transition">
-                                        ❤️ Like (${likeCount})
+                                    <a href="\${val.link}" target="_blank" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-full font-bold text-xs transition">🔗 Unduh Link Preset</a>
+                                    <button onclick="handleLikePreset('\${id}')" class="px-3 py-2 rounded-full border \${isLiked ? 'bg-rose-500/20 border-rose-500 text-rose-300' : 'bg-slate-900 border-purple-500/30 text-slate-300'} text-xs font-bold transition">
+                                        ❤️ Like (\${likeCount})
                                     </button>
                                 </div>
 
                                 <div class="border-t border-purple-500/10 pt-2 space-y-2">
                                     <p class="text-[11px] font-bold text-purple-300">Komentar:</p>
-                                    <div class="max-h-24 overflow-y-auto space-y-1">${commentsHtml || '<p class="text-[10px] text-slate-500 italic">Belum ada komentar.</p>'}</div>
+                                    <div class="max-h-24 overflow-y-auto space-y-1">\${commentsHtml || '<p class="text-[10px] text-slate-500 italic">Belum ada komentar.</p>'}</div>
                                     <div class="flex gap-2 pt-1">
-                                        <input type="text" id="comment-input-${id}" placeholder="Tulis komentar..." class="input-glow flex-1 px-3 py-2 text-xs">
-                                        <button onclick="handlePostComment('${id}')" class="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-full text-xs font-bold">Kirim</button>
+                                        <input type="text" id="comment-input-\${id}" placeholder="Tulis komentar..." class="input-glow flex-1 px-3 py-2 text-xs">
+                                        <button onclick="handlePostComment('\${id}')" class="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-full text-xs font-bold">Kirim</button>
                                     </div>
                                 </div>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic text-xs">Belum ada preset yang dibagikan.</p>';
@@ -1453,15 +1433,15 @@ const htmlTemplate = `
 
                 if (data.success && Object.keys(data.vipUsers).length > 0) {
                     for (let [uname, val] of Object.entries(data.vipUsers)) {
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">${uname}</span>
-                                    <span class="text-slate-400 block text-[9px]">Expired: ${new Date(val.vipUntil).toLocaleDateString()}</span>
+                                    <span class="text-amber-300 font-bold">\${uname}</span>
+                                    <span class="text-slate-400 block text-[9px]">Expired: \${new Date(val.vipUntil).toLocaleDateString()}</span>
                                 </div>
-                                <button onclick="handleRemoveVip('${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                <button onclick="handleRemoveVip('\${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Tidak ada akun VIP aktif.</p>';
@@ -1495,15 +1475,15 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/20 space-y-1">
                                 <div class="flex justify-between items-center text-cyan-300 font-bold text-xs">
-                                    <span>${val.title}</span>
-                                    <span class="text-[9px] text-slate-400 font-mono">${new Date(val.timestamp).toLocaleDateString()}</span>
+                                    <span>\${val.title}</span>
+                                    <span class="text-[9px] text-slate-400 font-mono">\${new Date(val.timestamp).toLocaleDateString()}</span>
                                 </div>
-                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">${val.content}</p>
+                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">\${val.content}</p>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi terbaru.</p>';
@@ -1522,18 +1502,18 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div class="truncate mr-2">
-                                    <span class="text-amber-300 font-bold block truncate">${val.title}</span>
-                                    <span class="text-slate-400 truncate block text-[9px]">${val.content.substring(0, 30)}...</span>
+                                    <span class="text-amber-300 font-bold block truncate">\${val.title}</span>
+                                    <span class="text-slate-400 truncate block text-[9px]">\${val.content.substring(0, 30)}...</span>
                                 </div>
                                 <div class="flex gap-1 shrink-0">
-                                    <button onclick="editAnnouncement('${id}', '${encodeURIComponent(val.title)}', '${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
-                                    <button onclick="deleteAnnouncement('${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                    <button onclick="editAnnouncement('\${id}', '\${encodeURIComponent(val.title)}', '\${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
+                                    <button onclick="deleteAnnouncement('\${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                                 </div>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi.</p>';
@@ -1628,15 +1608,15 @@ const htmlTemplate = `
 
                 if(data.success && Object.keys(data.redeems).length > 0) {
                     for(let [code, val] of Object.entries(data.redeems)) {
-                        listContainer.innerHTML += `
+                        listContainer.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">${code}</span>
-                                    <span class="text-slate-400 block text-[9px]">Kuota: ${val.totalQuota} | Klaim: ${val.claimedCount}/${val.maxClaims}</span>
+                                    <span class="text-amber-300 font-bold">\${code}</span>
+                                    <span class="text-slate-400 block text-[9px]">Kuota: \${val.totalQuota} | Klaim: \${val.claimedCount}/\${val.maxClaims}</span>
                                 </div>
-                                <button onclick="handleDeleteRedeem('${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                <button onclick="handleDeleteRedeem('\${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     listContainer.innerHTML = '<p class="text-slate-500 italic">Belum ada kode aktif.</p>';
@@ -2416,22 +2396,21 @@ const server = http.createServer(async (req, res) => {
         const { username, code } = JSON.parse(body);
         const cleanUname = username ? username.toLowerCase() : '';
         const userObj = cleanUname ? await getUserFromDb(cleanUname) : null;
+        const redeemObj = await getRedeemFromDb(code);
 
         if (!userObj) {
-          res.writeHead(403);
+          res.writeHead(404);
           res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
           return;
         }
 
-        const redeemObj = await getRedeemFromDb(code);
         if (!redeemObj) {
-          res.writeHead(400);
+          res.writeHead(404);
           res.end(JSON.stringify({ success: false, message: 'Kode redeem tidak valid.' }));
           return;
         }
 
-        if (!redeemObj.claimedUsers) redeemObj.claimedUsers = {};
-        if (redeemObj.claimedUsers[cleanUname]) {
+        if (redeemObj.claimedBy && redeemObj.claimedBy[cleanUname]) {
           res.writeHead(400);
           res.end(JSON.stringify({ success: false, message: 'Anda sudah pernah mengklaim kode ini.' }));
           return;
@@ -2439,242 +2418,28 @@ const server = http.createServer(async (req, res) => {
 
         if (redeemObj.claimedCount >= redeemObj.maxClaims) {
           res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Kuota klaim kode ini telah habis.' }));
+          res.end(JSON.stringify({ success: false, message: 'Kode redeem sudah habis.' }));
           return;
         }
 
-        redeemObj.claimedUsers[cleanUname] = true;
+        if (!redeemObj.claimedBy) redeemObj.claimedBy = {};
+        redeemObj.claimedBy[cleanUname] = true;
         redeemObj.claimedCount = (redeemObj.claimedCount || 0) + 1;
         await saveRedeemToDb(code, redeemObj);
 
         userObj.bonusQuota = (userObj.bonusQuota || 0) + redeemObj.totalQuota;
         await saveUserToDb(cleanUname, userObj);
 
-        let quotaLimit = (userObj.isCreator || userObj.isAdmin) ? 10 : 3;
-
         res.writeHead(200);
         res.end(JSON.stringify({
           success: true,
-          message: `Berhasil klaim! +${redeemObj.totalQuota} kuota ditambahkan.`,
+          message: `Berhasil klaim! Mendapatkan tambahan kuota ${redeemObj.totalQuota}.`,
           usedQuota: userObj.usedQuota || 0,
-          bonusQuota: userObj.bonusQuota || 0,
-          isCreator: userObj.isCreator || false,
-          isAdmin: userObj.isAdmin || false
+          bonusQuota: userObj.bonusQuota || 0
         }));
       } catch (e) {
         res.writeHead(500);
         res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan.' }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/create-redeem' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, code, totalQuota, maxClaims } = JSON.parse(body);
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!userObj || !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Akses ditolak.' }));
-          return;
-        }
-
-        const cleanCode = code.toUpperCase();
-        const existing = await getRedeemFromDb(cleanCode);
-        if (existing) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Kode redeem sudah ada.' }));
-          return;
-        }
-
-        await saveRedeemToDb(cleanCode, {
-          totalQuota,
-          maxClaims,
-          claimedCount: 0,
-          claimedUsers: {},
-          timestamp: Date.now()
-        });
-
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: `Kode redeem ${cleanCode} berhasil dibuat!` }));
-      } catch (e) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/get-redeems' && req.method === 'GET') {
-    res.setHeader('Content-Type', 'application/json');
-    const username = parsedUrl.searchParams.get('username');
-    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-    if (!userObj || !userObj.isAdmin) {
-      res.writeHead(403);
-      res.end(JSON.stringify({ success: false }));
-      return;
-    }
-    const redeems = await getAllRedeemsFromDb();
-    res.writeHead(200);
-    res.end(JSON.stringify({ success: true, redeems }));
-  } else if (parsedUrl.pathname === '/api/admin/delete-redeem' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, code } = JSON.parse(body);
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!userObj || !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-        await removeRedeemFromDb(code);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true }));
-      } catch(e) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/set-vip' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, targetUser, days } = JSON.parse(body);
-        const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!adminObj || !adminObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Akses ditolak.' }));
-          return;
-        }
-
-        const targetObj = await getUserFromDb(targetUser.toLowerCase());
-        if (!targetObj) {
-          res.writeHead(404);
-          res.end(JSON.stringify({ success: false, message: 'User target tidak ditemukan.' }));
-          return;
-        }
-
-        let now = Date.now();
-        let currentExpiry = (targetObj.vipUntil && targetObj.vipUntil > now) ? targetObj.vipUntil : now;
-        targetObj.vipUntil = currentExpiry + (days * 24 * 60 * 60 * 1000);
-        await saveUserToDb(targetUser.toLowerCase(), targetObj);
-
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: `Berhasil memberikan VIP selama ${days} hari kepada @${targetUser}!` }));
-      } catch(e) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/get-vip-list' && req.method === 'GET') {
-    res.setHeader('Content-Type', 'application/json');
-    const username = parsedUrl.searchParams.get('username');
-    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-    if (!userObj || !userObj.isAdmin) {
-      res.writeHead(403);
-      res.end(JSON.stringify({ success: false }));
-      return;
-    }
-    const allUsers = await getAllUsersFromDb();
-    const vipUsers = {};
-    let now = Date.now();
-    for (let [uname, udata] of Object.entries(allUsers)) {
-      if (udata.vipUntil && udata.vipUntil > now) {
-        vipUsers[uname] = udata;
-      }
-    }
-    res.writeHead(200);
-    res.end(JSON.stringify({ success: true, vipUsers }));
-  } else if (parsedUrl.pathname === '/api/admin/remove-vip' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, targetUser } = JSON.parse(body);
-        const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!adminObj || !adminObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-        const targetObj = await getUserFromDb(targetUser.toLowerCase());
-        if (targetObj) {
-          targetObj.vipUntil = 0;
-          await saveUserToDb(targetUser.toLowerCase(), targetObj);
-        }
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true }));
-      } catch(e) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/create-announcement' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, title, content } = JSON.parse(body);
-        const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!adminObj || !adminObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-        const id = 'info_' + Date.now();
-        await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Pengumuman berhasil dipublikasikan.' }));
-      } catch(e) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/update-announcement' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, id, title, content } = JSON.parse(body);
-        const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!adminObj || !adminObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-        await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Pengumuman berhasil diperbarui.' }));
-      } catch(e) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/delete-announcement' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, id } = JSON.parse(body);
-        const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!adminObj || !adminObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-        await removeAnnouncementFromDb(id);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true }));
-      } catch(e) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false }));
       }
     });
   } else {
@@ -2684,5 +2449,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+  console.log(`Server berjalan di http://localhost:${PORT}`);
 });
