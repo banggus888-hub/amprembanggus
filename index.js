@@ -122,28 +122,77 @@ async function saveVideoToDb(videoUrl) {
   await set(ref(db, `settings/featuredVideo`), videoUrl);
 }
 
+// Database helper untuk Presets
+async function getAllPresetsFromDb() {
+  const dbRef = ref(db);
+  const snapshot = await get(child(dbRef, `presets`));
+  if (snapshot.exists()) return snapshot.val();
+  return {};
+}
+
+async function getPresetFromDb(id) {
+  const dbRef = ref(db);
+  const snapshot = await get(child(dbRef, `presets/${id}`));
+  if (snapshot.exists()) return snapshot.val();
+  return null;
+}
+
+async function savePresetToDb(id, presetData) {
+  await set(ref(db, `presets/${id}`), presetData);
+}
+
+async function removePresetFromDb(id) {
+  await set(ref(db, `presets/${id}`), null);
+}
+
+// Database helper untuk Penarikan Saldo (Withdrawals)
+async function getAllWithdrawalsFromDb() {
+  const dbRef = ref(db);
+  const snapshot = await get(child(dbRef, `withdrawals`));
+  if (snapshot.exists()) return snapshot.val();
+  return {};
+}
+
+async function getWithdrawalFromDb(id) {
+  const dbRef = ref(db);
+  const snapshot = await get(child(dbRef, `withdrawals/${id}`));
+  if (snapshot.exists()) return snapshot.val();
+  return null;
+}
+
+async function saveWithdrawalToDb(id, wdData) {
+  await set(ref(db, `withdrawals/${id}`), wdData);
+}
+
 async function initAdmin() {
-  const adminData = await getUserFromDb('adminbanggus');
+  const adminData = await getUserFromDb('adminbaguss');
   if (!adminData) {
-    await saveUserToDb('adminbanggus', {
+    await saveUserToDb('adminbaguss', {
       password: 'baguss',
       isAdmin: true,
+      isCreator: true,
       activatedEmails: [],
       bonusQuota: 0,
       lastResetTime: Date.now(),
-      vipUntil: 0
+      vipUntil: 0,
+      balance: 0,
+      hasWithdrawn100: false,
+      creatorStatus: 'approved'
     });
   }
 }
 initAdmin();
 
+// ==========================================
+// KODE HTML UI MODERN & TAMPILAN LOGIN BARU
+// ==========================================
 const htmlTemplate = `
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VORTEX - Premium Alight Motion</title>
+    <title>AM Premium Banggus</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -153,16 +202,15 @@ const htmlTemplate = `
             overflow-x: hidden;
             margin: 0;
             padding: 0;
-            background-color: #030008;
+            background-color: #0b0614;
             font-family: 'Plus Jakarta Sans', sans-serif;
             font-size: 1.125rem;
-            color: #f8fafc;
         }
         .mono { font-family: 'JetBrains Mono', monospace; }
         
         .phone-wrapper {
             width: 100%;
-            max-width: 480px;
+            max-width: 520px;
             margin: 0 auto;
             min-height: 100vh;
             display: flex;
@@ -174,88 +222,44 @@ const htmlTemplate = `
             overflow-x: hidden;
         }
 
-        .glass-card {
-            background: rgba(13, 9, 24, 0.65);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.07);
-            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
-            border-radius: 1.5rem;
-            padding: 1.5rem;
-        }
-
         .glass-panel {
-            background: rgba(13, 9, 24, 0.65);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.07);
-            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
-            border-radius: 1.5rem;
+            background: rgba(18, 12, 30, 0.75);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(168, 85, 247, 0.15);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(168, 85, 247, 0.05);
+            border-radius: 1.75rem;
             padding: 1.5rem;
         }
-
         .input-glow {
-            background: rgba(8, 5, 16, 0.8);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            transition: all 0.3s ease;
+            background: rgba(12, 8, 22, 0.9);
+            border: 1px solid rgba(168, 85, 247, 0.2);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             border-radius: 9999px;
             padding: 0.85rem 1.25rem;
             font-size: 0.95rem;
-            color: #ffffff;
         }
         .input-glow:focus {
-            border-color: rgba(139, 92, 246, 0.6);
-            box-shadow: 0 0 15px rgba(139, 92, 246, 0.2);
+            border-color: rgba(168, 85, 247, 0.8);
+            box-shadow: 0 0 20px rgba(168, 85, 247, 0.25);
             outline: none;
         }
-
-        .vortex-btn-primary {
-            background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
-            box-shadow: 0 10px 25px -5px rgba(124, 58, 237, 0.4);
-            transition: all 0.3s ease;
-            border-radius: 9999px;
-            padding-top: 0.95rem;
-            padding-bottom: 0.95rem;
-            font-size: 0.95rem;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-        }
-        .vortex-btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 15px 30px -5px rgba(124, 58, 237, 0.6);
-        }
-
-        .vortex-btn-secondary {
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            transition: all 0.3s ease;
-            border-radius: 9999px;
-            padding-top: 0.95rem;
-            padding-bottom: 0.95rem;
-            font-size: 0.95rem;
-        }
-        .vortex-btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.08);
-            border-color: rgba(255, 255, 255, 0.2);
-        }
-
         .cyber-btn {
-            background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
-            box-shadow: 0 10px 25px -5px rgba(124, 58, 237, 0.4);
+            background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);
+            box-shadow: 0 10px 25px -5px rgba(168, 85, 247, 0.4);
             transition: all 0.3s ease;
             border-radius: 9999px;
             padding-top: 0.95rem;
             padding-bottom: 0.95rem;
             font-size: 0.95rem;
-            border: 1px solid rgba(255, 255, 255, 0.15);
         }
         .cyber-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 15px 30px -5px rgba(124, 58, 237, 0.6);
+            box-shadow: 0 15px 30px -5px rgba(168, 85, 247, 0.6);
         }
-
         .cyber-btn-green {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.4);
+            background: linear-gradient(135deg, #22c55e 0%, #15803d 100%);
+            box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4);
             transition: all 0.3s ease;
             border-radius: 9999px;
             padding-top: 0.95rem;
@@ -264,15 +268,14 @@ const htmlTemplate = `
         }
         .cyber-btn-green:hover {
             transform: translateY(-2px);
-            box-shadow: 0 15px 30px -5px rgba(16, 185, 129, 0.6);
+            box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.6);
         }
-
         @keyframes pulseGlow {
-            0%, 100% { opacity: 0.2; }
-            50% { opacity: 0.5; }
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.6; }
         }
         .glow-bg {
-            animation: pulseGlow 8s infinite ease-in-out;
+            animation: pulseGlow 6s infinite ease-in-out;
         }
         
         #nav-drawer {
@@ -287,65 +290,73 @@ const htmlTemplate = `
         }
     </style>
 </head>
-<body class="min-h-screen selection:bg-purple-500 selection:text-white">
+<body class="min-h-screen text-slate-100 selection:bg-purple-500 selection:text-white">
 
-    <div class="absolute top-[-10%] left-[-20%] w-[350px] h-[350px] bg-purple-900/20 rounded-full blur-[130px] pointer-events-none glow-bg"></div>
-    <div class="absolute bottom-[20%] right-[-20%] w-[350px] h-[350px] bg-indigo-900/20 rounded-full blur-[130px] pointer-events-none glow-bg"></div>
+    <div class="absolute top-[-10%] left-[-10%] w-[350px] h-[350px] bg-purple-600/10 rounded-full blur-[120px] pointer-events-none glow-bg"></div>
+    <div class="absolute bottom-[-10%] right-[-10%] w-[350px] h-[350px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none glow-bg"></div>
 
     <div class="phone-wrapper z-10">
         
         <!-- HEADER -->
-        <header class="w-full flex items-center justify-between py-4 px-1 mb-2">
-            <div class="flex items-center gap-2.5 cursor-pointer" onclick="switchView('generator')">
-                <span class="font-black text-lg tracking-wider text-white">VORTEX</span>
-                <span class="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_10px_#6366f1]"></span>
+        <header class="w-full flex items-center justify-between py-3 px-2 border-b border-purple-500/10 mb-4">
+            <div class="flex items-center gap-3">
+                <div class="p-2.5 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-400 text-base">⚡</div>
+                <span id="app-title-header" class="font-extrabold text-sm tracking-tight bg-gradient-to-r from-white to-purple-400 bg-clip-text text-transparent cursor-pointer" onclick="switchView('generator')">UPGRADE AM MENJADI PREMIUM</span>
             </div>
-            <!-- Tombol Menu Modern -->
-            <button id="header-menu-btn" onclick="toggleMenu()" class="group relative p-2.5 rounded-2xl bg-[#0d0918]/80 border border-white/10 hover:border-purple-500/50 text-slate-200 transition-all duration-300 flex items-center justify-center shadow-lg hidden" style="width: 3rem; height: 3rem;">
-                <div class="flex flex-col justify-between items-center h-4 w-4 py-0.5">
-                    <span class="w-full h-0.5 bg-slate-200 rounded-full"></span>
-                    <span class="w-full h-0.5 bg-slate-200 rounded-full"></span>
-                    <span class="w-full h-0.5 bg-slate-200 rounded-full"></span>
+            <button id="header-menu-btn" onclick="toggleMenu()" class="group relative p-3 rounded-2xl bg-slate-900/90 border border-purple-500/20 hover:border-purple-500/60 text-slate-200 transition-all duration-300 flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.1)] hover:shadow-[0_0_20px_rgba(168,85,247,0.3)] hidden" style="width: 3.25rem; height: 3.25rem;">
+                <div class="flex flex-col justify-between items-center h-5 w-5 py-0.5 transition-transform duration-300 group-hover:scale-110">
+                    <span class="w-2 h-2 bg-purple-400 rounded-full shadow-[0_0_8px_#c084fc]"></span>
+                    <span class="w-3.5 h-2 bg-purple-400 rounded-full shadow-[0_0_8px_#c084fc] transition-all duration-300 group-hover:w-5"></span>
+                    <span class="w-2 h-2 bg-purple-400 rounded-full shadow-[0_0_8px_#c084fc]"></span>
                 </div>
             </button>
         </header>
 
         <!-- MENU DRAWER SLIDE SAMPING -->
-        <div id="nav-drawer" class="fixed inset-y-0 right-0 z-50 bg-[#06040c]/95 backdrop-blur-2xl border-l border-white/10 flex flex-col justify-between shadow-2xl">
+        <div id="nav-drawer" class="fixed inset-y-0 right-0 z-50 bg-[#0b0614]/95 backdrop-blur-xl border-l border-purple-500/20 flex flex-col justify-between shadow-2xl">
             <div class="space-y-6">
-                <div class="flex items-center justify-between pb-4 border-b border-white/10">
+                <div class="flex items-center justify-between pb-4 border-b border-purple-500/20">
                     <div class="flex items-center gap-2">
-                        <h3 class="text-xs font-black uppercase tracking-widest text-purple-400">MENU VORTEX</h3>
+                        <h3 class="text-sm font-black uppercase tracking-widest text-purple-400">MENU DASBOARD</h3>
                     </div>
-                    <button onclick="toggleMenu()" class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 hover:text-white text-sm">✕</button>
+                    <button onclick="toggleMenu()" class="w-10 h-10 rounded-xl bg-purple-950/50 border border-purple-500/30 flex items-center justify-center text-slate-300 hover:text-white text-base">✕</button>
                 </div>
 
-                <nav class="space-y-2 text-sm font-semibold">
-                    <button onclick="switchView('generator')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-white/5 hover:text-purple-400 text-slate-300 transition text-left">
-                        Dashboard Utama
+                <nav class="space-y-3 text-sm font-semibold">
+                    <button onclick="switchView('generator')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
+                        Generator Utama
                     </button>
-                    <button onclick="switchView('profile')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-white/5 hover:text-purple-400 text-slate-300 transition text-left">
+                    <button onclick="switchView('presets')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
+                        Vidio Preset
+                    </button>
+                    <button id="menu-creator-upload" onclick="switchView('creator-upload')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left hidden">
+                        Post Preset
+                    </button>
+                    <button id="menu-wallet" onclick="switchView('wallet')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left hidden">
+                        Penarikan Saldo
+                    </button>
+                    <button onclick="switchView('profile')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
                         Halaman Akun & Profil
                     </button>
-                    <button onclick="switchView('guide')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-white/5 hover:text-purple-400 text-slate-300 transition text-left">
+                    <button onclick="switchView('guide')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
                         Panduan Penggunaan
                     </button>
-                    <button onclick="switchView('announcement')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-white/5 hover:text-purple-400 text-slate-300 transition text-left">
+                    <button onclick="switchView('announcement')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
                         Informasi & Pengumuman
                     </button>
                 </nav>
             </div>
 
-            <div class="pt-5 border-t border-white/10 space-y-3">
-                <div id="drawer-user-info" class="text-xs text-slate-400 truncate">
+            <div class="pt-5 border-t border-purple-500/20 space-y-3">
+                <div id="drawer-user-info" class="text-xs text-slate-300 truncate">
                     Status: <span id="drawer-status-role" class="text-purple-400 font-bold">Belum Login</span>
                 </div>
-                <button onclick="handleLogout()" id="drawer-logout-btn" class="w-full py-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold hover:bg-rose-500/20 transition hidden">
+                <button onclick="handleLogout()" id="drawer-logout-btn" class="w-full py-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm font-bold hover:bg-rose-500/20 transition hidden">
                     Keluar / Logout
                 </button>
             </div>
         </div>
-        <div id="drawer-overlay" onclick="toggleMenu()" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 hidden"></div>
+        <div id="drawer-overlay" onclick="toggleMenu()" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 hidden"></div>
 
         <div class="w-full my-auto py-2 space-y-4">
             
@@ -353,60 +364,76 @@ const htmlTemplate = `
                 🔴 Server sedang dalam mode OFFLINE. Fitur premium dinonaktifkan.
             </div>
 
-            <!-- VIEW 1: AUTHENTICATION -->
-            <div id="auth-view" class="glass-card space-y-6">
+            <!-- VIEW 1: AUTHENTICATION (NEW STYLING AS REQUESTED) -->
+            <div id="auth-view" class="relative overflow-hidden rounded-[2.5pfx] bg-[#0c0817]/90 border border-purple-500/20 p-6 shadow-2xl backdrop-blur-2xl space-y-6">
+                <!-- Ambient glow inside card -->
+                <div class="absolute -top-24 -right-24 w-48 h-48 bg-purple-600/20 rounded-full blur-3xl pointer-events-none"></div>
                 
-                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[11px] font-semibold">
-                    <span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
-                    12.847 lisensi aktif
+                <!-- Header / Logo Area -->
+                <div class="text-center space-y-2 relative z-10">
+                    <div class="inline-flex p-3 rounded-2xl bg-purple-500/10 border border-purple-500/30 text-purple-400 text-2xl shadow-[0_0_20px_rgba(168,85,247,0.2)] mb-1">
+                        ⚡
+                    </div>
+                    <h1 class="text-2xl font-extrabold tracking-tight text-white">AM Premium</h1>
+                    <p class="text-xs text-slate-400">Silakan masuk atau daftarkan akun Anda</p>
+                </div>
+                
+                <!-- Segmented Control / Tab Switcher Baru -->
+                <div class="relative flex rounded-2xl bg-[#07040d] p-1.5 border border-purple-500/20 relative z-10">
+                    <div id="tab-indicator" class="absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-gradient-to-r from-purple-600 to-indigo-600 rounded-xl transition-all duration-300 shadow-lg shadow-purple-500/30"></div>
+                    <button onclick="switchAuthTab('login')" id="tab-login-btn" class="relative z-10 flex-1 py-3 text-xs font-extrabold tracking-wider rounded-xl transition-colors text-white">MASUK</button>
+                    <button onclick="switchAuthTab('register')" id="tab-reg-btn" class="relative z-10 flex-1 py-3 text-xs font-extrabold tracking-wider rounded-xl transition-colors text-slate-400 hover:text-white">DAFTAR</button>
                 </div>
 
-                <div class="space-y-2">
-                    <h1 class="text-2xl font-extrabold tracking-tight text-white leading-snug">Premium Alight Motion. <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-indigo-400">Gratis, tanpa biaya.</span></h1>
-                    <p class="text-xs text-slate-400 leading-relaxed">VORTEX mengaktifkan fitur premium akun Alight Motion kamu melalui celah verifikasi email resmi. Proses instan & transparan.</p>
-                </div>
-
-                <div class="grid grid-cols-2 gap-3 pt-1">
-                    <button onclick="switchAuthTab('login')" id="tab-login-btn" class="vortex-btn-primary text-xs font-bold tracking-wider text-white shadow-lg">Masuk</button>
-                    <button onclick="switchAuthTab('register')" id="tab-reg-btn" class="vortex-btn-secondary text-xs font-bold tracking-wider text-slate-300">Daftar Gratis</button>
-                </div>
-
-                <div class="space-y-4 pt-2">
+                <!-- Form Fields -->
+                <div class="space-y-4 relative z-10">
                     <div class="space-y-1.5">
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 pl-2">Username ID</label>
-                        <input type="text" id="auth-username" placeholder="Masukkan username unik..." class="input-glow w-full font-medium placeholder:text-slate-600">
+                        <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300/90 pl-2">Username</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-purple-400/60 text-sm">👤</span>
+                            <input type="text" id="auth-username" placeholder="Masukkan username unik..." class="input-glow w-full text-slate-200 font-medium placeholder:text-slate-600 pl-11">
+                        </div>
                     </div>
 
                     <div class="space-y-1.5">
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 pl-2">Security Password</label>
-                        <input type="password" id="auth-password" placeholder="••••••••" class="input-glow w-full font-medium placeholder:text-slate-600">
+                        <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300/90 pl-2">Password</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-purple-400/60 text-sm">🔒</span>
+                            <input type="password" id="auth-password" placeholder="••••••••" class="input-glow w-full text-slate-200 font-medium placeholder:text-slate-600 pl-11">
+                        </div>
                     </div>
 
                     <div id="email-field-container" class="space-y-1.5 hidden transition-all duration-300">
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 pl-2">Recovery Email</label>
-                        <input type="email" id="auth-email" placeholder="Masukan Gmail Anda" class="input-glow w-full font-medium placeholder:text-slate-600">
-                        <p class="text-[10px] text-amber-400/90 pl-2 pt-0.5">⚠️ Setiap perangkat/HP hanya diizinkan membuat 1 akun.</p>
+                        <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300/90 pl-2">Gmail Pemulihan</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-purple-400/60 text-sm">✉️</span>
+                            <input type="email" id="auth-email" placeholder="Masukan Gmail aktif Anda" class="input-glow w-full text-slate-200 font-medium placeholder:text-slate-600 pl-11">
+                        </div>
+                        <p class="text-[10px] text-amber-400/90 pl-2 pt-1">⚠️ Setiap perangkat/HP hanya diizinkan membuat 1 akun.</p>
                     </div>
                 </div>
 
-                <button onclick="handleAuthAction()" id="auth-submit-btn" class="cyber-btn w-full text-white font-extrabold uppercase tracking-widest flex items-center justify-center gap-2">
-                    <span id="auth-btn-text">Masuk</span>
-                </button>
+                <!-- Submit Button -->
+                <div class="pt-2 relative z-10">
+                    <button onclick="handleAuthAction()" id="auth-submit-btn" class="cyber-btn w-full text-white font-extrabold uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl shadow-purple-600/20">
+                        <span id="auth-btn-text">Masuk ke Terminal</span>
+                    </button>
+                </div>
             </div>
 
             <!-- VIEW 2: HALAMAN UTAMA / GENERATOR -->
             <div id="terminal-view" class="space-y-4 hidden">
                 
-                <!-- BANNER VIDEO UTAMA (BISA DIUBAH ADMIN) -->
-                <div class="w-full h-44 rounded-2xl overflow-hidden relative border border-white/10 shadow-xl bg-black">
+                <!-- BANNER VIDEO UTAMA -->
+                <div class="w-full h-44 rounded-2xl overflow-hidden relative border border-purple-500/30 shadow-[0_0_25px_rgba(168,85,247,0.2)] bg-black">
                     <video id="main-display-video" src="" autoplay loop muted playsinline class="w-full h-full object-cover"></video>
-                    <div class="absolute inset-0 bg-gradient-to-t from-[#030008] via-transparent to-transparent opacity-70 pointer-events-none"></div>
+                    <div class="absolute inset-0 bg-gradient-to-t from-[#0b0614] via-transparent to-transparent opacity-60 pointer-events-none"></div>
                 </div>
 
                 <!-- INFO USER & STATUS KECIL -->
                 <div class="glass-panel py-3 px-4 flex items-center justify-between text-xs">
                     <div class="flex items-center gap-2 text-slate-300 truncate">
-                        <div class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
+                        <div class="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></div>
                         <span class="truncate">ID: <strong id="logged-username" class="text-white font-bold"></strong></span>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
@@ -433,7 +460,7 @@ const htmlTemplate = `
                     <div class="flex items-center gap-2.5">
                         <div class="w-8 h-8 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 text-xs">⚡</div>
                         <div>
-                            <p class="text-xs font-bold text-slate-200">Activation Quota</p>
+                            <p class="text-xs font-bold text-slate-200" id="quota-title-label">Activation Quota</p>
                             <p class="text-[10px] text-slate-400">Reset otomatis 24 Jam</p>
                         </div>
                     </div>
@@ -444,10 +471,8 @@ const htmlTemplate = `
 
                 <!-- FORM GENERATOR UTAMA -->
                 <div class="glass-panel space-y-3.5">
-                    
-                    <!-- Kirim ke Alight Motion -->
                     <div class="space-y-1.5">
-                        <label class="text-xs font-bold text-slate-300 flex items-center gap-2 pl-1">
+                        <label class="text-xs font-bold text-purple-300 flex items-center gap-2 pl-1">
                             <span>✉️</span> Kirim ke Alight Motion
                         </label>
                         <input type="email" id="target-email" placeholder="contoh@gmail.com" class="input-glow w-full text-slate-200">
@@ -457,31 +482,16 @@ const htmlTemplate = `
                         <span id="send-icon">🚀</span> <span id="send-text">Kirim</span>
                     </button>
 
-                    <!-- Verify Section -->
                     <div class="space-y-3 pt-2">
                         <label class="text-xs font-bold text-emerald-400 flex items-center gap-2 pl-1">
                             <span>✅</span> Verifikasi
                         </label>
-                        
                         <input type="text" id="magic-url" placeholder="https://alight-creative.firebaseapp.com/_..." class="input-glow w-full text-emerald-300 font-medium text-xs placeholder:text-slate-600">
                     </div>
 
-                    <button onclick="handleActivate()" class="cyber-btn-green w-full text-white font-extrabold flex items-center justify-center gap-2">
+                    <button onclick="handleActivate()" class="cyber-btn-green w-full text-slate-950 font-extrabold flex items-center justify-center gap-2">
                         <span>✓</span> Verifikasi
                     </button>
-                </div>
-
-                <!-- FITUR CEK GMAIL YANG SUDAH TERDAFTAR AM PREMIUM (KHUSUS USER MASING-MASING) -->
-                <div class="glass-panel space-y-3">
-                    <div class="flex items-center justify-between">
-                        <label class="text-xs font-bold text-slate-300 flex items-center gap-2 pl-1">
-                            <span>📋</span> List Gmail AM Premium Anda
-                        </label>
-                        <button onclick="loadMyRegisteredEmails()" class="text-[11px] text-purple-400 hover:text-purple-300 underline">Refresh List</button>
-                    </div>
-                    <div id="my-registered-emails-list" class="space-y-2 max-h-36 overflow-y-auto text-xs pr-1">
-                        <p class="text-slate-500 italic">Memuat list Gmail terdaftar...</p>
-                    </div>
                 </div>
 
                 <div id="result-box" class="input-glow p-3 text-xs hidden text-purple-300 break-all bg-purple-950/20 border-purple-500/30 mono rounded-2xl">
@@ -489,22 +499,93 @@ const htmlTemplate = `
                 </div>
             </div>
 
+            <!-- VIEW: FEED PRESET VIDEO -->
+            <div id="section-presets" class="glass-panel space-y-4 hidden">
+                <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
+                    <h2 class="text-xs font-extrabold text-purple-400 uppercase tracking-wider">Vidio Preset</h2>
+                    <button onclick="switchView('generator')" class="text-xs text-slate-400 hover:text-white underline">← Kembali</button>
+                </div>
+                <div id="preset-feed-container" class="space-y-4 max-h-[450px] overflow-y-auto pr-1">
+                    <p class="text-slate-500 italic text-xs">Memuat daftar preset...</p>
+                </div>
+            </div>
+
+            <!-- VIEW: UPLOAD POST PRESET (CREATOR) -->
+            <div id="section-creator-upload" class="glass-panel space-y-4 hidden">
+                <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
+                    <h2 class="text-xs font-extrabold text-amber-400 uppercase tracking-wider">Upload Preset</h2>
+                    <button onclick="switchView('generator')" class="text-xs text-slate-400 hover:text-white underline">← Kembali</button>
+                </div>
+                <div class="space-y-3 text-xs">
+                    <div class="space-y-1">
+                        <label class="text-purple-300 font-bold">Judul / Keterangan Preset:</label>
+                        <input type="text" id="preset-title-input" placeholder="Cth: Preset Jedag Jedug AM Kece" class="input-glow w-full text-slate-200 text-xs">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-purple-300 font-bold">Link Tautan Preset (XML / Alight Link):</label>
+                        <input type="text" id="preset-link-input" placeholder="https://..." class="input-glow w-full text-slate-200 text-xs">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-purple-300 font-bold">File Video Preview (.mp4):</label>
+                        <input type="file" id="preset-video-file" accept="video/*" class="w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-purple-600 file:text-white hover:file:bg-purple-500 cursor-pointer">
+                    </div>
+                    <button onclick="handleUploadPreset()" id="btn-upload-preset" class="cyber-btn w-full text-white font-extrabold uppercase tracking-wider mt-2">Posting Preset</button>
+                </div>
+            </div>
+
+            <!-- VIEW: SALDO & PENARIKAN (CREATOR) -->
+            <div id="section-wallet" class="glass-panel space-y-4 hidden">
+                <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
+                    <h2 class="text-xs font-extrabold text-emerald-400 uppercase tracking-wider">Penarikan Saldo</h2>
+                    <button onclick="switchView('generator')" class="text-xs text-slate-400 hover:text-white underline">← Kembali</button>
+                </div>
+
+                <div class="p-4 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 space-y-2 text-center">
+                    <p class="text-xs text-slate-300 font-bold">Saldo Tersedia:</p>
+                    <p id="creator-balance-display" class="text-2xl font-black text-emerald-400 mono">Rp 0</p>
+                    <p class="text-[10px] text-slate-400">Setiap upload & share link preset otomatis masuk Rp 50.</p>
+                </div>
+
+                <div class="space-y-3 pt-2">
+                    <p class="text-xs font-bold text-purple-300">Form Tarik Saldo (DANA):</p>
+                    <div class="space-y-1.5 text-xs">
+                        <label class="text-slate-300">Nominal Penarikan:</label>
+                        <select id="wd-amount-select" class="input-glow w-full text-slate-200 text-xs">
+                            <option value="20000">Rp 20.000 (Minimal Tukar)</option>
+                        </select>
+                    </div>
+                    <div class="space-y-1.5 text-xs">
+                        <label class="text-slate-300">Nomor DANA:</label>
+                        <input type="text" id="wd-dana-phone" placeholder="08xxxxxxxxxx" class="input-glow w-full text-slate-200 text-xs">
+                    </div>
+                    <div class="space-y-1.5 text-xs">
+                        <label class="text-slate-300">Atas Nama DANA:</label>
+                        <input type="text" id="wd-dana-name" placeholder="Nama pemilik akun DANA..." class="input-glow w-full text-slate-200 text-xs">
+                    </div>
+                    <button onclick="handleRequestWithdrawal()" class="cyber-btn-green w-full text-slate-950 font-extrabold text-xs uppercase tracking-wider mt-2">Ajukan Penarikan Saldo</button>
+                </div>
+            </div>
+
             <!-- VIEW 3: HALAMAN PROFIL KHUSUS AKUN -->
             <div id="section-profile" class="glass-panel space-y-5 hidden">
-                <div class="flex items-center justify-between pb-3 border-b border-white/10">
+                <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
                     <h2 class="text-xs font-extrabold text-purple-400 uppercase tracking-wider">Halaman Akun & Profil</h2>
                     <button onclick="switchView('generator')" class="text-xs text-slate-400 hover:text-white underline">← Kembali</button>
                 </div>
                 
-                <div class="space-y-2 text-xs text-slate-300 p-3.5 rounded-2xl bg-white/5 border border-white/10">
+                <div class="space-y-2 text-xs text-slate-300 p-3.5 rounded-2xl bg-purple-950/20 border border-purple-500/20">
                     <p>Username Anda: <strong id="profile-uname" class="text-white font-bold"></strong></p>
                     <p>Tipe Keanggotaan: <strong id="profile-role" class="text-purple-400">Standard User</strong></p>
+                    <p>Status Creator: <strong id="profile-creator-status" class="text-amber-400">Belum Aktif</strong></p>
+                    <div id="creator-register-container" class="pt-2">
+                        <button id="btn-register-creator" onclick="handleRegisterCreator()" class="w-full py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-full text-xs transition">Daftar Menjadi Creator</button>
+                    </div>
                     <p>Sisa Kuota Aktif: <strong id="profile-quota" class="text-cyan-400">0</strong></p>
                 </div>
 
                 <!-- UBAH USERNAME -->
-                <div class="space-y-2 pt-2 border-t border-white/10">
-                    <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 pl-1">Ganti Username Akun</label>
+                <div class="space-y-2 pt-2 border-t border-purple-500/10">
+                    <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-1">Ganti Username Akun</label>
                     <div class="flex gap-2">
                         <input type="text" id="new-username-input" placeholder="Username baru..." class="input-glow flex-1 px-4 py-2.5 text-slate-200 text-xs">
                         <button onclick="triggerUpdateUsername()" class="px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-full text-xs transition">Simpan</button>
@@ -512,8 +593,8 @@ const htmlTemplate = `
                 </div>
 
                 <!-- KLAIM KODE REDEEM -->
-                <div class="space-y-2 pt-2 border-t border-white/10">
-                    <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 pl-1">Klaim Kode Redeem Kuota</label>
+                <div class="space-y-2 pt-2 border-t border-purple-500/10">
+                    <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-1">Klaim Kode Redeem Kuota</label>
                     <div class="flex gap-2">
                         <input type="text" id="redeem-code-input" placeholder="KODE-XXXX..." class="input-glow flex-1 px-4 py-2.5 text-purple-300 font-bold uppercase tracking-widest text-xs">
                         <button onclick="handleRedeemCode()" class="px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-full text-xs transition">Klaim</button>
@@ -530,22 +611,32 @@ const htmlTemplate = `
                         <button onclick="changeServerState('offline')" class="py-2.5 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 rounded-full text-[11px] text-rose-300 font-bold transition">🔴 Offline</button>
                     </div>
 
-                    <!-- FITUR MELIHAT SEMUA USERNAME YANG TERDAFTAR (KHUSUS ADMIN) -->
-                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
-                        <div class="flex justify-between items-center text-[11px] text-amber-300 font-bold">
-                            <span>Daftar Semua Username Terdaftar:</span>
-                            <button onclick="loadAdminRegisteredUsernames()" class="text-slate-400 hover:text-white underline">Refresh</button>
-                        </div>
-                        <div id="admin-registered-usernames-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px]">
-                            <p class="text-slate-500 italic">Memuat list username...</p>
-                        </div>
-                    </div>
-
-                    <!-- FITUR UBAH VIDEO KHUSUS ADMIN -->
                     <div class="border-t border-amber-500/20 pt-3 space-y-2">
                         <p class="text-[11px] text-amber-300 font-bold">Ubah Video Tampilan Utama (Upload File):</p>
                         <input type="file" id="admin-video-file" accept="video/*" class="w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer">
                         <button onclick="handleUploadVideo()" id="btn-upload-video" class="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-full text-xs transition">Upload & Perbarui Video</button>
+                    </div>
+
+                    <!-- KONFIRMASI / KELOLA PENDAFTARAN CREATOR -->
+                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
+                        <div class="flex justify-between items-center text-[11px] text-amber-300 font-bold">
+                            <span>Permintaan Pendaftaran Creator:</span>
+                            <button onclick="loadAdminCreatorRequests()" class="text-slate-400 hover:text-white underline">Refresh</button>
+                        </div>
+                        <div id="admin-creator-requests-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px]">
+                            <p class="text-slate-500 italic">Memuat list pendaftar...</p>
+                        </div>
+                    </div>
+
+                    <!-- ADMIN LIST PENARIKAN SALDO -->
+                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
+                        <div class="flex justify-between items-center text-[11px] text-amber-300 font-bold">
+                            <span>List Penarikan Saldo (Withdrawals):</span>
+                            <button onclick="loadAdminWithdrawals()" class="text-slate-400 hover:text-white underline">Refresh</button>
+                        </div>
+                        <div id="admin-withdrawals-list" class="space-y-1.5 max-h-36 overflow-y-auto text-[11px]">
+                            <p class="text-slate-500 italic">Memuat list penarikan...</p>
+                        </div>
                     </div>
 
                     <div class="border-t border-amber-500/20 pt-3 space-y-2">
@@ -588,23 +679,24 @@ const htmlTemplate = `
 
             <!-- VIEW 4: HALAMAN PANDUAN PENGGUNAAN -->
             <div id="section-guide" class="glass-panel space-y-4 hidden">
-                <div class="flex items-center justify-between pb-3 border-b border-white/10">
+                <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
                     <h2 class="text-xs font-extrabold text-purple-400 uppercase tracking-wider">Panduan Cara Menggunakan</h2>
                     <button onclick="switchView('generator')" class="text-xs text-slate-400 hover:text-white underline">← Kembali</button>
                 </div>
                 <ol class="list-decimal list-inside space-y-2.5 text-xs text-slate-300 leading-relaxed">
                     <li>Pastikan Anda sudah berhasil masuk ke dalam sistem menggunakan akun Anda.</li>
-                    <li>Beralih ke menu <strong>Dashboard Utama</strong> untuk mulai memproses token.</li>
+                    <li>Beralih ke menu <strong>Generator Utama</strong> untuk mulai memproses token.</li>
                     <li>Masukkan email target Google/Gmail Anda pada kolom yang telah disediakan.</li>
-                    <li>Klik tombol <strong>Kirim</strong> untuk memicu token verifikasi.</li>
+                    <li>Klik tombol <strong>Send</strong> untuk memicu token verifikasi.</li>
                     <li>Salin tautan Magic Link yang masuk ke email Anda, lalu tempel (*paste*) pada kolom URL.</li>
-                    <li>Klik tombol hijau <strong>Verifikasi</strong> dan proses selesai dengan sempurna!</li>
+                    <li>Klik tombol hijau <strong>Verify</strong> dan proses selesai dengan sempurna!</li>
+                    <li>Nikmati fitur <strong>Vidio Preset</strong> untuk melihat dan mengunduh karya sesama pengguna.</li>
                 </ol>
             </div>
 
             <!-- VIEW 5: HALAMAN INFORMASI & PENGUMUMAN -->
             <div id="section-announcement" class="glass-panel space-y-4 hidden">
-                <div class="flex items-center justify-between pb-3 border-b border-white/10">
+                <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
                     <h2 class="text-xs font-extrabold text-cyan-400 uppercase tracking-wider">Informasi & Pengumuman Resmi</h2>
                     <button onclick="switchView('generator')" class="text-xs text-slate-400 hover:text-white underline">← Kembali</button>
                 </div>
@@ -613,8 +705,7 @@ const htmlTemplate = `
                     <p class="text-slate-500 italic">Memuat informasi...</p>
                 </div>
 
-                <!-- ADMIN KELOLA INFORMASI -->
-                <div id="admin-announcement-panel" class="space-y-3 pt-3 border-t border-white/10 hidden">
+                <div id="admin-announcement-panel" class="space-y-3 pt-3 border-t border-purple-500/20 hidden">
                     <p class="text-xs font-extrabold text-amber-400">Panel Tambah/Edit Pengumuman (Admin)</p>
                     <input type="hidden" id="info-edit-id" value="">
                     <input type="text" id="info-title" placeholder="Judul Informasi" class="input-glow w-full px-4 py-2.5 text-slate-200 text-xs">
@@ -630,7 +721,7 @@ const htmlTemplate = `
             </div>
 
             <div class="text-center pt-1">
-                <p class="text-[10px] text-slate-500 tracking-wider font-medium">VORTEX • Powered by Banggus</p>
+                <p class="text-[10px] text-slate-500 tracking-wider font-medium">AM Premium • By Banggus</p>
             </div>
         </div>
     </div>
@@ -639,6 +730,10 @@ const htmlTemplate = `
         let currentAuthMode = 'login';
         let loggedInUsername = '';
         let isAdminUser = false;
+        let isCreatorUser = false;
+        let currentBalance = 0;
+        let hasWithdrawn100 = false;
+        let creatorStatus = 'none';
 
         function toggleMenu() {
             const drawer = document.getElementById('nav-drawer');
@@ -654,20 +749,27 @@ const htmlTemplate = `
             document.getElementById('section-profile').classList.add('hidden');
             document.getElementById('section-guide').classList.add('hidden');
             document.getElementById('section-announcement').classList.add('hidden');
+            document.getElementById('section-presets').classList.add('hidden');
+            document.getElementById('section-creator-upload').classList.add('hidden');
+            document.getElementById('section-wallet').classList.add('hidden');
 
             if (viewName === 'generator') {
                 document.getElementById('terminal-view').classList.remove('hidden');
-                loadMyRegisteredEmails();
             } else if (viewName === 'profile') {
                 document.getElementById('section-profile').classList.remove('hidden');
-                if(isAdminUser) {
-                    loadAdminRegisteredUsernames();
-                }
             } else if (viewName === 'guide') {
                 document.getElementById('section-guide').classList.remove('hidden');
             } else if (viewName === 'announcement') {
                 document.getElementById('section-announcement').classList.remove('hidden');
                 loadUserAnnouncements();
+            } else if (viewName === 'presets') {
+                document.getElementById('section-presets').classList.remove('hidden');
+                loadPresetFeed();
+            } else if (viewName === 'creator-upload') {
+                document.getElementById('section-creator-upload').classList.remove('hidden');
+            } else if (viewName === 'wallet') {
+                document.getElementById('section-wallet').classList.remove('hidden');
+                updateWalletUI();
             }
         }
 
@@ -722,17 +824,20 @@ const htmlTemplate = `
             currentAuthMode = mode;
             const loginBtn = document.getElementById('tab-login-btn');
             const regBtn = document.getElementById('tab-reg-btn');
+            const indicator = document.getElementById('tab-indicator');
             const emailField = document.getElementById('email-field-container');
             const btnText = document.getElementById('auth-btn-text');
 
             if(mode === 'login') {
-                loginBtn.className = "vortex-btn-primary text-xs font-bold tracking-wider text-white shadow-lg";
-                regBtn.className = "vortex-btn-secondary text-xs font-bold tracking-wider text-slate-300";
+                indicator.style.transform = 'translateX(0%)';
+                loginBtn.className = "relative z-10 flex-1 py-3 text-xs font-extrabold tracking-wider rounded-xl transition-colors text-white";
+                regBtn.className = "relative z-10 flex-1 py-3 text-xs font-extrabold tracking-wider rounded-xl transition-colors text-slate-400 hover:text-white";
                 emailField.classList.add('hidden');
-                btnText.innerText = "Masuk";
+                btnText.innerText = "Masuk ke Terminal";
             } else {
-                regBtn.className = "vortex-btn-primary text-xs font-bold tracking-wider text-white shadow-lg";
-                loginBtn.className = "vortex-btn-secondary text-xs font-bold tracking-wider text-slate-300";
+                indicator.style.transform = 'translateX(100%)';
+                regBtn.className = "relative z-10 flex-1 py-3 text-xs font-extrabold tracking-wider rounded-xl transition-colors text-white";
+                loginBtn.className = "relative z-10 flex-1 py-3 text-xs font-extrabold tracking-wider rounded-xl transition-colors text-slate-400 hover:text-white";
                 emailField.classList.remove('hidden');
                 btnText.innerText = "Daftar Akun Baru";
             }
@@ -767,44 +872,82 @@ const htmlTemplate = `
                         localStorage.setItem('savedUsername', data.username);
                     }
                     alert(data.message);
-                    loggedInUsername = data.username;
-                    isAdminUser = data.isAdmin;
-
-                    document.getElementById('auth-view').classList.add('hidden');
-                    document.getElementById('terminal-view').classList.remove('hidden');
-                    
-                    document.getElementById('header-menu-btn').classList.remove('hidden');
-                    document.getElementById('logged-username').innerText = data.username;
-                    
-                    document.getElementById('profile-uname').innerText = data.username;
-                    document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'Standard User');
-                    document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (1 + (data.bonusQuota || 0) - data.usedQuota);
-
-                    document.getElementById('drawer-status-role').innerText = data.username + ' (' + (data.isAdmin ? 'Admin' : 'User') + ')';
-                    document.getElementById('drawer-logout-btn').classList.remove('hidden');
-
-                    updateQuotaDisplay(data);
-                    checkVipStatus(data);
-                    loadUserAnnouncements();
-                    loadMyRegisteredEmails();
-                    updateStatusUI(data.serverStatus);
-                    fetchFeaturedVideo();
-
-                    if(data.isAdmin) {
-                        document.getElementById('role-badge').className = "px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-extrabold";
-                        document.getElementById('role-badge').innerText = "👑 Admin Master";
-                        document.getElementById('admin-control-panel').classList.remove('hidden');
-                        document.getElementById('admin-announcement-panel').classList.remove('hidden');
-                        loadAdminRegisteredUsernames();
-                        loadAdminRedeems();
-                        loadAdminAnnouncements();
-                        loadAdminVipList();
-                    }
+                    applyUserSessionData(data);
                 } else {
                     alert('Gagal: ' + data.message);
                 }
             } catch (err) {
                 alert('Terjadi kesalahan koneksi server.');
+            }
+        }
+
+        function applyUserSessionData(data) {
+            loggedInUsername = data.username;
+            isAdminUser = data.isAdmin;
+            isCreatorUser = data.isCreator || data.isAdmin;
+            currentBalance = data.balance || 0;
+            hasWithdrawn100 = data.hasWithdrawn100 || false;
+            creatorStatus = data.creatorStatus || 'none';
+
+            document.getElementById('auth-view').classList.add('hidden');
+            document.getElementById('terminal-view').classList.remove('hidden');
+            
+            document.getElementById('header-menu-btn').classList.remove('hidden');
+            document.getElementById('logged-username').innerText = data.username;
+            
+            document.getElementById('profile-uname').innerText = data.username;
+            document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'Standard User');
+            
+            let statusText = 'Belum Aktif';
+            if (isCreatorUser) statusText = 'Aktif (Creator)';
+            else if (creatorStatus === 'pending') statusText = 'Menunggu Konfirmasi Admin';
+            else if (creatorStatus === 'rejected') statusText = 'Ditolak Admin';
+            document.getElementById('profile-creator-status').innerText = statusText;
+
+            const regCreatorContainer = document.getElementById('creator-register-container');
+            if (isCreatorUser || isAdminUser || creatorStatus === 'pending') {
+                regCreatorContainer.classList.add('hidden');
+            } else {
+                regCreatorContainer.classList.remove('hidden');
+                const btnReg = document.getElementById('btn-register-creator');
+                if (creatorStatus === 'rejected') {
+                    btnReg.innerText = 'Daftar Ulang Menjadi Creator';
+                } else {
+                    btnReg.innerText = 'Daftar Menjadi Creator';
+                }
+            }
+
+            let quotaLimit = isCreatorUser ? 10 : 3;
+            document.getElementById('quota-title-label').innerText = isCreatorUser ? 'Creator Quota (Max 10)' : 'Activation Quota';
+            document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (quotaLimit + (data.bonusQuota || 0) - data.usedQuota);
+
+            document.getElementById('drawer-status-role').innerText = data.username + ' (' + (data.isAdmin ? 'Admin' : 'User') + ')';
+            document.getElementById('drawer-logout-btn').classList.remove('hidden');
+
+            if (isCreatorUser) {
+                document.getElementById('menu-creator-upload').classList.remove('hidden');
+                document.getElementById('menu-wallet').classList.remove('hidden');
+            } else {
+                document.getElementById('menu-creator-upload').classList.add('hidden');
+                document.getElementById('menu-wallet').classList.add('hidden');
+            }
+
+            updateQuotaDisplay(data);
+            checkVipStatus(data);
+            loadUserAnnouncements();
+            updateStatusUI(data.serverStatus);
+            fetchFeaturedVideo();
+
+            if(data.isAdmin) {
+                document.getElementById('role-badge').className = "px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-extrabold";
+                document.getElementById('role-badge').innerText = "👑 Admin Master";
+                document.getElementById('admin-control-panel').classList.remove('hidden');
+                document.getElementById('admin-announcement-panel').classList.remove('hidden');
+                loadAdminRedeems();
+                loadAdminAnnouncements();
+                loadAdminVipList();
+                loadAdminCreatorRequests();
+                loadAdminWithdrawals();
             }
         }
 
@@ -821,91 +964,31 @@ const htmlTemplate = `
                 });
                 const data = await res.json();
                 if (data.success) {
-                    loggedInUsername = data.username;
-                    isAdminUser = data.isAdmin;
-
-                    document.getElementById('auth-view').classList.add('hidden');
-                    document.getElementById('terminal-view').classList.remove('hidden');
-                    
-                    document.getElementById('header-menu-btn').classList.remove('hidden');
-                    document.getElementById('logged-username').innerText = data.username;
-                    
-                    document.getElementById('profile-uname').innerText = data.username;
-                    document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'Standard User');
-                    document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (1 + (data.bonusQuota || 0) - data.usedQuota);
-
-                    document.getElementById('drawer-status-role').innerText = data.username + ' (' + (data.isAdmin ? 'Admin' : 'User') + ')';
-                    document.getElementById('drawer-logout-btn').classList.remove('hidden');
-
-                    updateQuotaDisplay(data);
-                    checkVipStatus(data);
-                    loadUserAnnouncements();
-                    loadMyRegisteredEmails();
-                    updateStatusUI(data.serverStatus);
-                    fetchFeaturedVideo();
-
-                    if(data.isAdmin) {
-                        document.getElementById('role-badge').className = "px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-extrabold";
-                        document.getElementById('role-badge').innerText = "👑 Admin Master";
-                        document.getElementById('admin-control-panel').classList.remove('hidden');
-                        document.getElementById('admin-announcement-panel').classList.remove('hidden');
-                        loadAdminRegisteredUsernames();
-                        loadAdminRedeems();
-                        loadAdminAnnouncements();
-                        loadAdminVipList();
-                    }
+                    applyUserSessionData(data);
                 }
             } catch (e) {}
         }
         checkSavedSession();
 
-        async function loadMyRegisteredEmails() {
-            if (!loggedInUsername) return;
+        async function handleRegisterCreator() {
             try {
-                const res = await fetch('/api/user/emails?username=' + encodeURIComponent(loggedInUsername));
+                const res = await fetch('/api/user/register-creator', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: loggedInUsername })
+                });
                 const data = await res.json();
-                const container = document.getElementById('my-registered-emails-list');
-                container.innerHTML = '';
-
-                if (data.success && data.emails && data.emails.length > 0) {
-                    data.emails.forEach((email, index) => {
-                        container.innerHTML += \`
-                            <div class="flex justify-between items-center bg-white/5 p-2.5 rounded-xl border border-white/10">
-                                <span class="text-slate-200 mono">\${index + 1}. \${email}</span>
-                                <span class="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full text-[10px] font-bold">Terdaftar</span>
-                            </div>
-                        \`;
-                    });
+                if (data.success) {
+                    alert(data.message);
+                    creatorStatus = 'pending';
+                    document.getElementById('profile-creator-status').innerText = 'Menunggu Konfirmasi Admin';
+                    document.getElementById('creator-register-container').classList.add('hidden');
                 } else {
-                    container.innerHTML = '<p class="text-slate-500 italic">Belum ada Gmail yang terdaftar pada akun Anda.</p>';
+                    alert(data.message);
                 }
-            } catch (e) {
-                const container = document.getElementById('my-registered-emails-list');
-                if(container) container.innerHTML = '<p class="text-rose-400 italic">Gagal memuat list Gmail.</p>';
+            } catch(e) {
+                alert('Terjadi kesalahan jaringan.');
             }
-        }
-
-        async function loadAdminRegisteredUsernames() {
-            if (!isAdminUser) return;
-            try {
-                const res = await fetch('/api/admin/get-usernames?username=' + encodeURIComponent(loggedInUsername));
-                const data = await res.json();
-                const container = document.getElementById('admin-registered-usernames-list');
-                container.innerHTML = '';
-
-                if (data.success && data.usernames && data.usernames.length > 0) {
-                    data.usernames.forEach((uname, index) => {
-                        container.innerHTML += \`
-                            <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
-                                <span class="text-amber-300 font-bold">\${index + 1}. \${uname}</span>
-                                <span class="text-slate-400 text-[10px]">Active ID</span>
-                            </div>
-                        \`;
-                    });
-                } else {
-                    container.innerHTML = '<p class="text-slate-500 italic">Belum ada username terdaftar.</p>';
-                }
-            } catch (e) {}
         }
 
         async function triggerUpdateUsername() {
@@ -937,7 +1020,6 @@ const htmlTemplate = `
                     alert(result.message || 'Gagal mengubah username.');
                 }
             } catch (error) {
-                console.error('Terjadi kesalahan:', error);
                 alert('Terjadi kesalahan jaringan.');
             }
         }
@@ -971,24 +1053,345 @@ const htmlTemplate = `
                         alert(data.message || 'Gagal mengunggah video.');
                     }
                 } catch(e) {
-                    alert('Terjadi kesalahan koneksi saat mengunggah video.');
+                    alert('Terjadi kesalahan koneksi.');
                 } finally {
                     uploadBtn.innerText = "Upload & Perbarui Video";
                     uploadBtn.disabled = false;
                 }
             };
-            reader.onerror = function() {
-                alert('Gagal membaca file.');
-                uploadBtn.innerText = "Upload & Perbarui Video";
-                uploadBtn.disabled = false;
+        }
+
+        async function handleAdminCreatorAction(targetUser, actionType) {
+            if (!isAdminUser) return;
+            try {
+                const res = await fetch('/api/admin/creator-action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: loggedInUsername, targetUser, actionType })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert(data.message);
+                    loadAdminCreatorRequests();
+                } else {
+                    alert(data.message);
+                }
+            } catch(e) {
+                alert('Gagal memproses aksi creator.');
+            }
+        }
+
+        async function loadAdminCreatorRequests() {
+            if (!isAdminUser) return;
+            try {
+                const res = await fetch('/api/admin/creator-requests?username=' + encodeURIComponent(loggedInUsername));
+                const data = await res.json();
+                const container = document.getElementById('admin-creator-requests-list');
+                container.innerHTML = '';
+
+                if (data.success && Object.keys(data.requests).length > 0) {
+                    for (let [uname, val] of Object.entries(data.requests)) {
+                        container.innerHTML += `
+                            <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
+                                <div>
+                                    <span class="text-amber-300 font-bold">@\${uname}</span>
+                                    <span class="text-slate-400 block text-[9px]">Status: Pendaftar Creator</span>
+                                </div>
+                                <div class="flex gap-1">
+                                    <button onclick="handleAdminCreatorAction('\${uname}', 'approve')" class="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 rounded-lg border border-emerald-500/30 text-[10px] font-bold">Terima</button>
+                                    <button onclick="handleAdminCreatorAction('\${uname}', 'reject')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px] font-bold">Tolak</button>
+                                </div>
+                            </div>
+                        `;
+                    }
+                } else {
+                    container.innerHTML = '<p class="text-slate-500 italic">Tidak ada pendaftar creator baru.</p>';
+                }
+            } catch(e) {}
+        }
+
+        async function handleUploadPreset() {
+            const title = document.getElementById('preset-title-input').value.trim();
+            const link = document.getElementById('preset-link-input').value.trim();
+            const videoFile = document.getElementById('preset-video-file').files[0];
+
+            if (!title || !link || !videoFile) {
+                return alert('Judul, link preset, dan file video wajib diisi!');
+            }
+
+            const btn = document.getElementById('btn-upload-preset');
+            btn.innerText = "Mengunggah Preset...";
+            btn.disabled = true;
+
+            const readerVideo = new FileReader();
+            readerVideo.readAsDataURL(videoFile);
+            readerVideo.onload = async function() {
+                const videoBase64 = readerVideo.result;
+                try {
+                    const res = await fetch('/api/presets/upload', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username: loggedInUsername, title, link, videoUrl: videoBase64 })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        alert('Preset berhasil diposting! Saldo Rp 50 otomatis masuk ke akun Anda.');
+                        document.getElementById('preset-title-input').value = '';
+                        document.getElementById('preset-link-input').value = '';
+                        document.getElementById('preset-video-file').value = '';
+                        if (data.newBalance !== undefined) {
+                            currentBalance = data.newBalance;
+                        }
+                        switchView('presets');
+                    } else {
+                        alert(data.message || 'Gagal memposting preset.');
+                    }
+                } catch(e) {
+                    alert('Terjadi kesalahan jaringan.');
+                } finally {
+                    btn.innerText = "Posting Preset";
+                    btn.disabled = false;
+                }
             };
         }
 
+        // FITUR HAPUS VIDEO PRESET
+        async function handleDeletePreset(presetId) {
+            if (!confirm('Apakah Anda yakin ingin menghapus video preset ini?')) return;
+
+            try {
+                const res = await fetch('/api/presets/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: loggedInUsername, presetId })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('Video preset berhasil dihapus.');
+                    loadPresetFeed();
+                } else {
+                    alert(data.message || 'Gagal menghapus preset.');
+                }
+            } catch(e) {
+                alert('Terjadi kesalahan jaringan.');
+            }
+        }
+
+        function updateWalletUI() {
+            document.getElementById('creator-balance-display').innerText = 'Rp ' + currentBalance.toLocaleString('id-ID');
+            const selectEl = document.getElementById('wd-amount-select');
+            selectEl.innerHTML = '';
+            
+            if (!hasWithdrawn100) {
+                selectEl.innerHTML += `<option value="100">Rp 100 (Penarikan Kreator Baru - 1x)</option>`;
+            }
+            selectEl.innerHTML += `<option value="20000">Rp 20.000 (Minimal Tukar)</option>`;
+        }
+
+        async function handleRequestWithdrawal() {
+            const amount = parseInt(document.getElementById('wd-amount-select').value);
+            const danaPhone = document.getElementById('wd-dana-phone').value.trim();
+            const danaName = document.getElementById('wd-dana-name').value.trim();
+
+            if (!danaPhone || !danaName || isNaN(amount)) {
+                return alert('Nomor DANA dan Atas Nama wajib diisi!');
+            }
+
+            if (amount === 100 && hasWithdrawn100) {
+                return alert('Opsi penarikan Rp 100 hanya bisa digunakan 1x dan sudah kedaluwarsa!');
+            }
+
+            if (amount === 20000 && currentBalance < 20000) {
+                return alert('Saldo Anda belum mencapai Rp 20.000 untuk melakukan penarikan ini!');
+            }
+
+            try {
+                const res = await fetch('/api/wallet/withdraw', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: loggedInUsername, amount, danaPhone, danaName })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('Pengajuan penarikan saldo berhasil dikirim ke admin dan saldo Anda telah dipotong secara otomatis!');
+                    currentBalance = data.newBalance;
+                    hasWithdrawn100 = data.hasWithdrawn100;
+                    document.getElementById('wd-dana-phone').value = '';
+                    document.getElementById('wd-dana-name').value = '';
+                    updateWalletUI();
+                } else {
+                    alert(data.message);
+                }
+            } catch(e) {
+                alert('Terjadi kesalahan jaringan.');
+            }
+        }
+
+        async function loadAdminWithdrawals() {
+            if (!isAdminUser) return;
+            try {
+                const res = await fetch('/api/admin/withdrawals?username=' + encodeURIComponent(loggedInUsername));
+                const data = await res.json();
+                const container = document.getElementById('admin-withdrawals-list');
+                container.innerHTML = '';
+
+                if (data.success && Object.keys(data.withdrawals).length > 0) {
+                    for (let [wid, val] of Object.entries(data.withdrawals)) {
+                        let statusBadge = '';
+                        if (val.status === 'pending') {
+                            statusBadge = `<span class="text-amber-400">Pending</span>`;
+                        } else if (val.status === 'approved') {
+                            statusBadge = `<span class="text-emerald-400">Diterima</span>`;
+                        } else {
+                            statusBadge = `<span class="text-rose-400">Ditolak</span>`;
+                        }
+
+                        container.innerHTML += `
+                            <div class="bg-slate-900/80 p-2.5 rounded-xl border border-amber-500/20 space-y-1">
+                                <div class="flex justify-between items-center text-xs">
+                                    <span class="text-amber-300 font-bold">@\${val.username}</span>
+                                    <span>\${statusBadge}</span>
+                                </div>
+                                <p class="text-[11px] text-slate-200">Nominal: <strong class="text-emerald-400">Rp \${val.amount.toLocaleString('id-ID')}</strong></p>
+                                <p class="text-[10px] text-slate-300">DANA: \${val.danaPhone} (a.n \${val.danaName})</p>
+                                \${val.status === 'pending' ? `
+                                    <div class="flex gap-2 pt-1">
+                                        <button onclick="handleAdminWithdrawalAction('\${wid}', 'approve')" class="flex-1 py-1 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 rounded-lg border border-emerald-500/30 text-[10px] font-bold">Terima</button>
+                                        <button onclick="handleAdminWithdrawalAction('\${wid}', 'reject')" class="flex-1 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px] font-bold">Tolak</button>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        `;
+                    }
+                } else {
+                    container.innerHTML = '<p class="text-slate-500 italic">Tidak ada list penarikan saldo.</p>';
+                }
+            } catch(e) {}
+        }
+
+        async function handleAdminWithdrawalAction(wdId, action) {
+            if (!isAdminUser) return;
+            try {
+                const res = await fetch('/api/admin/withdrawal-action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: loggedInUsername, wdId, action })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert(data.message);
+                    loadAdminWithdrawals();
+                } else {
+                    alert(data.message);
+                }
+            } catch(e) {
+                alert('Terjadi kesalahan.');
+            }
+        }
+
+        async function loadPresetFeed() {
+            try {
+                const res = await fetch('/api/presets');
+                const data = await res.json();
+                const container = document.getElementById('preset-feed-container');
+                container.innerHTML = '';
+
+                if (data.success && Object.keys(data.presets).length > 0) {
+                    const entries = Object.entries(data.presets).sort((a,b) => b[1].timestamp - a[1].timestamp);
+                    for (let [id, val] of entries) {
+                        const isLiked = val.likes && val.likes[loggedInUsername];
+                        const likeCount = val.likes ? Object.keys(val.likes).length : 0;
+                        
+                        let commentsHtml = '';
+                        if (val.comments) {
+                            for (let [cid, cval] of Object.entries(val.comments)) {
+                                commentsHtml += `<div class="bg-slate-900/60 p-2 rounded-xl text-[11px] mb-1"><strong>\${cval.username}:</strong> \${cval.text}</div>`;
+                            }
+                        }
+
+                        // Cek apakah user yang login adalah creator pemilik preset ini atau admin
+                        const canDelete = isAdminUser || (isCreatorUser && val.creator.toLowerCase() === loggedInUsername.toLowerCase());
+
+                        container.innerHTML += `
+                            <div class="glass-panel space-y-3 p-4 border border-purple-500/30 relative">
+                                <div class="flex justify-between items-center text-xs">
+                                    <span class="font-bold text-purple-300">@\${val.creator}</span>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-[10px] text-slate-400">\${new Date(val.timestamp).toLocaleDateString()}</span>
+                                        \${canDelete ? `<button onclick="handleDeletePreset('\${id}')" class="px-2 py-0.5 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/30 rounded-lg text-[10px] font-bold transition">🗑️ Hapus</button>` : ''}
+                                    </div>
+                                </div>
+                                <p class="text-xs font-semibold text-white">\${val.title}</p>
+                                
+                                <div class="w-full h-48 rounded-xl overflow-hidden bg-black relative">
+                                    <video src="\${val.videoUrl}" controls loop playsinline class="w-full h-full object-cover"></video>
+                                </div>
+
+                                <div class="flex items-center justify-between pt-1">
+                                    <a href="\${val.link}" target="_blank" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-full font-bold text-xs transition">🔗 Unduh Link Preset</a>
+                                    <button onclick="handleLikePreset('\${id}')" class="px-3 py-2 rounded-full border \${isLiked ? 'bg-rose-500/20 border-rose-500 text-rose-300' : 'bg-slate-900 border-purple-500/30 text-slate-300'} text-xs font-bold transition">
+                                        ❤️ Like (\${likeCount})
+                                    </button>
+                                </div>
+
+                                <div class="border-t border-purple-500/10 pt-2 space-y-2">
+                                    <p class="text-[11px] font-bold text-purple-300">Komentar:</p>
+                                    <div class="max-h-24 overflow-y-auto space-y-1">\${commentsHtml || '<p class="text-[10px] text-slate-500 italic">Belum ada komentar.</p>'}</div>
+                                    <div class="flex gap-2 pt-1">
+                                        <input type="text" id="comment-input-\${id}" placeholder="Tulis komentar..." class="input-glow flex-1 px-3 py-2 text-xs">
+                                        <button onclick="handlePostComment('\${id}')" class="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-full text-xs font-bold">Kirim</button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
+                } else {
+                    container.innerHTML = '<p class="text-slate-500 italic text-xs">Belum ada preset yang dibagikan.</p>';
+                }
+            } catch(e) {}
+        }
+
+        async function handleLikePreset(presetId) {
+            try {
+                const res = await fetch('/api/presets/like', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: loggedInUsername, presetId })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    loadPresetFeed();
+                }
+            } catch(e) {}
+        }
+
+        async function handlePostComment(presetId) {
+            const input = document.getElementById('comment-input-' + presetId);
+            const text = input.value.trim();
+            if (!text) return;
+
+            try {
+                const res = await fetch('/api/presets/comment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: loggedInUsername, presetId, text })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    input.value = '';
+                    loadPresetFeed();
+                } else {
+                    alert(data.message);
+                }
+            } catch(e) {}
+        }
+
         function updateQuotaDisplay(data) {
+            let quotaLimit = (data.isCreator || data.isAdmin) ? 10 : 3;
             if(data.isAdmin || data.isVip) {
                 document.getElementById('quota-display').innerText = "UNLIMITED";
             } else {
-                document.getElementById('quota-display').innerText = data.usedQuota + "/1 (+" + data.bonusQuota + ")";
+                document.getElementById('quota-display').innerText = data.usedQuota + "/" + quotaLimit + " (+" + data.bonusQuota + ")";
             }
         }
 
@@ -1023,7 +1426,6 @@ const htmlTemplate = `
             if (!isAdminUser) return;
             const targetUser = document.getElementById('vip-target-user').value.trim();
             const days = parseInt(document.getElementById('vip-duration-days').value);
-
             if (!targetUser || isNaN(days)) return alert('Username dan jumlah hari wajib diisi!');
 
             try {
@@ -1052,7 +1454,7 @@ const htmlTemplate = `
 
                 if (data.success && Object.keys(data.vipUsers).length > 0) {
                     for (let [uname, val] of Object.entries(data.vipUsers)) {
-                        container.innerHTML += \`
+                        container.innerHTML += `
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
                                     <span class="text-amber-300 font-bold">\${uname}</span>
@@ -1060,7 +1462,7 @@ const htmlTemplate = `
                                 </div>
                                 <button onclick="handleRemoveVip('\${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Tidak ada akun VIP aktif.</p>';
@@ -1081,7 +1483,7 @@ const htmlTemplate = `
                     alert('Status VIP berhasil dicabut.');
                     loadAdminVipList();
                 }
-            } catch(e) { alert('Gagal mencabut VIP.'); }
+            } catch(e) {}
         }
 
         async function loadUserAnnouncements() {
@@ -1094,15 +1496,15 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += \`
-                            <div class="p-3 rounded-2xl bg-white/5 border border-white/10 space-y-1">
+                        container.innerHTML += `
+                            <div class="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/20 space-y-1">
                                 <div class="flex justify-between items-center text-cyan-300 font-bold text-xs">
                                     <span>\${val.title}</span>
                                     <span class="text-[9px] text-slate-400 font-mono">\${new Date(val.timestamp).toLocaleDateString()}</span>
                                 </div>
                                 <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">\${val.content}</p>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi terbaru.</p>';
@@ -1121,7 +1523,7 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += \`
+                        container.innerHTML += `
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div class="truncate mr-2">
                                     <span class="text-amber-300 font-bold block truncate">\${val.title}</span>
@@ -1132,7 +1534,7 @@ const htmlTemplate = `
                                     <button onclick="deleteAnnouncement('\${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                                 </div>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi.</p>';
@@ -1145,11 +1547,9 @@ const htmlTemplate = `
             const id = document.getElementById('info-edit-id').value;
             const title = document.getElementById('info-title').value.trim();
             const content = document.getElementById('info-content').value.trim();
-
             if (!title || !content) return alert('Judul dan isi informasi wajib diisi!');
 
             const endpoint = id ? '/api/admin/update-announcement' : '/api/admin/create-announcement';
-
             try {
                 const res = await fetch(endpoint, {
                     method: 'POST',
@@ -1162,8 +1562,8 @@ const htmlTemplate = `
                     resetInfoForm();
                     loadAdminAnnouncements();
                     loadUserAnnouncements();
-                } else { alert(data.message); }
-            } catch(e) { alert('Gagal menyimpan informasi.'); }
+                }
+            } catch(e) {}
         }
 
         function editAnnouncement(id, encTitle, encContent) {
@@ -1185,18 +1585,14 @@ const htmlTemplate = `
         async function deleteAnnouncement(id) {
             if (!confirm('Hapus informasi ini?')) return;
             try {
-                const res = await fetch('/api/admin/delete-announcement', {
+                await fetch('/api/admin/delete-announcement', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username: loggedInUsername, id })
                 });
-                const data = await res.json();
-                if (data.success) {
-                    alert('Informasi berhasil dihapus.');
-                    loadAdminAnnouncements();
-                    loadUserAnnouncements();
-                }
-            } catch(e) { alert('Gagal menghapus informasi.'); }
+                loadAdminAnnouncements();
+                loadUserAnnouncements();
+            } catch(e) {}
         }
 
         async function handleCreateRedeem() {
@@ -1204,8 +1600,7 @@ const htmlTemplate = `
             const code = document.getElementById('gen-code').value.trim().toUpperCase();
             const totalQuota = parseInt(document.getElementById('gen-total-quota').value);
             const maxClaims = parseInt(document.getElementById('gen-max-claims').value);
-
-            if (!code || isNaN(totalQuota) || isNaN(maxClaims)) return alert('Semua field redeem wajib diisi!');
+            if (!code || isNaN(totalQuota) || isNaN(maxClaims)) return alert('Semua field wajib diisi!');
 
             try {
                 const res = await fetch('/api/admin/create-redeem', {
@@ -1221,7 +1616,7 @@ const htmlTemplate = `
                     document.getElementById('gen-max-claims').value = '';
                     loadAdminRedeems();
                 } else { alert(data.message); }
-            } catch(e) { alert('Gagal membuat kode.'); }
+            } catch(e) {}
         }
 
         async function loadAdminRedeems() {
@@ -1234,7 +1629,7 @@ const htmlTemplate = `
 
                 if(data.success && Object.keys(data.redeems).length > 0) {
                     for(let [code, val] of Object.entries(data.redeems)) {
-                        listContainer.innerHTML += \`
+                        listContainer.innerHTML += `
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
                                     <span class="text-amber-300 font-bold">\${code}</span>
@@ -1242,7 +1637,7 @@ const htmlTemplate = `
                                 </div>
                                 <button onclick="handleDeleteRedeem('\${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     listContainer.innerHTML = '<p class="text-slate-500 italic">Belum ada kode aktif.</p>';
@@ -1253,17 +1648,13 @@ const htmlTemplate = `
         async function handleDeleteRedeem(code) {
             if(!confirm('Hapus kode redeem ' + code + '?')) return;
             try {
-                const res = await fetch('/api/admin/delete-redeem', {
+                await fetch('/api/admin/delete-redeem', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username: loggedInUsername, code })
                 });
-                const data = await res.json();
-                if(data.success) {
-                    alert('Kode berhasil dihapus.');
-                    loadAdminRedeems();
-                }
-            } catch(e) { alert('Gagal menghapus kode.'); }
+                loadAdminRedeems();
+            } catch(e) {}
         }
 
         async function handleRedeemCode() {
@@ -1282,7 +1673,7 @@ const htmlTemplate = `
                     document.getElementById('redeem-code-input').value = '';
                     updateQuotaDisplay(data);
                 } else { alert(data.message); }
-            } catch(e) { alert('Gagal memproses redeem.'); }
+            } catch(e) {}
         }
 
         async function handleSendEmail() {
@@ -1297,7 +1688,7 @@ const htmlTemplate = `
             sendText.innerText = "Mengirim...";
             sendIcon.innerText = "⏳";
             resultBox.classList.remove('hidden');
-            resultText.innerText = "Mengirim request ...";
+            resultText.innerText = "⏳ Pending...";
 
             try {
                 const res = await fetch('/api/magiclink', {
@@ -1311,11 +1702,9 @@ const htmlTemplate = `
                     sendText.innerText = "KIRIM";
                     sendIcon.innerText = "🚀";
                     resultText.innerText = JSON.stringify(data.result, null, 2);
-
                     if(!isAdminUser && data.quotaInfo) {
                         updateQuotaDisplay(data.quotaInfo);
                     }
-                    loadMyRegisteredEmails();
                 } else {
                     sendText.innerText = "Gagal";
                     sendIcon.innerText = "✕";
@@ -1348,7 +1737,6 @@ const htmlTemplate = `
                 });
                 const data = await res.json();
                 resultText.innerText = JSON.stringify(data, null, 2);
-                loadMyRegisteredEmails();
             } catch (err) {
                 resultText.innerText = "Error: " + err.message;
             }
@@ -1365,17 +1753,13 @@ const htmlTemplate = `
 </html>
 `;
 
+// ==========================================
+// SERVER HTTP LOCALHOST
+// ==========================================
 const PORT = 3001;
 
 const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
-  const queryUsername = parsedUrl.searchParams.get('username');
-
-  let isRequesterAdmin = false;
-  if (queryUsername) {
-    const userDoc = await getUserFromDb(queryUsername.toLowerCase());
-    if (userDoc && userDoc.isAdmin) isRequesterAdmin = true;
-  }
 
   if (parsedUrl.pathname === '/' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -1394,35 +1778,355 @@ const server = http.createServer(async (req, res) => {
     const announcements = await getAllAnnouncementsFromDb();
     res.writeHead(200);
     res.end(JSON.stringify({ success: true, announcements }));
-  } else if (parsedUrl.pathname === '/api/user/emails') {
+  } else if (parsedUrl.pathname === '/api/presets' && req.method === 'GET') {
     res.setHeader('Content-Type', 'application/json');
-    const username = parsedUrl.searchParams.get('username');
-    if (!username) {
-      res.writeHead(400);
-      res.end(JSON.stringify({ success: false, message: 'Username diperlukan.' }));
-      return;
-    }
-    const userObj = await getUserFromDb(username.toLowerCase());
-    if (!userObj) {
-      res.writeHead(404);
-      res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
-      return;
-    }
+    const presets = await getAllPresetsFromDb();
     res.writeHead(200);
-    res.end(JSON.stringify({ success: true, emails: userObj.activatedEmails || [] }));
-  } else if (parsedUrl.pathname === '/api/admin/get-usernames') {
+    res.end(JSON.stringify({ success: true, presets }));
+  } else if (parsedUrl.pathname === '/api/user/register-creator' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username } = JSON.parse(body);
+        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!userObj) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
+          return;
+        }
+        userObj.creatorStatus = 'pending';
+        await saveUserToDb(username.toLowerCase(), userObj);
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, message: 'Berhasil mengajukan pendaftaran creator. Menunggu konfirmasi admin.' }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan server.' }));
+      }
+    });
+  } else if (parsedUrl.pathname === '/api/admin/creator-requests' && req.method === 'GET') {
     res.setHeader('Content-Type', 'application/json');
     const username = parsedUrl.searchParams.get('username');
     const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
     if (!userObj || !userObj.isAdmin) {
       res.writeHead(403);
-      res.end(JSON.stringify({ success: false, message: 'Akses ditolak.' }));
+      res.end(JSON.stringify({ success: false }));
       return;
     }
     const allUsers = await getAllUsersFromDb();
-    const usernames = Object.keys(allUsers);
+    const requests = {};
+    for (let [uname, udata] of Object.entries(allUsers)) {
+      if (udata.creatorStatus === 'pending') {
+        requests[uname] = udata;
+      }
+    }
     res.writeHead(200);
-    res.end(JSON.stringify({ success: true, usernames }));
+    res.end(JSON.stringify({ success: true, requests }));
+  } else if (parsedUrl.pathname === '/api/admin/creator-action' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, targetUser, actionType } = JSON.parse(body);
+        const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!adminObj || !adminObj.isAdmin) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, message: 'Akses ditolak.' }));
+          return;
+        }
+
+        const targetObj = await getUserFromDb(targetUser.toLowerCase());
+        if (!targetObj) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ success: false, message: 'User target tidak ditemukan.' }));
+          return;
+        }
+
+        if (actionType === 'approve') {
+          targetObj.isCreator = true;
+          targetObj.creatorStatus = 'approved';
+          if (targetObj.balance === undefined) targetObj.balance = 0;
+          if (targetObj.hasWithdrawn100 === undefined) targetObj.hasWithdrawn100 = false;
+        } else {
+          targetObj.isCreator = false;
+          targetObj.creatorStatus = 'rejected';
+        }
+
+        await saveUserToDb(targetUser.toLowerCase(), targetObj);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, message: `Berhasil ${actionType === 'approve' ? 'menerima' : 'menolak'} creator @${targetUser}!` }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false }));
+      }
+    });
+  } else if (parsedUrl.pathname === '/api/presets/upload' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, title, link, videoUrl } = JSON.parse(body);
+        const cleanUser = username ? username.toLowerCase() : '';
+        const userObj = cleanUser ? await getUserFromDb(cleanUser) : null;
+        if (!userObj || (!userObj.isCreator && !userObj.isAdmin)) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, message: 'Akses ditolak! Hanya creator yang dapat memposting preset.' }));
+          return;
+        }
+
+        const presetId = 'preset_' + Date.now();
+        const presetData = {
+          creator: cleanUser,
+          title,
+          link,
+          videoUrl,
+          timestamp: Date.now(),
+          likes: {},
+          comments: {}
+        };
+        await savePresetToDb(presetId, presetData);
+
+        if (userObj.balance === undefined) userObj.balance = 0;
+        userObj.balance += 50;
+        await saveUserToDb(cleanUser, userObj);
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, message: 'Preset berhasil diposting.', newBalance: userObj.balance }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan server.' }));
+      }
+    });
+  } else if (parsedUrl.pathname === '/api/presets/delete' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, presetId } = JSON.parse(body);
+        const cleanUser = username ? username.toLowerCase() : '';
+        const userObj = cleanUser ? await getUserFromDb(cleanUser) : null;
+
+        if (!userObj || (!userObj.isCreator && !userObj.isAdmin)) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, message: 'Akses ditolak! Hanya creator.' }));
+          return;
+        }
+
+        const presetObj = await getPresetFromDb(presetId);
+        if (!presetObj) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ success: false, message: 'Preset tidak ditemukan.' }));
+          return;
+        }
+
+        // Cek apakah preset milik user tersebut atau user adalah admin
+        if (!userObj.isAdmin && presetObj.creator.toLowerCase() !== cleanUser) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, message: 'Anda hanya dapat menghapus preset milik Anda sendiri.' }));
+          return;
+        }
+
+        await removePresetFromDb(presetId);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, message: 'Preset berhasil dihapus.' }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan server.' }));
+      }
+    });
+  } else if (parsedUrl.pathname === '/api/wallet/withdraw' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, amount, danaPhone, danaName } = JSON.parse(body);
+        const cleanUser = username ? username.toLowerCase() : '';
+        const userObj = cleanUser ? await getUserFromDb(cleanUser) : null;
+
+        if (!userObj || (!userObj.isCreator && !userObj.isAdmin)) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, message: 'Hanya creator yang dapat menarik saldo.' }));
+          return;
+        }
+
+        if (amount === 100) {
+          if (userObj.hasWithdrawn100) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ success: false, message: 'Pilihan Rp 100 sudah pernah digunakan dan otomatis hilang.' }));
+            return;
+          }
+          userObj.hasWithdrawn100 = true;
+          if ((userObj.balance || 0) < 100) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ success: false, message: 'Saldo Anda tidak mencukupi untuk penarikan ini.' }));
+            return;
+          }
+          userObj.balance -= 100;
+        } else if (amount === 20000) {
+          if ((userObj.balance || 0) < 20000) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ success: false, message: 'Saldo belum mencapai minimal Rp 20.000.' }));
+            return;
+          }
+          userObj.balance -= 20000;
+        } else {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'Nominal penarikan tidak valid.' }));
+          return;
+        }
+
+        await saveUserToDb(cleanUser, userObj);
+
+        const wdId = 'wd_' + Date.now();
+        const wdData = {
+          username: cleanUser,
+          amount,
+          danaPhone,
+          danaName,
+          status: 'pending',
+          timestamp: Date.now()
+        };
+        await saveWithdrawalToDb(wdId, wdData);
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ 
+          success: true, 
+          newBalance: userObj.balance || 0, 
+          hasWithdrawn100: userObj.hasWithdrawn100 
+        }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan.' }));
+      }
+    });
+  } else if (parsedUrl.pathname === '/api/admin/withdrawals' && req.method === 'GET') {
+    res.setHeader('Content-Type', 'application/json');
+    const username = parsedUrl.searchParams.get('username');
+    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+    if (!userObj || !userObj.isAdmin) {
+      res.writeHead(403);
+      res.end(JSON.stringify({ success: false }));
+      return;
+    }
+    const withdrawals = await getAllWithdrawalsFromDb();
+    res.writeHead(200);
+    res.end(JSON.stringify({ success: true, withdrawals }));
+  } else if (parsedUrl.pathname === '/api/admin/withdrawal-action' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, wdId, action } = JSON.parse(body);
+        const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!adminObj || !adminObj.isAdmin) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, message: 'Akses ditolak.' }));
+          return;
+        }
+
+        const wdObj = await getWithdrawalFromDb(wdId);
+        if (!wdObj) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ success: false, message: 'Data penarikan tidak ditemukan.' }));
+          return;
+        }
+
+        if (action === 'approve') {
+          wdObj.status = 'approved';
+        } else {
+          wdObj.status = 'rejected';
+          const targetUserObj = await getUserFromDb(wdObj.username);
+          if (targetUserObj) {
+            targetUserObj.balance = (targetUserObj.balance || 0) + wdObj.amount;
+            await saveUserToDb(wdObj.username, targetUserObj);
+          }
+        }
+
+        await saveWithdrawalToDb(wdId, wdObj);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, message: `Berhasil ${action === 'approve' ? 'menerima' : 'menolak'} penarikan!` }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false }));
+      }
+    });
+  } else if (parsedUrl.pathname === '/api/presets/like' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, presetId } = JSON.parse(body);
+        if (!username || !presetId) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false }));
+          return;
+        }
+        const cleanUser = username.toLowerCase();
+        const presetObj = await getPresetFromDb(presetId);
+        if (!presetObj) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ success: false }));
+          return;
+        }
+
+        if (!presetObj.likes) presetObj.likes = {};
+        if (presetObj.likes[cleanUser]) {
+          delete presetObj.likes[cleanUser];
+        } else {
+          presetObj.likes[cleanUser] = true;
+        }
+
+        await savePresetToDb(presetId, presetObj);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false }));
+      }
+    });
+  } else if (parsedUrl.pathname === '/api/presets/comment' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, presetId, text } = JSON.parse(body);
+        if (!username || !presetId || !text) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'Data tidak lengkap.' }));
+          return;
+        }
+        const presetObj = await getPresetFromDb(presetId);
+        if (!presetObj) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ success: false, message: 'Preset tidak ditemukan.' }));
+          return;
+        }
+
+        if (!presetObj.comments) presetObj.comments = {};
+        const commentId = 'comm_' + Date.now();
+        presetObj.comments[commentId] = {
+          username: username.toLowerCase(),
+          text,
+          timestamp: Date.now()
+        };
+
+        await savePresetToDb(presetId, presetObj);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false }));
+      }
+    });
   } else if (parsedUrl.pathname === '/api/user/username' && req.method === 'PUT') {
     res.setHeader('Content-Type', 'application/json');
     let body = '';
@@ -1430,29 +2134,17 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const { currentUsername, newUsername } = JSON.parse(body);
-        if (!currentUsername || !newUsername) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Username lama dan baru diperlukan.' }));
-          return;
-        }
-
         const cleanOld = currentUsername.toLowerCase();
         const cleanNew = newUsername.trim().toLowerCase();
 
         const existingUser = await getUserFromDb(cleanNew);
         if (existingUser) {
           res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Username sudah digunakan oleh akun lain.' }));
+          res.end(JSON.stringify({ success: false, message: 'Username sudah digunakan.' }));
           return;
         }
 
         const userData = await getUserFromDb(cleanOld);
-        if (!userData) {
-          res.writeHead(404);
-          res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
-          return;
-        }
-
         await saveUserToDb(cleanNew, userData);
         await set(ref(db, `users/${cleanOld}`), null);
 
@@ -1460,7 +2152,7 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ success: true, newUsername: cleanNew }));
       } catch (e) {
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan pada server.' }));
+        res.end(JSON.stringify({ success: false }));
       }
     });
   } else if (parsedUrl.pathname === '/api/admin/set-status' && req.method === 'POST') {
@@ -1478,8 +2170,11 @@ const server = http.createServer(async (req, res) => {
         }
         serverStatus = status;
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, status: serverStatus }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
+        res.end(JSON.stringify({ success: true }));
+      } catch(e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false }));
+      }
     });
   } else if (parsedUrl.pathname === '/api/admin/set-video' && req.method === 'POST') {
     res.setHeader('Content-Type', 'application/json');
@@ -1491,330 +2186,12 @@ const server = http.createServer(async (req, res) => {
         const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
         if (!userObj || !userObj.isAdmin) {
           res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Akses ditolak! Hanya admin.' }));
-          return;
-        }
-        if (!videoUrl) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Data video kosong.' }));
-          return;
-        }
-
-        await saveVideoToDb(videoUrl);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Video berhasil diperbarui.' }));
-      } catch (e) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: 'Kesalahan server saat menyimpan video.' }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/set-vip' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, targetUser, days } = JSON.parse(body);
-        const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!adminObj || !adminObj.isAdmin) {
-          res.writeHead(403);
           res.end(JSON.stringify({ success: false, message: 'Akses ditolak.' }));
           return;
         }
-
-        const cleanTarget = targetUser.toLowerCase();
-        const targetObj = await getUserFromDb(cleanTarget);
-        if (!targetObj) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'User target tidak ditemukan!' }));
-          return;
-        }
-
-        const vipExpiry = Date.now() + (days * 24 * 60 * 60 * 1000);
-        targetObj.vipUntil = vipExpiry;
-        await saveUserToDb(cleanTarget, targetObj);
-
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: `Sukses memberikan VIP ke ${cleanTarget} selama ${days} hari!` }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/get-vip-list') {
-    res.setHeader('Content-Type', 'application/json');
-    const username = parsedUrl.searchParams.get('username');
-    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-    if (!userObj || !userObj.isAdmin) {
-      res.writeHead(403);
-      res.end(JSON.stringify({ success: false }));
-      return;
-    }
-
-    const allUsers = await getAllUsersFromDb();
-    const vipUsers = {};
-    const now = Date.now();
-
-    for (let [uname, udata] of Object.entries(allUsers)) {
-      if (udata.vipUntil && udata.vipUntil > now) {
-        vipUsers[uname] = { vipUntil: udata.vipUntil };
-      }
-    }
-
-    res.writeHead(200);
-    res.end(JSON.stringify({ success: true, vipUsers }));
-  } else if (parsedUrl.pathname === '/api/admin/remove-vip' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, targetUser } = JSON.parse(body);
-        const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!adminObj || !adminObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-
-        const cleanTarget = targetUser.toLowerCase();
-        const targetObj = await getUserFromDb(cleanTarget);
-        if (targetObj) {
-          targetObj.vipUntil = 0;
-          await saveUserToDb(cleanTarget, targetObj);
-        }
-
+        await saveVideoToDb(videoUrl);
         res.writeHead(200);
         res.end(JSON.stringify({ success: true }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/create-announcement' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, title, content } = JSON.parse(body);
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!userObj || !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-
-        const id = 'info_' + Date.now();
-        await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
-
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Informasi berhasil dipublikasikan!' }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/update-announcement' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, id, title, content } = JSON.parse(body);
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!userObj || !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-
-        await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
-
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Informasi diperbarui!' }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/delete-announcement' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, id } = JSON.parse(body);
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!userObj || !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-        await removeAnnouncementFromDb(id);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/create-redeem' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, code, totalQuota, maxClaims } = JSON.parse(body);
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!userObj || !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-
-        const existingCode = await getRedeemFromDb(code);
-        if (existingCode) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Kode redeem sudah ada!' }));
-          return;
-        }
-
-        const redeemData = {
-          totalQuota: totalQuota,
-          maxClaims: maxClaims,
-          claimedCount: 0,
-          claimedUsers: []
-        };
-        await saveRedeemToDb(code, redeemData);
-
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: `Kode ${code} berhasil dibuat!` }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/get-redeems') {
-    res.setHeader('Content-Type', 'application/json');
-    const username = parsedUrl.searchParams.get('username');
-    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-    if (!userObj || !userObj.isAdmin) {
-      res.writeHead(403);
-      res.end(JSON.stringify({ success: false }));
-      return;
-    }
-    const redeems = await getAllRedeemsFromDb();
-    res.writeHead(200);
-    res.end(JSON.stringify({ success: true, redeems }));
-  } else if (parsedUrl.pathname === '/api/admin/delete-redeem' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, code } = JSON.parse(body);
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!userObj || !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-        await removeRedeemFromDb(code);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/redeem' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const parsedBody = JSON.parse(body);
-        const { username } = parsedBody;
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-
-        if (serverStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Pembuatan gagal: Server sedang offline. Fitur premium dinonaktifkan untuk user biasa & VIP.' }));
-          return;
-        }
-
-        const { code } = parsedBody;
-        const cleanUser = username.toLowerCase();
-        const redeemObj = await getRedeemFromDb(code);
-
-        if (!userObj || !redeemObj) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'User atau Kode Redeem tidak valid!' }));
-          return;
-        }
-
-        if (redeemObj.claimedUsers && redeemObj.claimedUsers.includes(cleanUser)) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Anda sudah pernah klaim kode ini!' }));
-          return;
-        }
-
-        if (redeemObj.claimedCount >= redeemObj.maxClaims) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Kuota kode redeem sudah habis terpakai!' }));
-          return;
-        }
-
-        const remainingClaims = redeemObj.maxClaims - redeemObj.claimedCount;
-        const remainingTotalQuota = redeemObj.totalQuota - (redeemObj.distributedQuota || 0);
-        let rewardQuota = Math.round(remainingTotalQuota / remainingClaims);
-        if (rewardQuota < 1) rewardQuota = 1;
-
-        if (!userObj.bonusQuota) userObj.bonusQuota = 0;
-        userObj.bonusQuota += rewardQuota;
-
-        redeemObj.claimedCount += 1;
-        if (!redeemObj.distributedQuota) redeemObj.distributedQuota = 0;
-        redeemObj.distributedQuota += rewardQuota;
-        if (!redeemObj.claimedUsers) redeemObj.claimedUsers = [];
-        redeemObj.claimedUsers.push(cleanUser);
-
-        await saveUserToDb(cleanUser, userObj);
-        await saveRedeemToDb(code, redeemObj);
-
-        res.writeHead(200);
-        res.end(JSON.stringify({ 
-          success: true, 
-          message: `Berhasil klaim! Anda mendapatkan bonus ${rewardQuota} kuota.`,
-          usedQuota: userObj.activatedEmails ? userObj.activatedEmails.length : 0,
-          bonusQuota: userObj.bonusQuota
-        }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/auth/session' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, token } = JSON.parse(body);
-        if (!username || !token) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-        const cleanUser = username.toLowerCase();
-        const existingUser = await getUserFromDb(cleanUser);
-        if (!existingUser) {
-          res.writeHead(404);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-
-        const now = Date.now();
-        const twentyFourHours = 24 * 60 * 60 * 1000;
-        if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
-
-        if (now - existingUser.lastResetTime >= twentyFourHours) {
-          existingUser.activatedEmails = [];
-          existingUser.lastResetTime = now;
-          await saveUserToDb(cleanUser, existingUser);
-        }
-
-        const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
-        const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
-
-        res.writeHead(200);
-        res.end(JSON.stringify({ 
-          success: true, 
-          username: cleanUser, 
-          isAdmin: existingUser.isAdmin, 
-          usedQuota: usedCount,
-          bonusQuota: existingUser.bonusQuota || 0,
-          isVip: isVipActive,
-          vipUntil: existingUser.vipUntil || 0,
-          serverStatus
-        }));
       } catch (e) {
         res.writeHead(500);
         res.end(JSON.stringify({ success: false }));
@@ -1827,176 +2204,102 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const { mode, username, password, email, deviceToken } = JSON.parse(body);
-        const cleanUser = username.trim().toLowerCase();
-        let existingUser = await getUserFromDb(cleanUser);
+        const cleanUname = username ? username.trim().toLowerCase() : '';
+
+        if (!cleanUname || !password) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'Username dan password wajib diisi.' }));
+          return;
+        }
+
+        let userObj = await getUserFromDb(cleanUname);
 
         if (mode === 'register') {
-          if (cleanUser === 'adminbagus' || existingUser) {
+          if (userObj) {
             res.writeHead(400);
-            res.end(JSON.stringify({ success: false, message: 'Username tidak tersedia atau sudah terdaftar!' }));
+            res.end(JSON.stringify({ success: false, message: 'Username sudah digunakan.' }));
             return;
           }
-
-          const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
-          const newUserData = { 
-            password, 
-            email, 
-            isAdmin: false, 
-            activatedEmails: [], 
-            bonusQuota: 0, 
+          const generatedDeviceToken = 'dev_' + Math.random().toString(36).substring(2) + Date.now();
+          userObj = {
+            password,
+            isAdmin: false,
+            isCreator: false,
+            creatorStatus: 'none',
+            activatedEmails: [],
+            bonusQuota: 0,
+            usedQuota: 0,
             lastResetTime: Date.now(),
             vipUntil: 0,
-            deviceToken: newDeviceToken
+            balance: 0,
+            hasWithdrawn100: false,
+            deviceToken: generatedDeviceToken
           };
-          await saveUserToDb(cleanUser, newUserData);
-          
-          const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
+          await saveUserToDb(cleanUname, userObj);
 
           res.writeHead(200);
-          res.end(JSON.stringify({ 
-            success: true, 
-            message: 'Registrasi berhasil!', 
-            username: cleanUser, 
-            isAdmin: false, 
-            usedQuota: 0, 
+          res.end(JSON.stringify({
+            success: true,
+            message: 'Registrasi berhasil!',
+            username: cleanUname,
+            isAdmin: false,
+            isCreator: false,
+            creatorStatus: 'none',
+            usedQuota: 0,
             bonusQuota: 0,
-            isVip: false,
-            serverStatus,
-            deviceToken: newDeviceToken,
-            token: fakeAuthToken
+            balance: 0,
+            hasWithdrawn100: false,
+            deviceToken: generatedDeviceToken,
+            token: 'token_' + cleanUname + '_' + Date.now(),
+            serverStatus
           }));
         } else {
-          if (existingUser && existingUser.password === password) {
-            const now = Date.now();
-            const twentyFourHours = 24 * 60 * 60 * 1000;
-            if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
-
-            if (now - existingUser.lastResetTime >= twentyFourHours) {
-              existingUser.activatedEmails = [];
-              existingUser.lastResetTime = now;
-              await saveUserToDb(cleanUser, existingUser);
-            }
-
-            const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
-            const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
-            const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
-
-            res.writeHead(200);
-            res.end(JSON.stringify({ 
-              success: true, 
-              message: 'Login berhasil!', 
-              username: cleanUser, 
-              isAdmin: existingUser.isAdmin, 
-              usedQuota: usedCount,
-              bonusQuota: existingUser.bonusQuota || 0,
-              isVip: isVipActive,
-              vipUntil: existingUser.vipUntil || 0,
-              serverStatus,
-              token: fakeAuthToken
-            }));
-          } else {
-            res.writeHead(401);
-            res.end(JSON.stringify({ success: false, message: 'Username atau password salah!' }));
-          }
-        }
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/magiclink' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, email } = JSON.parse(body);
-        const cleanUser = username ? username.toLowerCase() : '';
-        const userObj = await getUserFromDb(cleanUser);
-
-        if (!userObj) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
-          return;
-        }
-
-        if (serverStatus !== 'online' && !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Pembuatan gagal: Server sedang offline. Fitur premium dinonaktifkan untuk user biasa & VIP.' }));
-          return;
-        }
-
-        const now = Date.now();
-        const twentyFourHours = 24 * 60 * 60 * 1000;
-        if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
-          userObj.activatedEmails = [];
-          userObj.lastResetTime = now;
-        }
-
-        if (!userObj.activatedEmails) userObj.activatedEmails = [];
-        if (!userObj.bonusQuota) userObj.bonusQuota = 0;
-
-        const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
-        const maxAllowed = 1 + userObj.bonusQuota;
-
-        if (!userObj.isAdmin && !isVipActive) {
-          if (!userObj.activatedEmails.includes(email) && userObj.activatedEmails.length >= maxAllowed) {
-            res.writeHead(403);
-            res.end(JSON.stringify({ success: false, message: 'Kuota aktivasi Anda habis! Gunakan kode redeem atau upgrade VIP.' }));
+          if (!userObj || userObj.password !== password) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ success: false, message: 'Username atau password salah.' }));
             return;
           }
+
+          // Reset kuota otomatis 24 jam
+          const now = Date.now();
+          const twentyFourHours = 24 * 60 * 60 * 1000;
+          if (now - (userObj.lastResetTime || 0) > twentyFourHours) {
+            userObj.usedQuota = 0;
+            userObj.lastResetTime = now;
+            await saveUserToDb(cleanUname, userObj);
+          }
+
+          const isVip = userObj.vipUntil && userObj.vipUntil > now;
+
+          res.writeHead(200);
+          res.end(JSON.stringify({
+            success: true,
+            message: 'Login berhasil!',
+            username: cleanUname,
+            isAdmin: userObj.isAdmin || false,
+            isCreator: userObj.isCreator || false,
+            creatorStatus: userObj.creatorStatus || 'none',
+            usedQuota: userObj.usedQuota || 0,
+            bonusQuota: userObj.bonusQuota || 0,
+            balance: userObj.balance || 0,
+            hasWithdrawn100: userObj.hasWithdrawn100 || false,
+            isVip,
+            vipUntil: userObj.vipUntil || 0,
+            token: 'token_' + cleanUname + '_' + Date.now(),
+            serverStatus
+          }));
         }
-
-        const result = await am.magiclink(email);
-
-        if (!userObj.isAdmin && !isVipActive && !userObj.activatedEmails.includes(email)) {
-          userObj.activatedEmails.push(email);
-          await saveUserToDb(cleanUser, userObj);
-        }
-
-        res.writeHead(200);
-        res.end(JSON.stringify({ 
-          success: true, 
-          result, 
-          quotaInfo: { usedQuota: userObj.activatedEmails.length, bonusQuota: userObj.bonusQuota } 
-        }));
-      } catch (error) {
-        res.writeHead(400);
-        res.end(JSON.stringify({ success: false, message: error.message }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/verif' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { email, url: verifyUrl, username } = JSON.parse(body);
-
-        let userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (serverStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ error: 'Pembuatan gagal: Server sedang offline. Fitur premium dinonaktifkan untuk user biasa & VIP.' }));
-          return;
-        }
-
-        if (!email || !verifyUrl) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ error: 'Parameter email dan url diperlukan.' }));
-          return;
-        }
-
-        const result = await am.verif(email, verifyUrl);
-        res.writeHead(200);
-        res.end(JSON.stringify(result));
-      } catch (error) {
-        res.writeHead(400);
-        res.end(JSON.stringify({ error: error.message }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, message: 'Kesalahan server.' }));
       }
     });
   } else {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
-    res.end('Endpoint tidak ditemukan.');
+    res.end('Not Found');
   }
 });
 
 server.listen(PORT, () => {
-  console.log(`Server web AM Premium berjalan di: http://localhost:${PORT}`);
+  console.log(`Server running at http://localhost:${PORT}`);
 });
