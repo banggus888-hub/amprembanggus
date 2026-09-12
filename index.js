@@ -1070,18 +1070,18 @@ const htmlTemplate = `
 
                 if (data.success && Object.keys(data.requests).length > 0) {
                     for (let [uname, val] of Object.entries(data.requests)) {
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">@${uname}</span>
+                                    <span class="text-amber-300 font-bold">@\${uname}</span>
                                     <span class="text-slate-400 block text-[9px]">Status: Pendaftar Creator</span>
                                 </div>
                                 <div class="flex gap-1">
-                                    <button onclick="handleAdminCreatorAction('${uname}', 'approve')" class="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 rounded-lg border border-emerald-500/30 text-[10px] font-bold">Terima</button>
-                                    <button onclick="handleAdminCreatorAction('${uname}', 'reject')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px] font-bold">Tolak</button>
+                                    <button onclick="handleAdminCreatorAction('\${uname}', 'approve')" class="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 rounded-lg border border-emerald-500/30 text-[10px] font-bold">Terima</button>
+                                    <button onclick="handleAdminCreatorAction('\${uname}', 'reject')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px] font-bold">Tolak</button>
                                 </div>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Tidak ada pendaftar creator baru.</p>';
@@ -1162,9 +1162,9 @@ const htmlTemplate = `
             selectEl.innerHTML = '';
             
             if (!hasWithdrawn100) {
-                selectEl.innerHTML += `<option value="100">Rp 100 (Penarikan Kreator Baru - 1x)</option>`;
+                selectEl.innerHTML += \`<option value="100">Rp 100 (Penarikan Kreator Baru - 1x)</option>\`;
             }
-            selectEl.innerHTML += `<option value="20000">Rp 20.000 (Minimal Tukar)</option>`;
+            selectEl.innerHTML += \`<option value="20000">Rp 20.000 (Minimal Tukar)</option>\`;
         }
 
         async function handleRequestWithdrawal() {
@@ -1218,29 +1218,29 @@ const htmlTemplate = `
                     for (let [wid, val] of Object.entries(data.withdrawals)) {
                         let statusBadge = '';
                         if (val.status === 'pending') {
-                            statusBadge = `<span class="text-amber-400">Pending</span>`;
+                            statusBadge = \`<span class="text-amber-400">Pending</span>\`;
                         } else if (val.status === 'approved') {
-                            statusBadge = `<span class="text-emerald-400">Diterima</span>`;
+                            statusBadge = \`<span class="text-emerald-400">Diterima</span>\`;
                         } else {
-                            statusBadge = `<span class="text-rose-400">Ditolak</span>`;
+                            statusBadge = \`<span class="text-rose-400">Ditolak</span>\`;
                         }
 
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="bg-slate-900/80 p-2.5 rounded-xl border border-amber-500/20 space-y-1">
                                 <div class="flex justify-between items-center text-xs">
-                                    <span class="text-amber-300 font-bold">@${val.username}</span>
-                                    <span>${statusBadge}</span>
+                                    <span class="text-amber-300 font-bold">@\${val.username}</span>
+                                    <span>\${statusBadge}</span>
                                 </div>
-                                <p class="text-[11px] text-slate-200">Nominal: <strong class="text-emerald-400">Rp ${val.amount.toLocaleString('id-ID')}</strong></p>
-                                <p class="text-[10px] text-slate-300">DANA: ${val.danaPhone} (a.n ${val.danaName})</p>
-                                ${val.status === 'pending' ? `
+                                <p class="text-[11px] text-slate-200">Nominal: <strong class="text-emerald-400">Rp \{val.amount.toLocaleString('id-ID')}</strong></p>
+                                <p class="text-[10px] text-slate-300">DANA: \${val.danaPhone} (a.n \${val.danaName})</p>
+                                \${val.status === 'pending' ? \`
                                     <div class="flex gap-2 pt-1">
-                                        <button onclick="handleAdminWithdrawalAction('${wid}', 'approve')" class="flex-1 py-1 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 rounded-lg border border-emerald-500/30 text-[10px] font-bold">Terima</button>
-                                        <button onclick="handleAdminWithdrawalAction('${wid}', 'reject')" class="flex-1 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px] font-bold">Tolak</button>
+                                        <button onclick="handleAdminWithdrawalAction('\${wid}', 'approve')" class="flex-1 py-1 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 rounded-lg border border-emerald-500/30 text-[10px] font-bold">Terima</button>
+                                        <button onclick="handleAdminWithdrawalAction('\${wid}', 'reject')" class="flex-1 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px] font-bold">Tolak</button>
                                     </div>
-                                ` : ''}
+                                \` : ''}
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Tidak ada list penarikan saldo.</p>';
@@ -1284,45 +1284,45 @@ const htmlTemplate = `
                         let commentsHtml = '';
                         if (val.comments) {
                             for (let [cid, cval] of Object.entries(val.comments)) {
-                                commentsHtml += `<div class="bg-slate-900/60 p-2 rounded-xl text-[11px] mb-1"><strong>${cval.username}:</strong> ${cval.text}</div>`;
+                                commentsHtml += \`<div class="bg-slate-900/60 p-2 rounded-xl text-[11px] mb-1"><strong>\${cval.username}:</strong> \${cval.text}</div>\`;
                             }
                         }
 
                         // Cek apakah user yang login adalah creator pemilik preset ini atau admin
                         const canDelete = isAdminUser || (isCreatorUser && val.creator.toLowerCase() === loggedInUsername.toLowerCase());
 
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="glass-panel space-y-3 p-4 border border-purple-500/30 relative">
                                 <div class="flex justify-between items-center text-xs">
-                                    <span class="font-bold text-purple-300">@${val.creator}</span>
+                                    <span class="font-bold text-purple-300">@\${val.creator}</span>
                                     <div class="flex items-center gap-2">
-                                        <span class="text-[10px] text-slate-400">${new Date(val.timestamp).toLocaleDateString()}</span>
-                                        ${canDelete ? `<button onclick="handleDeletePreset('${id}')" class="px-2 py-0.5 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/30 rounded-lg text-[10px] font-bold transition">🗑️ Hapus</button>` : ''}
+                                        <span class="text-[10px] text-slate-400">\${new Date(val.timestamp).toLocaleDateString()}</span>
+                                        \${canDelete ? \`<button onclick="handleDeletePreset('\${id}')" class="px-2 py-0.5 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/30 rounded-lg text-[10px] font-bold transition">🗑️ Hapus</button>\` : ''}
                                     </div>
                                 </div>
-                                <p class="text-xs font-semibold text-white">${val.title}</p>
+                                <p class="text-xs font-semibold text-white">\${val.title}</p>
                                 
                                 <div class="w-full h-48 rounded-xl overflow-hidden bg-black relative">
-                                    <video src="${val.videoUrl}" controls loop playsinline class="w-full h-full object-cover"></video>
+                                    <video src="\${val.videoUrl}" controls loop playsinline class="w-full h-full object-cover"></video>
                                 </div>
 
                                 <div class="flex items-center justify-between pt-1">
-                                    <a href="${val.link}" target="_blank" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-full font-bold text-xs transition">🔗 Unduh Link Preset</a>
-                                    <button onclick="handleLikePreset('${id}')" class="px-3 py-2 rounded-full border ${isLiked ? 'bg-rose-500/20 border-rose-500 text-rose-300' : 'bg-slate-900 border-purple-500/30 text-slate-300'} text-xs font-bold transition">
-                                        ❤️ Like (${likeCount})
+                                    <a href="\${val.link}" target="_blank" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-full font-bold text-xs transition">🔗 Unduh Link Preset</a>
+                                    <button onclick="handleLikePreset('\${id}')" class="px-3 py-2 rounded-full border \${isLiked ? 'bg-rose-500/20 border-rose-500 text-rose-300' : 'bg-slate-900 border-purple-500/30 text-slate-300'} text-xs font-bold transition">
+                                        ❤️ Like (\${likeCount})
                                     </button>
                                 </div>
 
                                 <div class="border-t border-purple-500/10 pt-2 space-y-2">
                                     <p class="text-[11px] font-bold text-purple-300">Komentar:</p>
-                                    <div class="max-h-24 overflow-y-auto space-y-1">${commentsHtml || '<p class="text-[10px] text-slate-500 italic">Belum ada komentar.</p>'}</div>
+                                    <div class="max-h-24 overflow-y-auto space-y-1">\${commentsHtml || '<p class="text-[10px] text-slate-500 italic">Belum ada komentar.</p>'}</div>
                                     <div class="flex gap-2 pt-1">
-                                        <input type="text" id="comment-input-${id}" placeholder="Tulis komentar..." class="input-glow flex-1 px-3 py-2 text-xs">
-                                        <button onclick="handlePostComment('${id}')" class="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-full text-xs font-bold">Kirim</button>
+                                        <input type="text" id="comment-input-\${id}" placeholder="Tulis komentar..." class="input-glow flex-1 px-3 py-2 text-xs">
+                                        <button onclick="handlePostComment('\${id}')" class="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-full text-xs font-bold">Kirim</button>
                                     </div>
                                 </div>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic text-xs">Belum ada preset yang dibagikan.</p>';
@@ -1433,15 +1433,15 @@ const htmlTemplate = `
 
                 if (data.success && Object.keys(data.vipUsers).length > 0) {
                     for (let [uname, val] of Object.entries(data.vipUsers)) {
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">${uname}</span>
-                                    <span class="text-slate-400 block text-[9px]">Expired: ${new Date(val.vipUntil).toLocaleDateString()}</span>
+                                    <span class="text-amber-300 font-bold">\${uname}</span>
+                                    <span class="text-slate-400 block text-[9px]">Expired: \${new Date(val.vipUntil).toLocaleDateString()}</span>
                                 </div>
-                                <button onclick="handleRemoveVip('${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                <button onclick="handleRemoveVip('\${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Tidak ada akun VIP aktif.</p>';
@@ -1475,15 +1475,15 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/20 space-y-1">
                                 <div class="flex justify-between items-center text-cyan-300 font-bold text-xs">
-                                    <span>${val.title}</span>
-                                    <span class="text-[9px] text-slate-400 font-mono">${new Date(val.timestamp).toLocaleDateString()}</span>
+                                    <span>\${val.title}</span>
+                                    <span class="text-[9px] text-slate-400 font-mono">\${new Date(val.timestamp).toLocaleDateString()}</span>
                                 </div>
-                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">${val.content}</p>
+                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">\${val.content}</p>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi terbaru.</p>';
@@ -1502,18 +1502,18 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div class="truncate mr-2">
-                                    <span class="text-amber-300 font-bold block truncate">${val.title}</span>
-                                    <span class="text-slate-400 truncate block text-[9px]">${val.content.substring(0, 30)}...</span>
+                                    <span class="text-amber-300 font-bold block truncate">\${val.title}</span>
+                                    <span class="text-slate-400 truncate block text-[9px]">\${val.content.substring(0, 30)}...</span>
                                 </div>
                                 <div class="flex gap-1 shrink-0">
-                                    <button onclick="editAnnouncement('${id}', '${encodeURIComponent(val.title)}', '${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
-                                    <button onclick="deleteAnnouncement('${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                    <button onclick="editAnnouncement('\${id}', '\${encodeURIComponent(val.title)}', '\${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
+                                    <button onclick="deleteAnnouncement('\${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                                 </div>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi.</p>';
@@ -1608,15 +1608,15 @@ const htmlTemplate = `
 
                 if(data.success && Object.keys(data.redeems).length > 0) {
                     for(let [code, val] of Object.entries(data.redeems)) {
-                        listContainer.innerHTML += `
+                        listContainer.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">${code}</span>
-                                    <span class="text-slate-400 block text-[9px]">Kuota: ${val.totalQuota} | Klaim: ${val.claimedCount}/${val.maxClaims}</span>
+                                    <span class="text-amber-300 font-bold">\${code}</span>
+                                    <span class="text-slate-400 block text-[9px]">Kuota: \${val.totalQuota} | Klaim: \${val.claimedCount}/\${val.maxClaims}</span>
                                 </div>
-                                <button onclick="handleDeleteRedeem('${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                <button onclick="handleDeleteRedeem('\${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     listContainer.innerHTML = '<p class="text-slate-500 italic">Belum ada kode aktif.</p>';
@@ -1769,19 +1769,77 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const { username } = JSON.parse(body);
-        const userData = await getUserFromDb(username);
-        if (!userData) {
-          res.writeHead(400);
+        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!userObj) {
+          res.writeHead(404);
           res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
           return;
         }
-        userData.creatorStatus = 'pending';
-        await saveUserToDb(username, userData);
+        userObj.creatorStatus = 'pending';
+        await saveUserToDb(username.toLowerCase(), userObj);
+
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Permohonan creator berhasil dikirim. Menunggu konfirmasi admin.' }));
-      } catch (err) {
+        res.end(JSON.stringify({ success: true, message: 'Berhasil mengajukan pendaftaran creator. Menunggu konfirmasi admin.' }));
+      } catch (e) {
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
+        res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan server.' }));
+      }
+    });
+  } else if (parsedUrl.pathname === '/api/admin/creator-requests' && req.method === 'GET') {
+    res.setHeader('Content-Type', 'application/json');
+    const username = parsedUrl.searchParams.get('username');
+    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+    if (!userObj || !userObj.isAdmin) {
+      res.writeHead(403);
+      res.end(JSON.stringify({ success: false }));
+      return;
+    }
+    const allUsers = await getAllUsersFromDb();
+    const requests = {};
+    for (let [uname, udata] of Object.entries(allUsers)) {
+      if (udata.creatorStatus === 'pending') {
+        requests[uname] = udata;
+      }
+    }
+    res.writeHead(200);
+    res.end(JSON.stringify({ success: true, requests }));
+  } else if (parsedUrl.pathname === '/api/admin/creator-action' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, targetUser, actionType } = JSON.parse(body);
+        const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!adminObj || !adminObj.isAdmin) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, message: 'Akses ditolak.' }));
+          return;
+        }
+
+        const targetObj = await getUserFromDb(targetUser.toLowerCase());
+        if (!targetObj) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ success: false, message: 'User target tidak ditemukan.' }));
+          return;
+        }
+
+        if (actionType === 'approve') {
+          targetObj.isCreator = true;
+          targetObj.creatorStatus = 'approved';
+          if (targetObj.balance === undefined) targetObj.balance = 0;
+          if (targetObj.hasWithdrawn100 === undefined) targetObj.hasWithdrawn100 = false;
+        } else {
+          targetObj.isCreator = false;
+          targetObj.creatorStatus = 'rejected';
+        }
+
+        await saveUserToDb(targetUser.toLowerCase(), targetObj);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, message: `Berhasil ${actionType === 'approve' ? 'menerima' : 'menolak'} creator @${targetUser}!` }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false }));
       }
     });
   } else if (parsedUrl.pathname === '/api/presets/upload' && req.method === 'POST') {
@@ -1791,16 +1849,17 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const { username, title, link, videoUrl } = JSON.parse(body);
-        const userData = await getUserFromDb(username);
-        if (!userData || (!userData.isCreator && !userData.isAdmin)) {
+        const cleanUser = username ? username.toLowerCase() : '';
+        const userObj = cleanUser ? await getUserFromDb(cleanUser) : null;
+        if (!userObj || (!userObj.isCreator && !userObj.isAdmin)) {
           res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Akses ditolak. Hanya creator.' }));
+          res.end(JSON.stringify({ success: false, message: 'Akses ditolak! Hanya creator yang dapat memposting preset.' }));
           return;
         }
 
         const presetId = 'preset_' + Date.now();
         const presetData = {
-          creator: username,
+          creator: cleanUser,
           title,
           link,
           videoUrl,
@@ -1808,18 +1867,17 @@ const server = http.createServer(async (req, res) => {
           likes: {},
           comments: {}
         };
-
         await savePresetToDb(presetId, presetData);
 
-        // Tambah saldo otomatis Rp 50
-        userData.balance = (userData.balance || 0) + 50;
-        await saveUserToDb(username, userData);
+        if (userObj.balance === undefined) userObj.balance = 0;
+        userObj.balance += 50;
+        await saveUserToDb(cleanUser, userObj);
 
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Preset berhasil diposting!', newBalance: userData.balance }));
-      } catch (err) {
+        res.end(JSON.stringify({ success: true, message: 'Preset berhasil diposting.', newBalance: userObj.balance }));
+      } catch (e) {
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
+        res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan server.' }));
       }
     });
   } else if (parsedUrl.pathname === '/api/presets/delete' && req.method === 'POST') {
@@ -1829,82 +1887,35 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const { username, presetId } = JSON.parse(body);
-        const userData = await getUserFromDb(username);
-        const preset = await getPresetFromDb(presetId);
+        const cleanUser = username ? username.toLowerCase() : '';
+        const userObj = cleanUser ? await getUserFromDb(cleanUser) : null;
 
-        if (!userData || !preset) {
-          res.writeHead(404);
-          res.end(JSON.stringify({ success: false, message: 'User atau preset tidak ditemukan.' }));
+        if (!userObj || (!userObj.isCreator && !userObj.isAdmin)) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, message: 'Akses ditolak! Hanya creator.' }));
           return;
         }
 
-        if (!userData.isAdmin && preset.creator.toLowerCase() !== username.toLowerCase()) {
+        const presetObj = await getPresetFromDb(presetId);
+        if (!presetObj) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ success: false, message: 'Preset tidak ditemukan.' }));
+          return;
+        }
+
+        // Cek apakah preset milik user tersebut atau user adalah admin
+        if (!userObj.isAdmin && presetObj.creator.toLowerCase() !== cleanUser) {
           res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Anda tidak memiliki hak untuk menghapus preset ini.' }));
+          res.end(JSON.stringify({ success: false, message: 'Anda hanya dapat menghapus preset milik Anda sendiri.' }));
           return;
         }
 
         await removePresetFromDb(presetId);
         res.writeHead(200);
         res.end(JSON.stringify({ success: true, message: 'Preset berhasil dihapus.' }));
-      } catch (err) {
+      } catch (e) {
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/presets/like' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, presetId } = JSON.parse(body);
-        const preset = await getPresetFromDb(presetId);
-        if (!preset) {
-          res.writeHead(404);
-          res.end(JSON.stringify({ success: false, message: 'Preset tidak ditemukan.' }));
-          return;
-        }
-
-        if (!preset.likes) preset.likes = {};
-        if (preset.likes[username]) {
-          delete preset.likes[username];
-        } else {
-          preset.likes[username] = true;
-        }
-
-        await savePresetToDb(presetId, preset);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, likes: preset.likes }));
-      } catch (err) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/presets/comment' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, presetId, text } = JSON.parse(body);
-        const preset = await getPresetFromDb(presetId);
-        if (!preset) {
-          res.writeHead(404);
-          res.end(JSON.stringify({ success: false, message: 'Preset tidak ditemukan.' }));
-          return;
-        }
-
-        if (!preset.comments) preset.comments = {};
-        const commentId = 'c_' + Date.now();
-        preset.comments[commentId] = { username, text, timestamp: Date.now() };
-
-        await savePresetToDb(presetId, preset);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true }));
-      } catch (err) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
+        res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan server.' }));
       }
     });
   } else if (parsedUrl.pathname === '/api/wallet/withdraw' && req.method === 'POST') {
@@ -1914,59 +1925,72 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const { username, amount, danaPhone, danaName } = JSON.parse(body);
-        const userData = await getUserFromDb(username);
-        if (!userData) {
-          res.writeHead(404);
-          res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
+        const cleanUser = username ? username.toLowerCase() : '';
+        const userObj = cleanUser ? await getUserFromDb(cleanUser) : null;
+
+        if (!userObj || (!userObj.isCreator && !userObj.isAdmin)) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, message: 'Hanya creator yang dapat menarik saldo.' }));
           return;
         }
 
         if (amount === 100) {
-          if (userData.hasWithdrawn100) {
+          if (userObj.hasWithdrawn100) {
             res.writeHead(400);
-            res.end(JSON.stringify({ success: false, message: 'Opsi penarikan Rp 100 sudah pernah digunakan!' }));
+            res.end(JSON.stringify({ success: false, message: 'Pilihan Rp 100 sudah pernah digunakan dan otomatis hilang.' }));
             return;
           }
-          userData.hasWithdrawn100 = true;
+          userObj.hasWithdrawn100 = true;
+          if ((userObj.balance || 0) < 100) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ success: false, message: 'Saldo Anda tidak mencukupi untuk penarikan ini.' }));
+            return;
+          }
+          userObj.balance -= 100;
         } else if (amount === 20000) {
-          if ((userData.balance || 0) < 20000) {
+          if ((userObj.balance || 0) < 20000) {
             res.writeHead(400);
-            res.end(JSON.stringify({ success: false, message: 'Saldo kurang dari Rp 20.000!' }));
+            res.end(JSON.stringify({ success: false, message: 'Saldo belum mencapai minimal Rp 20.000.' }));
             return;
           }
-          userData.balance -= 20000;
+          userObj.balance -= 20000;
         } else {
           res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Nominal tidak valid.' }));
+          res.end(JSON.stringify({ success: false, message: 'Nominal penarikan tidak valid.' }));
           return;
         }
 
+        await saveUserToDb(cleanUser, userObj);
+
         const wdId = 'wd_' + Date.now();
-        await saveWithdrawalToDb(wdId, {
-          username,
+        const wdData = {
+          username: cleanUser,
           amount,
           danaPhone,
           danaName,
           status: 'pending',
           timestamp: Date.now()
-        });
-
-        await saveUserToDb(username, userData);
+        };
+        await saveWithdrawalToDb(wdId, wdData);
 
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, newBalance: userData.balance || 0, hasWithdrawn100: userData.hasWithdrawn100 }));
-      } catch (err) {
+        res.end(JSON.stringify({ 
+          success: true, 
+          newBalance: userObj.balance || 0, 
+          hasWithdrawn100: userObj.hasWithdrawn100 
+        }));
+      } catch (e) {
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
+        res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan.' }));
       }
     });
   } else if (parsedUrl.pathname === '/api/admin/withdrawals' && req.method === 'GET') {
     res.setHeader('Content-Type', 'application/json');
     const username = parsedUrl.searchParams.get('username');
-    const adminData = await getUserFromDb(username);
-    if (!adminData || !adminData.isAdmin) {
+    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+    if (!userObj || !userObj.isAdmin) {
       res.writeHead(403);
-      res.end(JSON.stringify({ success: false, message: 'Unauthorized' }));
+      res.end(JSON.stringify({ success: false }));
       return;
     }
     const withdrawals = await getAllWithdrawalsFromDb();
@@ -1979,195 +2003,107 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const { username, wdId, action } = JSON.parse(body);
-        const adminData = await getUserFromDb(username);
-        if (!adminData || !adminData.isAdmin) {
+        const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!adminObj || !adminObj.isAdmin) {
           res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Unauthorized' }));
+          res.end(JSON.stringify({ success: false, message: 'Akses ditolak.' }));
           return;
         }
 
-        const wdData = await getWithdrawalFromDb(wdId);
-        if (!wdData) {
+        const wdObj = await getWithdrawalFromDb(wdId);
+        if (!wdObj) {
           res.writeHead(404);
           res.end(JSON.stringify({ success: false, message: 'Data penarikan tidak ditemukan.' }));
           return;
         }
 
-        wdData.status = action === 'approve' ? 'approved' : 'rejected';
-        await saveWithdrawalToDb(wdId, wdData);
+        if (action === 'approve') {
+          wdObj.status = 'approved';
+        } else {
+          wdObj.status = 'rejected';
+          const targetUserObj = await getUserFromDb(wdObj.username);
+          if (targetUserObj) {
+            targetUserObj.balance = (targetUserObj.balance || 0) + wdObj.amount;
+            await saveUserToDb(wdObj.username, targetUserObj);
+          }
+        }
 
-        // Jika ditolak, kembalikan saldo jika itu opsi 20k (opsional) atau biarkan
+        await saveWithdrawalToDb(wdId, wdObj);
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Aksi penarikan saldo berhasil disimpan.' }));
-      } catch (err) {
+        res.end(JSON.stringify({ success: true, message: `Berhasil ${action === 'approve' ? 'menerima' : 'menolak'} penarikan!` }));
+      } catch (e) {
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
+        res.end(JSON.stringify({ success: false }));
       }
     });
-  } else if (parsedUrl.pathname === '/api/admin/creator-requests' && req.method === 'GET') {
-    res.setHeader('Content-Type', 'application/json');
-    const username = parsedUrl.searchParams.get('username');
-    const adminData = await getUserFromDb(username);
-    if (!adminData || !adminData.isAdmin) {
-      res.writeHead(403);
-      res.end(JSON.stringify({ success: false, message: 'Unauthorized' }));
-      return;
-    }
-    const allUsers = await getAllUsersFromDb();
-    const requests = {};
-    for (let [uname, uval] of Object.entries(allUsers)) {
-      if (uval.creatorStatus === 'pending') {
-        requests[uname] = uval;
-      }
-    }
-    res.writeHead(200);
-    res.end(JSON.stringify({ success: true, requests }));
-  } else if (parsedUrl.pathname === '/api/admin/creator-action' && req.method === 'POST') {
+  } else if (parsedUrl.pathname === '/api/presets/like' && req.method === 'POST') {
     res.setHeader('Content-Type', 'application/json');
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {
       try {
-        const { username, targetUser, actionType } = JSON.parse(body);
-        const adminData = await getUserFromDb(username);
-        if (!adminData || !adminData.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Unauthorized' }));
+        const { username, presetId } = JSON.parse(body);
+        if (!username || !presetId) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false }));
           return;
         }
-
-        const targetData = await getUserFromDb(targetUser);
-        if (!targetData) {
-          res.writeHead(404);
-          res.end(JSON.stringify({ success: false, message: 'User target tidak ditemukan.' }));
-          return;
-        }
-
-        if (actionType === 'approve') {
-          targetData.isCreator = true;
-          targetData.creatorStatus = 'approved';
-        } else {
-          targetData.isCreator = false;
-          targetData.creatorStatus = 'rejected';
-        }
-
-        await saveUserToDb(targetUser, targetData);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Status creator berhasil diperbarui.' }));
-      } catch (err) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { mode, username, password, email, deviceToken } = JSON.parse(body);
-        let user = await getUserFromDb(username);
-
-        if (mode === 'register') {
-          if (user) {
-            res.writeHead(400);
-            res.end(JSON.stringify({ success: false, message: 'Username sudah terdaftar. Silakan pilih username lain.' }));
-            return;
-          }
-          const newUser = {
-            password,
-            email: email || '',
-            isAdmin: username === 'adminbaguss',
-            isCreator: username === 'adminbaguss',
-            creatorStatus: username === 'adminbaguss' ? 'approved' : 'none',
-            activatedEmails: [],
-            bonusQuota: 0,
-            lastResetTime: Date.now(),
-            vipUntil: 0,
-            balance: 0,
-            hasWithdrawn100: false,
-            usedQuota: 0
-          };
-          await saveUserToDb(username, newUser);
-          const newDeviceToken = 'dev_' + Date.now() + Math.random();
-          res.writeHead(200);
-          res.end(JSON.stringify({
-            success: true,
-            message: 'Registrasi berhasil!',
-            username,
-            isAdmin: newUser.isAdmin,
-            isCreator: newUser.isCreator,
-            creatorStatus: newUser.creatorStatus,
-            balance: newUser.balance,
-            hasWithdrawn100: newUser.hasWithdrawn100,
-            usedQuota: 0,
-            bonusQuota: 0,
-            serverStatus,
-            token: newDeviceToken,
-            deviceToken: newDeviceToken
-          }));
-        } else {
-          if (!user || user.password !== password) {
-            res.writeHead(400);
-            res.end(JSON.stringify({ success: false, message: 'Username atau password salah!' }));
-            return;
-          }
-          const isVip = user.vipUntil && user.vipUntil > Date.now();
-          res.writeHead(200);
-          res.end(JSON.stringify({
-            success: true,
-            message: 'Login berhasil!',
-            username,
-            isAdmin: user.isAdmin || username === 'adminbaguss',
-            isCreator: user.isCreator || user.isAdmin || username === 'adminbaguss',
-            creatorStatus: user.creatorStatus || 'none',
-            balance: user.balance || 0,
-            hasWithdrawn100: user.hasWithdrawn100 || false,
-            usedQuota: user.usedQuota || 0,
-            bonusQuota: user.bonusQuota || 0,
-            isVip,
-            vipUntil: user.vipUntil || 0,
-            serverStatus,
-            token: 'dev_token_session'
-          }));
-        }
-      } catch (err) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/auth/session' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username } = JSON.parse(body);
-        let user = await getUserFromDb(username);
-        if (!user) {
+        const cleanUser = username.toLowerCase();
+        const presetObj = await getPresetFromDb(presetId);
+        if (!presetObj) {
           res.writeHead(404);
           res.end(JSON.stringify({ success: false }));
           return;
         }
-        const isVip = user.vipUntil && user.vipUntil > Date.now();
+
+        if (!presetObj.likes) presetObj.likes = {};
+        if (presetObj.likes[cleanUser]) {
+          delete presetObj.likes[cleanUser];
+        } else {
+          presetObj.likes[cleanUser] = true;
+        }
+
+        await savePresetToDb(presetId, presetObj);
         res.writeHead(200);
-        res.end(JSON.stringify({
-          success: true,
-          username,
-          isAdmin: user.isAdmin || username === 'adminbaguss',
-          isCreator: user.isCreator || user.isAdmin || username === 'adminbaguss',
-          creatorStatus: user.creatorStatus || 'none',
-          balance: user.balance || 0,
-          hasWithdrawn100: user.hasWithdrawn100 || false,
-          usedQuota: user.usedQuota || 0,
-          bonusQuota: user.bonusQuota || 0,
-          isVip,
-          vipUntil: user.vipUntil || 0,
-          serverStatus
-        }));
-      } catch (err) {
+        res.end(JSON.stringify({ success: true }));
+      } catch (e) {
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
+        res.end(JSON.stringify({ success: false }));
+      }
+    });
+  } else if (parsedUrl.pathname === '/api/presets/comment' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, presetId, text } = JSON.parse(body);
+        if (!username || !presetId || !text) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'Data tidak lengkap.' }));
+          return;
+        }
+        const presetObj = await getPresetFromDb(presetId);
+        if (!presetObj) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ success: false, message: 'Preset tidak ditemukan.' }));
+          return;
+        }
+
+        if (!presetObj.comments) presetObj.comments = {};
+        const commentId = 'comm_' + Date.now();
+        presetObj.comments[commentId] = {
+          username: username.toLowerCase(),
+          text,
+          timestamp: Date.now()
+        };
+
+        await savePresetToDb(presetId, presetObj);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false }));
       }
     });
   } else if (parsedUrl.pathname === '/api/user/username' && req.method === 'PUT') {
@@ -2177,112 +2113,25 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const { currentUsername, newUsername } = JSON.parse(body);
-        if (!newUsername || newUsername.trim() === '') {
+        const cleanOld = currentUsername.toLowerCase();
+        const cleanNew = newUsername.trim().toLowerCase();
+
+        const existingUser = await getUserFromDb(cleanNew);
+        if (existingUser) {
           res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Username baru tidak boleh kosong.' }));
-          return;
-        }
-        const existingTarget = await getUserFromDb(newUsername);
-        if (existingTarget) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Username sudah digunakan oleh akun lain.' }));
-          return;
-        }
-        const userData = await getUserFromDb(currentUsername);
-        if (!userData) {
-          res.writeHead(404);
-          res.end(JSON.stringify({ success: false, message: 'User lama tidak ditemukan.' }));
-          return;
-        }
-        await saveUserToDb(newUsername, userData);
-        await set(ref(db, `users/${currentUsername}`), null);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, newUsername }));
-      } catch (err) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/magiclink' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, email } = JSON.parse(body);
-        if (serverStatus === 'offline' && username !== 'adminbaguss') {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Server sedang offline.' }));
+          res.end(JSON.stringify({ success: false, message: 'Username sudah digunakan.' }));
           return;
         }
 
-        const user = await getUserFromDb(username);
-        if (!user) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
-          return;
-        }
-
-        const isAdmin = user.isAdmin || username === 'adminbaguss';
-        const isVip = user.vipUntil && user.vipUntil > Date.now();
-        const quotaLimit = (user.isCreator || isAdmin) ? 10 : 3;
-
-        // Reset kuota harian 24 jam
-        const now = Date.now();
-        if (!user.lastResetTime || now - user.lastResetTime > 86400000) {
-          user.usedQuota = 0;
-          user.lastResetTime = now;
-        }
-
-        if (!isAdmin && !isVip && (user.usedQuota >= (quotaLimit + (user.bonusQuota || 0)))) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Kuota harian Anda telah habis!' }));
-          return;
-        }
-
-        const result = await am.magiclink(email);
-
-        if (!isAdmin && !isVip) {
-          user.usedQuota = (user.usedQuota || 0) + 1;
-          await saveUserToDb(username, user);
-        }
+        const userData = await getUserFromDb(cleanOld);
+        await saveUserToDb(cleanNew, userData);
+        await set(ref(db, `users/${cleanOld}`), null);
 
         res.writeHead(200);
-        res.end(JSON.stringify({
-          success: true,
-          result,
-          quotaInfo: {
-            usedQuota: user.usedQuota,
-            bonusQuota: user.bonusQuota || 0,
-            isCreator: user.isCreator
-          }
-        }));
-      } catch (err) {
+        res.end(JSON.stringify({ success: true, newUsername: cleanNew }));
+      } catch (e) {
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/verif' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { email, url, username } = JSON.parse(body);
-        const result = await am.verif(email, url);
-        if (username) {
-          let user = await getUserFromDb(username);
-          if (user) {
-            if (!user.activatedEmails) user.activatedEmails = [];
-            user.activatedEmails.push(email);
-            await saveUserToDb(username, user);
-          }
-        }
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, result }));
-      } catch (err) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
+        res.end(JSON.stringify({ success: false }));
       }
     });
   } else if (parsedUrl.pathname === '/api/admin/set-status' && req.method === 'POST') {
@@ -2292,18 +2141,18 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const { status, username } = JSON.parse(body);
-        const user = await getUserFromDb(username);
-        if (!user || !user.isAdmin) {
+        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!userObj || !userObj.isAdmin) {
           res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Unauthorized' }));
+          res.end(JSON.stringify({ success: false }));
           return;
         }
         serverStatus = status;
         res.writeHead(200);
         res.end(JSON.stringify({ success: true }));
-      } catch (err) {
+      } catch(e) {
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
+        res.end(JSON.stringify({ success: false }));
       }
     });
   } else if (parsedUrl.pathname === '/api/admin/set-video' && req.method === 'POST') {
@@ -2313,213 +2162,229 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const { username, videoUrl } = JSON.parse(body);
-        const user = await getUserFromDb(username);
-        if (!user || !user.isAdmin) {
+        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!userObj || !userObj.isAdmin) {
           res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Unauthorized' }));
+          res.end(JSON.stringify({ success: false, message: 'Akses ditolak.' }));
           return;
         }
         await saveVideoToDb(videoUrl);
         res.writeHead(200);
         res.end(JSON.stringify({ success: true }));
-      } catch (err) {
+      } catch (e) {
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
+        res.end(JSON.stringify({ success: false }));
       }
     });
-  } else if (parsedUrl.pathname === '/api/admin/set-vip' && req.method === 'POST') {
+  } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
     res.setHeader('Content-Type', 'application/json');
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {
       try {
-        const { username, targetUser, days } = JSON.parse(body);
-        const adminUser = await getUserFromDb(username);
-        if (!adminUser || !adminUser.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Unauthorized' }));
+        const { mode, username, password, email, deviceToken } = JSON.parse(body);
+        const cleanUname = username ? username.trim().toLowerCase() : '';
+
+        if (!cleanUname || !password) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'Username dan password wajib diisi.' }));
           return;
         }
-        const target = await getUserFromDb(targetUser);
-        if (!target) {
+
+        let userObj = await getUserFromDb(cleanUname);
+
+        if (mode === 'register') {
+          if (userObj) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ success: false, message: 'Username sudah digunakan.' }));
+            return;
+          }
+          const generatedDeviceToken = 'dev_' + Math.random().toString(36).substring(2) + Date.now();
+          userObj = {
+            password,
+            isAdmin: false,
+            isCreator: false,
+            creatorStatus: 'none',
+            activatedEmails: [],
+            bonusQuota: 0,
+            usedQuota: 0,
+            lastResetTime: Date.now(),
+            vipUntil: 0,
+            balance: 0,
+            hasWithdrawn100: false,
+            deviceToken: generatedDeviceToken
+          };
+          await saveUserToDb(cleanUname, userObj);
+
+          res.writeHead(200);
+          res.end(JSON.stringify({
+            success: true,
+            message: 'Registrasi berhasil!',
+            username: cleanUname,
+            isAdmin: false,
+            isCreator: false,
+            creatorStatus: 'none',
+            usedQuota: 0,
+            bonusQuota: 0,
+            balance: 0,
+            hasWithdrawn100: false,
+            serverStatus,
+            token: 'token_' + cleanUname + '_' + Date.now(),
+            deviceToken: generatedDeviceToken
+          }));
+        } else {
+          if (!userObj || userObj.password !== password) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ success: false, message: 'Username atau password salah.' }));
+            return;
+          }
+
+          let now = Date.now();
+          if (now - userObj.lastResetTime > 24 * 60 * 60 * 1000) {
+            userObj.usedQuota = 0;
+            userObj.lastResetTime = now;
+            await saveUserToDb(cleanUname, userObj);
+          }
+
+          const isVip = userObj.vipUntil && userObj.vipUntil > now;
+
+          res.writeHead(200);
+          res.end(JSON.stringify({
+            success: true,
+            message: 'Login berhasil!',
+            username: cleanUname,
+            isAdmin: userObj.isAdmin || false,
+            isCreator: userObj.isCreator || false,
+            creatorStatus: userObj.creatorStatus || 'none',
+            usedQuota: userObj.usedQuota || 0,
+            bonusQuota: userObj.bonusQuota || 0,
+            balance: userObj.balance || 0,
+            hasWithdrawn100: userObj.hasWithdrawn100 || false,
+            isVip,
+            vipUntil: userObj.vipUntil || 0,
+            serverStatus,
+            token: 'token_' + cleanUname + '_' + Date.now()
+          }));
+        }
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan server.' }));
+      }
+    });
+  } else if (parsedUrl.pathname === '/api/auth/session' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username } = JSON.parse(body);
+        const cleanUname = username ? username.trim().toLowerCase() : '';
+        const userObj = await getUserFromDb(cleanUname);
+
+        if (!userObj) {
           res.writeHead(404);
-          res.end(JSON.stringify({ success: false, message: 'Target user tidak ditemukan.' }));
+          res.end(JSON.stringify({ success: false }));
           return;
         }
-        const expiry = Date.now() + (days * 86400000);
-        target.vipUntil = expiry;
-        await saveUserToDb(targetUser, target);
+
+        let now = Date.now();
+        if (now - userObj.lastResetTime > 24 * 60 * 60 * 1000) {
+          userObj.usedQuota = 0;
+          userObj.lastResetTime = now;
+          await saveUserToDb(cleanUname, userObj);
+        }
+
+        const isVip = userObj.vipUntil && userObj.vipUntil > now;
+
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: `Berhasil set VIP ${targetUser} selama ${days} hari.` }));
-      } catch (err) {
+        res.end(JSON.stringify({
+          success: true,
+          username: cleanUname,
+          isAdmin: userObj.isAdmin || false,
+          isCreator: userObj.isCreator || false,
+          creatorStatus: userObj.creatorStatus || 'none',
+          usedQuota: userObj.usedQuota || 0,
+          bonusQuota: userObj.bonusQuota || 0,
+          balance: userObj.balance || 0,
+          hasWithdrawn100: userObj.hasWithdrawn100 || false,
+          isVip,
+          vipUntil: userObj.vipUntil || 0,
+          serverStatus
+        }));
+      } catch (e) {
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
+        res.end(JSON.stringify({ success: false }));
       }
     });
-  } else if (parsedUrl.pathname === '/api/admin/get-vip-list' && req.method === 'GET') {
-    res.setHeader('Content-Type', 'application/json');
-    const username = parsedUrl.searchParams.get('username');
-    const adminUser = await getUserFromDb(username);
-    if (!adminUser || !adminUser.isAdmin) {
-      res.writeHead(403);
-      res.end(JSON.stringify({ success: false, message: 'Unauthorized' }));
-      return;
-    }
-    const allUsers = await getAllUsersFromDb();
-    const vipUsers = {};
-    for (let [uname, uval] of Object.entries(allUsers)) {
-      if (uval.vipUntil && uval.vipUntil > Date.now()) {
-        vipUsers[uname] = uval;
-      }
-    }
-    res.writeHead(200);
-    res.end(JSON.stringify({ success: true, vipUsers }));
-  } else if (parsedUrl.pathname === '/api/admin/remove-vip' && req.method === 'POST') {
+  } else if (parsedUrl.pathname === '/api/magiclink' && req.method === 'POST') {
     res.setHeader('Content-Type', 'application/json');
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {
       try {
-        const { username, targetUser } = JSON.parse(body);
-        const adminUser = await getUserFromDb(username);
-        if (!adminUser || !adminUser.isAdmin) {
+        const { username, email } = JSON.parse(body);
+        const cleanUname = username ? username.toLowerCase() : '';
+        const userObj = cleanUname ? await getUserFromDb(cleanUname) : null;
+
+        if (!userObj) {
           res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Unauthorized' }));
+          res.end(JSON.stringify({ success: false, message: 'User session tidak valid.' }));
           return;
         }
-        const target = await getUserFromDb(targetUser);
-        if (target) {
-          target.vipUntil = 0;
-          await saveUserToDb(targetUser, target);
+
+        let now = Date.now();
+        if (now - userObj.lastResetTime > 24 * 60 * 60 * 1000) {
+          userObj.usedQuota = 0;
+          userObj.lastResetTime = now;
         }
+
+        const isVip = userObj.vipUntil && userObj.vipUntil > now;
+        let quotaLimit = (userObj.isCreator || userObj.isAdmin) ? 10 : 3;
+
+        if (!userObj.isAdmin && !isVip) {
+          let maxAllowed = quotaLimit + (userObj.bonusQuota || 0);
+          if (userObj.usedQuota >= maxAllowed) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ success: false, message: 'Kuota aktivasi Anda habis hari ini.' }));
+            return;
+          }
+        }
+
+        const result = await am.magiclink(email);
+
+        if (!userObj.isAdmin && !isVip) {
+          userObj.usedQuota = (userObj.usedQuota || 0) + 1;
+          await saveUserToDb(cleanUname, userObj);
+        }
+
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true }));
-      } catch (err) {
+        res.end(JSON.stringify({
+          success: true,
+          result,
+          quotaInfo: {
+            usedQuota: userObj.usedQuota,
+            bonusQuota: userObj.bonusQuota || 0,
+            isCreator: userObj.isCreator
+          }
+        }));
+      } catch (e) {
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
+        res.end(JSON.stringify({ success: false, message: e.message }));
       }
     });
-  } else if (parsedUrl.pathname === '/api/admin/create-redeem' && req.method === 'POST') {
+  } else if (parsedUrl.pathname === '/api/verif' && req.method === 'POST') {
     res.setHeader('Content-Type', 'application/json');
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {
       try {
-        const { username, code, totalQuota, maxClaims } = JSON.parse(body);
-        const adminUser = await getUserFromDb(username);
-        if (!adminUser || !adminUser.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Unauthorized' }));
-          return;
-        }
-        await saveRedeemToDb(code, {
-          totalQuota,
-          maxClaims,
-          claimedCount: 0,
-          claimedUsers: {}
-        });
+        const { email, url } = JSON.parse(body);
+        const result = await am.verif(email, url);
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: `Kode redeem ${code} berhasil dibuat!` }));
-      } catch (err) {
+        res.end(JSON.stringify(result));
+      } catch (e) {
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/get-redeems' && req.method === 'GET') {
-    res.setHeader('Content-Type', 'application/json');
-    const username = parsedUrl.searchParams.get('username');
-    const adminUser = await getUserFromDb(username);
-    if (!adminUser || !adminUser.isAdmin) {
-      res.writeHead(403);
-      res.end(JSON.stringify({ success: false, message: 'Unauthorized' }));
-      return;
-    }
-    const redeems = await getAllRedeemsFromDb();
-    res.writeHead(200);
-    res.end(JSON.stringify({ success: true, redeems }));
-  } else if (parsedUrl.pathname === '/api/admin/delete-redeem' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, code } = JSON.parse(body);
-        const adminUser = await getUserFromDb(username);
-        if (!adminUser || !adminUser.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Unauthorized' }));
-          return;
-        }
-        await removeRedeemFromDb(code);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true }));
-      } catch (err) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/create-announcement' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, title, content } = JSON.parse(body);
-        const adminUser = await getUserFromDb(username);
-        if (!adminUser || !adminUser.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Unauthorized' }));
-          return;
-        }
-        const id = 'info_' + Date.now();
-        await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Informasi berhasil dipublikasikan!' }));
-      } catch (err) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/update-announcement' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, id, title, content } = JSON.parse(body);
-        const adminUser = await getUserFromDb(username);
-        if (!adminUser || !adminUser.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Unauthorized' }));
-          return;
-        }
-        await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Informasi berhasil diperbarui!' }));
-      } catch (err) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
-      }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/delete-announcement' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, id } = JSON.parse(body);
-        const adminUser = await getUserFromDb(username);
-        if (!adminUser || !adminUser.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false, function: true }))
-          return;
-        }
-        await removeAnnouncementFromDb(id);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true }));
-      } catch (err) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
+        res.end(JSON.stringify({ success: false, message: e.message }));
       }
     });
   } else if (parsedUrl.pathname === '/api/redeem' && req.method === 'POST') {
@@ -2529,51 +2394,52 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const { username, code } = JSON.parse(body);
-        const redeem = await getRedeemFromDb(code);
-        if (!redeem) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Kode redeem tidak valid!' }));
-          return;
-        }
+        const cleanUname = username ? username.toLowerCase() : '';
+        const userObj = cleanUname ? await getUserFromDb(cleanUname) : null;
+        const redeemObj = await getRedeemFromDb(code);
 
-        if (!redeem.claimedUsers) redeem.claimedUsers = {};
-        if (redeem.claimedUsers[username]) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Anda sudah pernah mengklaim kode ini!' }));
-          return;
-        }
-
-        if (redeem.claimedCount >= redeem.maxClaims) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Kuota klaim kode redeem ini sudah habis!' }));
-          return;
-        }
-
-        const user = await getUserFromDb(username);
-        if (!user) {
-          res.writeHead(400);
+        if (!userObj) {
+          res.writeHead(404);
           res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
           return;
         }
 
-        user.bonusQuota = (user.bonusQuota || 0) + redeem.totalQuota;
-        await saveUserToDb(username, user);
+        if (!redeemObj) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ success: false, message: 'Kode redeem tidak valid.' }));
+          return;
+        }
 
-        redeem.claimedUsers[username] = true;
-        redeem.claimedCount += 1;
-        await saveRedeemToDb(code, redeem);
+        if (redeemObj.claimedBy && redeemObj.claimedBy[cleanUname]) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'Anda sudah pernah mengklaim kode ini.' }));
+          return;
+        }
+
+        if (redeemObj.claimedCount >= redeemObj.maxClaims) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'Kode redeem sudah habis.' }));
+          return;
+        }
+
+        if (!redeemObj.claimedBy) redeemObj.claimedBy = {};
+        redeemObj.claimedBy[cleanUname] = true;
+        redeemObj.claimedCount = (redeemObj.claimedCount || 0) + 1;
+        await saveRedeemToDb(code, redeemObj);
+
+        userObj.bonusQuota = (userObj.bonusQuota || 0) + redeemObj.totalQuota;
+        await saveUserToDb(cleanUname, userObj);
 
         res.writeHead(200);
         res.end(JSON.stringify({
           success: true,
-          message: `Berhasil klaim! +${redeem.totalQuota} kuota ditambahkan.`,
-          usedQuota: user.usedQuota || 0,
-          bonusQuota: user.bonusQuota || 0,
-          isCreator: user.isCreator || false
+          message: `Berhasil klaim! Mendapatkan tambahan kuota ${redeemObj.totalQuota}.`,
+          usedQuota: userObj.usedQuota || 0,
+          bonusQuota: userObj.bonusQuota || 0
         }));
-      } catch (err) {
+      } catch (e) {
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: err.message }));
+        res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan.' }));
       }
     });
   } else {
@@ -2583,5 +2449,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+  console.log(`Server berjalan di http://localhost:${PORT}`);
 });
