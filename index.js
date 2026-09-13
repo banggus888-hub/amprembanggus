@@ -871,7 +871,9 @@ const htmlTemplate = `
             if(data.isAdmin || data.isVip) {
                 document.getElementById('quota-display').innerText = "UNLIMITED";
             } else {
-                document.getElementById('quota-display').innerText = data.usedQuota + "/1 (+" + data.bonusQuota + ")";
+                let remainingBonus = data.bonusQuota !== undefined ? data.bonusQuota : 0;
+                document.getElementById('quota-display').innerText = data.usedQuota + "/1 (+" + remainingBonus + ")";
+                document.getElementById('profile-quota').innerText = (1 + remainingBonus) - data.usedQuota;
             }
         }
 
@@ -935,15 +937,15 @@ const htmlTemplate = `
 
                 if (data.success && Object.keys(data.vipUsers).length > 0) {
                     for (let [uname, val] of Object.entries(data.vipUsers)) {
-                        container.innerHTML += \`
+                        container.innerHTML += `
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">\${uname}</span>
-                                    <span class="text-slate-400 block text-[9px]">Expired: \${new Date(val.vipUntil).toLocaleDateString()}</span>
+                                    <span class="text-amber-300 font-bold">${uname}</span>
+                                    <span class="text-slate-400 block text-[9px]">Expired: ${new Date(val.vipUntil).toLocaleDateString()}</span>
                                 </div>
-                                <button onclick="handleRemoveVip('\${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                <button onclick="handleRemoveVip('${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Tidak ada akun VIP aktif.</p>';
@@ -977,15 +979,15 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += \`
+                        container.innerHTML += `
                             <div class="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/20 space-y-1">
                                 <div class="flex justify-between items-center text-cyan-300 font-bold text-xs">
-                                    <span>\${val.title}</span>
-                                    <span class="text-[9px] text-slate-400 font-mono">\${new Date(val.timestamp).toLocaleDateString()}</span>
+                                    <span>${val.title}</span>
+                                    <span class="text-[9px] text-slate-400 font-mono">${new Date(val.timestamp).toLocaleDateString()}</span>
                                 </div>
-                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">\${val.content}</p>
+                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">${val.content}</p>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi terbaru.</p>';
@@ -1004,18 +1006,18 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += \`
+                        container.innerHTML += `
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div class="truncate mr-2">
-                                    <span class="text-amber-300 font-bold block truncate">\${val.title}</span>
-                                    <span class="text-slate-400 truncate block text-[9px]">\${val.content.substring(0, 30)}...</span>
+                                    <span class="text-amber-300 font-bold block truncate">${val.title}</span>
+                                    <span class="text-slate-400 truncate block text-[9px]">${val.content.substring(0, 30)}...</span>
                                 </div>
                                 <div class="flex gap-1 shrink-0">
-                                    <button onclick="editAnnouncement('\${id}', '\${encodeURIComponent(val.title)}', '\${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
-                                    <button onclick="deleteAnnouncement('\${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                    <button onclick="editAnnouncement('${id}', '${encodeURIComponent(val.title)}', '${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
+                                    <button onclick="deleteAnnouncement('${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                                 </div>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi.</p>';
@@ -1117,15 +1119,15 @@ const htmlTemplate = `
 
                 if(data.success && Object.keys(data.redeems).length > 0) {
                     for(let [code, val] of Object.entries(data.redeems)) {
-                        listContainer.innerHTML += \`
+                        listContainer.innerHTML += `
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">\${code}</span>
-                                    <span class="text-slate-400 block text-[9px]">Kuota: \${val.totalQuota} | Klaim: \${val.claimedCount}/\${val.maxClaims}</span>
+                                    <span class="text-amber-300 font-bold">${code}</span>
+                                    <span class="text-slate-400 block text-[9px]">Kuota: ${val.totalQuota} | Klaim: ${val.claimedCount}/${val.maxClaims}</span>
                                 </div>
-                                <button onclick="handleDeleteRedeem('\${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                <button onclick="handleDeleteRedeem('${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     listContainer.innerHTML = '<p class="text-slate-500 italic">Belum ada kode aktif.</p>';
@@ -1526,7 +1528,8 @@ const server = http.createServer(async (req, res) => {
           totalQuota: totalQuota,
           maxClaims: maxClaims,
           claimedCount: 0,
-          claimedUsers: []
+          claimedUsers: [],
+          redeemTime: Date.now() // Fitur tambahan: mencatat waktu pembuatan/klaim kode redeem untuk reset 24 jam
         };
         await saveRedeemToDb(code, redeemData);
 
@@ -1544,8 +1547,22 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const redeems = await getAllRedeemsFromDb();
+    
+    // Fitur tambahan: cek otomatis apakah ada kode redeem yang sudah melewati 24 jam sejak dibuat/diklaim pertama kali untuk direset kuotanya atau dihapus/dihilangkan
+    const now = Date.now();
+    const twentyFourHours = 24 * 60 * 60 * 1000;
+    let updated = false;
+
+    for (let [code, rData] of Object.entries(redeems)) {
+      if (rData.redeemTime && (now - rData.redeemTime >= twentyFourHours)) {
+        await removeRedeemFromDb(code);
+        updated = true;
+      }
+    }
+
+    const finalRedeems = updated ? await getAllRedeemsFromDb() : redeems;
     res.writeHead(200);
-    res.end(JSON.stringify({ success: true, redeems }));
+    res.end(JSON.stringify({ success: true, redeems: finalRedeems }));
   } else if (parsedUrl.pathname === '/api/admin/delete-redeem' && req.method === 'POST') {
     res.setHeader('Content-Type', 'application/json');
     let body = '';
@@ -1582,11 +1599,21 @@ const server = http.createServer(async (req, res) => {
 
         const { code } = parsedBody;
         const cleanUser = username.toLowerCase();
-        const redeemObj = await getRedeemFromDb(code);
+        let redeemObj = await getRedeemFromDb(code);
 
         if (!userObj || !redeemObj) {
           res.writeHead(400);
           res.end(JSON.stringify({ success: false, message: 'User atau Kode Redeem tidak valid!' }));
+          return;
+        }
+
+        // Fitur tambahan: cek apakah kode redeem sudah melewati 24 jam, jika ya otomatis hilang/reset menjadi 0
+        const now = Date.now();
+        const twentyFourHours = 24 * 60 * 60 * 1000;
+        if (redeemObj.redeemTime && (now - redeemObj.redeemTime >= twentyFourHours)) {
+          await removeRedeemFromDb(code);
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'Kode redeem sudah kedaluwarsa (lebih dari 24 jam) dan hilang menjadi 0!' }));
           return;
         }
 
@@ -1602,6 +1629,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
+        // Fitur tambahan: jika kuota tambahan dari kode redeem sudah digunakan habis oleh user/maksimal, tangani secara tepat
         const remainingClaims = redeemObj.maxClaims - redeemObj.claimedCount;
         const remainingTotalQuota = redeemObj.totalQuota - (redeemObj.distributedQuota || 0);
         let rewardQuota = Math.round(remainingTotalQuota / remainingClaims);
@@ -1615,6 +1643,11 @@ const server = http.createServer(async (req, res) => {
         redeemObj.distributedQuota += rewardQuota;
         if (!redeemObj.claimedUsers) redeemObj.claimedUsers = [];
         redeemObj.claimedUsers.push(cleanUser);
+
+        // Jika waktu redeem belum diset, set ke waktu sekarang untuk acuan 24 jam
+        if (!redeemObj.redeemTime) {
+          redeemObj.redeemTime = Date.now();
+        }
 
         await saveUserToDb(cleanUser, userObj);
         await saveRedeemToDb(code, redeemObj);
@@ -1641,7 +1674,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
         const cleanUser = username.toLowerCase();
-        const existingUser = await getUserFromDb(cleanUser);
+        let existingUser = await getUserFromDb(cleanUser);
         if (!existingUser) {
           res.writeHead(404);
           res.end(JSON.stringify({ success: false }));
@@ -1654,6 +1687,7 @@ const server = http.createServer(async (req, res) => {
 
         if (now - existingUser.lastResetTime >= twentyFourHours) {
           existingUser.activatedEmails = [];
+          existingUser.bonusQuota = 0; // Fitur tambahan: kuota tambahan dari kode redeem otomatis hilang jika sudah 24 jam reset menjadi 0 lagi
           existingUser.lastResetTime = now;
           await saveUserToDb(cleanUser, existingUser);
         }
@@ -1730,6 +1764,7 @@ const server = http.createServer(async (req, res) => {
 
             if (now - existingUser.lastResetTime >= twentyFourHours) {
               existingUser.activatedEmails = [];
+              existingUser.bonusQuota = 0; // Fitur tambahan: kuota tambahan dari kode redeem otomatis hilang jika sudah 24 jam reset menjadi 0 lagi
               existingUser.lastResetTime = now;
               await saveUserToDb(cleanUser, existingUser);
             }
@@ -1766,7 +1801,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const { username, email } = JSON.parse(body);
         const cleanUser = username ? username.toLowerCase() : '';
-        const userObj = await getUserFromDb(cleanUser);
+        let userObj = await getUserFromDb(cleanUser);
 
         if (!userObj) {
           res.writeHead(400);
@@ -1784,6 +1819,7 @@ const server = http.createServer(async (req, res) => {
         const twentyFourHours = 24 * 60 * 60 * 1000;
         if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
           userObj.activatedEmails = [];
+          userObj.bonusQuota = 0; // Fitur tambahan: kuota tambahan dari kode redeem otomatis hilang jika sudah 24 jam reset menjadi 0 lagi
           userObj.lastResetTime = now;
         }
 
@@ -1794,9 +1830,10 @@ const server = http.createServer(async (req, res) => {
         const maxAllowed = 1 + userObj.bonusQuota;
 
         if (!userObj.isAdmin && !isVipActive) {
+          // Fitur tambahan: penanganan jika kuota utama & kuota tambahan sudah digunakan habis
           if (!userObj.activatedEmails.includes(email) && userObj.activatedEmails.length >= maxAllowed) {
             res.writeHead(403);
-            res.end(JSON.stringify({ success: false, message: 'Kuota aktivasi Anda habis! Gunakan kode redeem atau upgrade VIP.' }));
+            res.end(JSON.stringify({ success: false, message: 'Kuota aktivasi utama & kuota tambahan Anda sudah digunakan habis! Tunggu reset 24 jam atau gunakan kode redeem / VIP.' }));
             return;
           }
         }
