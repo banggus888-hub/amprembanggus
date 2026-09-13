@@ -28,7 +28,16 @@ const go = Go.create({
 	keepAlive: true
 });
 
-let serverStatus = 'online'; 
+async function getServerStatusFromDb() {
+  const dbRef = ref(db);
+  const snapshot = await get(child(dbRef, `settings/serverStatus`));
+  if (snapshot.exists()) return snapshot.val();
+  return 'online'; // Default online
+}
+
+async function saveServerStatusToDb(status) {
+  await set(ref(db, `settings/serverStatus`), status);
+}
 
 const am = {
   async magiclink(email) {
@@ -381,16 +390,32 @@ const htmlTemplate = `
                     <span class="px-2.5 py-1 bg-amber-500 text-slate-950 font-black text-[10px] rounded-full uppercase">ACTIVE</span>
                 </div>
 
-                <div class="glass-panel py-3 px-4 flex items-center justify-between">
-                    <div class="flex items-center gap-2.5">
-                        <div class="w-8 h-8 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 text-xs">⚡</div>
-                        <div>
-                            <p class="text-xs font-bold text-slate-200">Activation Quota</p>
-                            <p class="text-[10px] text-slate-400">Reset otomatis 24 Jam</p>
+                <!-- TAMPILAN KUOTA MODERN & ESTETIK -->
+                <div class="glass-panel relative overflow-hidden p-5 space-y-3.5 border border-purple-500/30 bg-gradient-to-br from-[#120c1e]/90 via-[#19102c]/80 to-[#0b0614]/95 shadow-[0_0_40px_rgba(168,85,247,0.12)]">
+                    <div class="absolute -right-8 -bottom-8 w-28 h-28 bg-purple-600/10 rounded-full blur-2xl pointer-events-none"></div>
+                    
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600/30 to-indigo-600/30 border border-purple-500/40 flex items-center justify-center text-purple-300 text-sm shadow-inner">⚡</div>
+                            <div>
+                                <h4 class="text-xs font-extrabold uppercase tracking-wider text-white">Activation Quota</h4>
+                                <p class="text-[10px] text-purple-300/80">Reset otomatis setiap 24 Jam</p>
+                            </div>
+                        </div>
+                        <div class="px-3 py-1.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-200 text-xs font-black mono tracking-wider shadow-[0_0_15px_rgba(168,85,247,0.2)]">
+                            <span id="quota-display">0/3</span>
                         </div>
                     </div>
-                    <div class="flex items-center gap-1.5 text-purple-300 text-xs font-extrabold bg-purple-500/10 px-3 py-1.5 rounded-full border border-purple-500/20 mono">
-                        <span id="quota-display">0/3</span>
+
+                    <!-- Progress Bar Animasi Modern -->
+                    <div class="space-y-1.5 pt-1">
+                        <div class="w-full h-2.5 bg-black/60 rounded-full overflow-hidden p-0.5 border border-purple-500/20">
+                            <div id="quota-progress-bar" class="h-full bg-gradient-to-r from-purple-500 via-indigo-500 to-cyan-400 rounded-full transition-all duration-700 shadow-[0_0_12px_rgba(168,85,247,0.7)]" style="width: 0%;"></div>
+                        </div>
+                        <div class="flex justify-between items-center text-[10px] text-slate-400 font-medium px-0.5">
+                            <span id="quota-status-label">Penggunaan Kuota Aktif</span>
+                            <span id="quota-percent-text" class="text-purple-300 font-bold mono">0%</span>
+                        </div>
                     </div>
                 </div>
 
@@ -859,10 +884,27 @@ const htmlTemplate = `
         }
 
         function updateQuotaDisplay(data) {
-            if(data.isAdmin || data.isVip) {
-                document.getElementById('quota-display').innerText = "UNLIMITED";
+            const quotaDisplayEl = document.getElementById('quota-display');
+            const progressBarEl = document.getElementById('quota-progress-bar');
+            const percentTextEl = document.getElementById('quota-percent-text');
+            const statusLabelEl = document.getElementById('quota-status-label');
+
+            if (data.isAdmin || data.isVip) {
+                quotaDisplayEl.innerText = "UNLIMITED";
+                if(progressBarEl) progressBarEl.style.width = '100%';
+                if(percentTextEl) percentTextEl.innerText = 'MAX';
+                if(statusLabelEl) statusLabelEl.innerText = 'Status: Akses Tanpa Batas';
             } else {
-                document.getElementById('quota-display').innerText = data.usedQuota + "/1 (+" + data.bonusQuota + ")";
+                const max = 1 + (data.bonusQuota || 0);
+                const used = data.usedQuota || 0;
+                quotaDisplayEl.innerText = used + "/" + max;
+
+                let percent = max > 0 ? Math.round((used / max) * 100) : 0;
+                if(percent > 100) percent = 100;
+
+                if(progressBarEl) progressBarEl.style.width = percent + '%';
+                if(percentTextEl) percentTextEl.innerText = percent + '% Terpakai';
+                if(statusLabelEl) statusLabelEl.innerText = `Terpakai ${used} dari ${max} kuota`;
             }
         }
 
@@ -926,15 +968,15 @@ const htmlTemplate = `
 
                 if (data.success && Object.keys(data.vipUsers).length > 0) {
                     for (let [uname, val] of Object.entries(data.vipUsers)) {
-                        container.innerHTML += \`
+                        container.innerHTML += `
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">\${uname}</span>
-                                    <span class="text-slate-400 block text-[9px]">Expired: \${new Date(val.vipUntil).toLocaleDateString()}</span>
+                                    <span class="text-amber-300 font-bold">${uname}</span>
+                                    <span class="text-slate-400 block text-[9px]">Expired: ${new Date(val.vipUntil).toLocaleDateString()}</span>
                                 </div>
-                                <button onclick="handleRemoveVip('\${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                <button onclick="handleRemoveVip('${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Tidak ada akun VIP aktif.</p>';
@@ -968,15 +1010,15 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += \`
+                        container.innerHTML += `
                             <div class="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/20 space-y-1">
                                 <div class="flex justify-between items-center text-cyan-300 font-bold text-xs">
-                                    <span>\${val.title}</span>
-                                    <span class="text-[9px] text-slate-400 font-mono">\${new Date(val.timestamp).toLocaleDateString()}</span>
+                                    <span>${val.title}</span>
+                                    <span class="text-[9px] text-slate-400 font-mono">${new Date(val.timestamp).toLocaleDateString()}</span>
                                 </div>
-                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">\${val.content}</p>
+                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">${val.content}</p>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi terbaru.</p>';
@@ -995,18 +1037,18 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += \`
+                        container.innerHTML += `
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div class="truncate mr-2">
-                                    <span class="text-amber-300 font-bold block truncate">\${val.title}</span>
-                                    <span class="text-slate-400 truncate block text-[9px]">\${val.content.substring(0, 30)}...</span>
+                                    <span class="text-amber-300 font-bold block truncate">${val.title}</span>
+                                    <span class="text-slate-400 truncate block text-[9px]">${val.content.substring(0, 30)}...</span>
                                 </div>
                                 <div class="flex gap-1 shrink-0">
-                                    <button onclick="editAnnouncement('\${id}', '\${encodeURIComponent(val.title)}', '\${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
-                                    <button onclick="deleteAnnouncement('\${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                    <button onclick="editAnnouncement('${id}', '${encodeURIComponent(val.title)}', '${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
+                                    <button onclick="deleteAnnouncement('${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                                 </div>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi.</p>';
@@ -1108,15 +1150,15 @@ const htmlTemplate = `
 
                 if(data.success && Object.keys(data.redeems).length > 0) {
                     for(let [code, val] of Object.entries(data.redeems)) {
-                        listContainer.innerHTML += \`
+                        listContainer.innerHTML += `
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">\${code}</span>
-                                    <span class="text-slate-400 block text-[9px]">Kuota: \${val.totalQuota} | Klaim: \${val.claimedCount}/\${val.maxClaims}</span>
+                                    <span class="text-amber-300 font-bold">${code}</span>
+                                    <span class="text-slate-400 block text-[9px]">Kuota: ${val.totalQuota} | Klaim: ${val.claimedCount}/${val.maxClaims}</span>
                                 </div>
-                                <button onclick="handleDeleteRedeem('\${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                <button onclick="handleDeleteRedeem('${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     listContainer.innerHTML = '<p class="text-slate-500 italic">Belum ada kode aktif.</p>';
@@ -1252,13 +1294,15 @@ const server = http.createServer(async (req, res) => {
     if (userDoc && userDoc.isAdmin) isRequesterAdmin = true;
   }
 
+  const currentServerStatus = await getServerStatusFromDb();
+
   if (parsedUrl.pathname === '/' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(htmlTemplate);
   } else if (parsedUrl.pathname === '/api/status') {
     res.setHeader('Content-Type', 'application/json');
     res.writeHead(200);
-    res.end(JSON.stringify({ status: serverStatus }));
+    res.end(JSON.stringify({ status: currentServerStatus }));
   } else if (parsedUrl.pathname === '/api/video') {
     res.setHeader('Content-Type', 'application/json');
     const videoUrl = await getVideoFromDb();
@@ -1322,9 +1366,9 @@ const server = http.createServer(async (req, res) => {
           res.end(JSON.stringify({ success: false }));
           return;
         }
-        serverStatus = status;
+        await saveServerStatusToDb(status);
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, status: serverStatus }));
+        res.end(JSON.stringify({ success: true, status: status }));
       } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
     });
   } else if (parsedUrl.pathname === '/api/admin/set-video' && req.method === 'POST') {
@@ -1563,7 +1607,7 @@ const server = http.createServer(async (req, res) => {
         const { username } = parsedBody;
         const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
 
-        if (serverStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
+        if (currentServerStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
           res.writeHead(403);
           res.end(JSON.stringify({ success: false, message: 'Pembuatan gagal: Server sedang offline. Fitur premium dinonaktifkan untuk user biasa & VIP.' }));
           return;
@@ -1659,7 +1703,7 @@ const server = http.createServer(async (req, res) => {
           bonusQuota: existingUser.bonusQuota || 0,
           isVip: isVipActive,
           vipUntil: existingUser.vipUntil || 0,
-          serverStatus
+          serverStatus: currentServerStatus
         }));
       } catch (e) {
         res.writeHead(500);
@@ -1707,7 +1751,7 @@ const server = http.createServer(async (req, res) => {
             usedQuota: 0, 
             bonusQuota: 0,
             isVip: false,
-            serverStatus,
+            serverStatus: currentServerStatus,
             deviceToken: newDeviceToken,
             token: fakeAuthToken
           }));
@@ -1737,7 +1781,7 @@ const server = http.createServer(async (req, res) => {
               bonusQuota: existingUser.bonusQuota || 0,
               isVip: isVipActive,
               vipUntil: existingUser.vipUntil || 0,
-              serverStatus,
+              serverStatus: currentServerStatus,
               token: fakeAuthToken
             }));
           } else {
@@ -1763,7 +1807,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        if (serverStatus !== 'online' && !userObj.isAdmin) {
+        if (currentServerStatus !== 'online' && !userObj.isAdmin) {
           res.writeHead(403);
           res.end(JSON.stringify({ success: false, message: 'Pembuatan gagal: Server sedang offline. Fitur premium dinonaktifkan untuk user biasa & VIP.' }));
           return;
@@ -1817,7 +1861,7 @@ const server = http.createServer(async (req, res) => {
         const { email, url: verifyUrl, username } = JSON.parse(body);
 
         let userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (serverStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
+        if (currentServerStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
           res.writeHead(403);
           res.end(JSON.stringify({ error: 'Pembuatan gagal: Server sedang offline. Fitur premium dinonaktifkan untuk user biasa & VIP.' }));
           return;
