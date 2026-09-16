@@ -28,7 +28,18 @@ const go = Go.create({
 	keepAlive: true
 });
 
-let serverStatus = 'online'; 
+// Fungsi helper untuk mengambil status server dari database
+async function getServerStatusFromDb() {
+  const dbRef = ref(db);
+  const snapshot = await get(child(dbRef, `settings/serverStatus`));
+  if (snapshot.exists()) return snapshot.val();
+  return 'online'; // Default online jika belum diset
+}
+
+// Fungsi helper untuk menyimpan status server ke database
+async function saveServerStatusToDb(status) {
+  await set(ref(db, `settings/serverStatus`), status);
+}
 
 const am = {
   async magiclink(email) {
@@ -111,6 +122,17 @@ async function getAllUsersFromDb() {
   return {};
 }
 
+async function getVideoFromDb() {
+  const dbRef = ref(db);
+  const snapshot = await get(child(dbRef, `settings/featuredVideo`));
+  if (snapshot.exists()) return snapshot.val();
+  return 'https://assets.mixkit.co/videos/preview/mixkit-digital-animation-of-screens-and-lights-31910-large.mp4';
+}
+
+async function saveVideoToDb(videoUrl) {
+  await set(ref(db, `settings/featuredVideo`), videoUrl);
+}
+
 async function initAdmin() {
   const adminData = await getUserFromDb('adminbaguss');
   if (!adminData) {
@@ -127,7 +149,7 @@ async function initAdmin() {
 initAdmin();
 
 // ==========================================
-// KODE HTML UI MODERN & SISTEM TITIK TIGA BERFOKUS TUNGGAL
+// KODE HTML UI MODERN & FITUR UBAH VIDEO
 // ==========================================
 const htmlTemplate = `
 <!DOCTYPE html>
@@ -135,7 +157,7 @@ const htmlTemplate = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AM Premium • Cyber Gateway</title>
+    <title>AM Premium Banggus</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -145,54 +167,77 @@ const htmlTemplate = `
             overflow-x: hidden;
             margin: 0;
             padding: 0;
-            background-color: #07080c;
+            background-color: #0b0614;
             font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 1.125rem;
         }
         .mono { font-family: 'JetBrains Mono', monospace; }
         
         .phone-wrapper {
             width: 100%;
-            max-width: 430px;
+            max-width: 520px;
             margin: 0 auto;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            padding: 1rem;
+            padding: 1.25rem;
             position: relative;
             box-sizing: border-box;
             overflow-x: hidden;
         }
 
         .glass-panel {
-            background: rgba(13, 15, 23, 0.85);
+            background: rgba(18, 12, 30, 0.75);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(168, 85, 247, 0.15);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(168, 85, 247, 0.05);
+            border-radius: 1.75rem;
+            padding: 1.5rem;
         }
         .input-glow {
-            background: rgba(8, 10, 15, 0.85);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(12, 8, 22, 0.9);
+            border: 1px solid rgba(168, 85, 247, 0.2);
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 9999px;
+            padding: 0.85rem 1.25rem;
+            font-size: 0.95rem;
         }
         .input-glow:focus {
-            border-color: rgba(16, 185, 129, 0.6);
-            box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
+            border-color: rgba(168, 85, 247, 0.8);
+            box-shadow: 0 0 20px rgba(168, 85, 247, 0.25);
             outline: none;
         }
         .cyber-btn {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.4);
+            background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);
+            box-shadow: 0 10px 25px -5px rgba(168, 85, 247, 0.4);
             transition: all 0.3s ease;
+            border-radius: 9999px;
+            padding-top: 0.95rem;
+            padding-bottom: 0.95rem;
+            font-size: 0.95rem;
         }
         .cyber-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 15px 30px -5px rgba(16, 185, 129, 0.6);
+            box-shadow: 0 15px 30px -5px rgba(168, 85, 247, 0.6);
+        }
+        .cyber-btn-green {
+            background: linear-gradient(135deg, #22c55e 0%, #15803d 100%);
+            box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4);
+            transition: all 0.3s ease;
+            border-radius: 9999px;
+            padding-top: 0.95rem;
+            padding-bottom: 0.95rem;
+            font-size: 0.95rem;
+        }
+        .cyber-btn-green:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.6);
         }
         @keyframes pulseGlow {
-            0%, 100% { opacity: 0.4; }
-            50% { opacity: 0.8; }
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.6; }
         }
         .glow-bg {
             animation: pulseGlow 6s infinite ease-in-out;
@@ -201,142 +246,140 @@ const htmlTemplate = `
         #nav-drawer {
             transition: transform 0.3s ease-in-out;
             transform: translateX(100%);
+            width: 100%;
+            max-width: 360px;
+            padding: 1.75rem;
         }
         #nav-drawer.open {
             transform: translateX(0%);
         }
     </style>
 </head>
-<body class="min-h-screen text-slate-100 selection:bg-emerald-500 selection:text-black">
+<body class="min-h-screen text-slate-100 selection:bg-purple-500 selection:text-white">
 
-    <div class="absolute top-[-10%] left-[-10%] w-[300px] h-[300px] bg-emerald-600/10 rounded-full blur-[120px] pointer-events-none glow-bg"></div>
-    <div class="absolute bottom-[-10%] right-[-10%] w-[300px] h-[300px] bg-teal-600/10 rounded-full blur-[120px] pointer-events-none glow-bg"></div>
+    <div class="absolute top-[-10%] left-[-10%] w-[350px] h-[350px] bg-purple-600/10 rounded-full blur-[120px] pointer-events-none glow-bg"></div>
+    <div class="absolute bottom-[-10%] right-[-10%] w-[350px] h-[350px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none glow-bg"></div>
 
     <div class="phone-wrapper z-10">
         
         <!-- HEADER -->
-        <header class="w-full flex items-center justify-between py-3 px-1 border-b border-white/5 mb-4">
-            <div class="flex items-center gap-2">
-                <div class="p-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">⚡</div>
-                <span id="app-title-header" class="font-extrabold text-sm tracking-tight bg-gradient-to-r from-white to-emerald-400 bg-clip-text text-transparent cursor-pointer" onclick="switchView('generator')">AM Gateway</span>
+        <header class="w-full flex items-center justify-between py-3 px-2 border-b border-purple-500/10 mb-4">
+            <div class="flex items-center gap-3">
+                <div class="p-2.5 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-400 text-base">⚡</div>
+                <span id="app-title-header" class="font-extrabold text-sm tracking-tight bg-gradient-to-r from-white to-purple-400 bg-clip-text text-transparent cursor-pointer" onclick="switchView('generator')">UPGRADE AM MENJADI PREMIUM</span>
             </div>
             <!-- Tombol Menu Modern -->
-            <button id="header-menu-btn" onclick="toggleMenu()" class="group relative p-2.5 rounded-2xl bg-slate-900/90 border border-emerald-500/20 hover:border-emerald-500/60 text-slate-200 transition-all duration-300 flex items-center justify-center w-11 h-11 shadow-[0_0_15px_rgba(16,185,129,0.1)] hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] hidden">
-                <div class="flex flex-col justify-between items-center h-4 w-4 py-0.5 transition-transform duration-300 group-hover:scale-110">
-                    <span class="w-1.5 h-1.5 bg-emerald-400 rounded-full shadow-[0_0_8px_#34d399]"></span>
-                    <span class="w-2.5 h-1.5 bg-emerald-400 rounded-full shadow-[0_0_8px_#34d399] transition-all duration-300 group-hover:w-4"></span>
-                    <span class="w-1.5 h-1.5 bg-emerald-400 rounded-full shadow-[0_0_8px_#34d399]"></span>
+            <button id="header-menu-btn" onclick="toggleMenu()" class="group relative p-3 rounded-2xl bg-slate-900/90 border border-purple-500/20 hover:border-purple-500/60 text-slate-200 transition-all duration-300 flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.1)] hover:shadow-[0_0_20px_rgba(168,85,247,0.3)] hidden" style="width: 3.25rem; height: 3.25rem;">
+                <div class="flex flex-col justify-between items-center h-5 w-5 py-0.5 transition-transform duration-300 group-hover:scale-110">
+                    <span class="w-2 h-2 bg-purple-400 rounded-full shadow-[0_0_8px_#c084fc]"></span>
+                    <span class="w-3.5 h-2 bg-purple-400 rounded-full shadow-[0_0_8px_#c084fc] transition-all duration-300 group-hover:w-5"></span>
+                    <span class="w-2 h-2 bg-purple-400 rounded-full shadow-[0_0_8px_#c084fc]"></span>
                 </div>
             </button>
         </header>
 
         <!-- MENU DRAWER SLIDE SAMPING -->
-        <div id="nav-drawer" class="fixed inset-y-0 right-0 z-50 w-full max-w-[300px] bg-[#090b10]/95 backdrop-blur-xl border-l border-white/10 p-5 flex flex-col justify-between shadow-2xl">
+        <div id="nav-drawer" class="fixed inset-y-0 right-0 z-50 bg-[#0b0614]/95 backdrop-blur-xl border-l border-purple-500/20 flex flex-col justify-between shadow-2xl">
             <div class="space-y-6">
-                <div class="flex items-center justify-between pb-4 border-b border-white/10">
+                <div class="flex items-center justify-between pb-4 border-b border-purple-500/20">
                     <div class="flex items-center gap-2">
-                        <span class="text-xl">📂</span>
-                        <h3 class="text-xs font-black uppercase tracking-widest text-emerald-400">Navigasi Fokus</h3>
+                        <h3 class="text-sm font-black uppercase tracking-widest text-purple-400">MENU DASBOARD</h3>
                     </div>
-                    <button onclick="toggleMenu()" class="w-8 h-8 rounded-xl bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white">✕</button>
+                    <button onclick="toggleMenu()" class="w-10 h-10 rounded-xl bg-purple-950/50 border border-purple-500/30 flex items-center justify-center text-slate-300 hover:text-white text-base">✕</button>
                 </div>
 
-                <nav class="space-y-2 text-xs font-semibold">
-                    <button onclick="switchView('generator')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-500/10 hover:text-emerald-400 text-slate-300 transition text-left">
-                        <span>⚡</span> Generator Utama
+                <nav class="space-y-3 text-sm font-semibold">
+                    <button onclick="switchView('generator')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
+                        Generator Utama
                     </button>
-                    <button onclick="switchView('profile')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-500/10 hover:text-emerald-400 text-slate-300 transition text-left">
-                        <span>👤</span> Halaman Akun & Profil
+                    <button onclick="switchView('profile')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
+                        Halaman Akun & Profil
                     </button>
-                    <button onclick="switchView('guide')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-500/10 hover:text-emerald-400 text-slate-300 transition text-left">
-                        <span>📖</span> Panduan Penggunaan
+                    <button onclick="switchView('guide')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
+                        Panduan Penggunaan
                     </button>
-                    <button onclick="switchView('announcement')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-500/10 hover:text-emerald-400 text-slate-300 transition text-left">
-                        <span>📢</span> Informasi & Pengumuman
+                    <button onclick="switchView('announcement')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
+                        Informasi & Pengumuman
                     </button>
                 </nav>
             </div>
 
-            <div class="pt-4 border-t border-white/10 space-y-2">
-                <div id="drawer-user-info" class="text-[10px] text-slate-400 truncate">
-                    Status: <span id="drawer-status-role" class="text-emerald-400 font-bold">Belum Login</span>
+            <div class="pt-5 border-t border-purple-500/20 space-y-3">
+                <div id="drawer-user-info" class="text-xs text-slate-300 truncate">
+                    Status: <span id="drawer-status-role" class="text-purple-400 font-bold">Belum Login</span>
                 </div>
-                <button onclick="handleLogout()" id="drawer-logout-btn" class="w-full py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold hover:bg-rose-500/20 transition hidden">
+                <button onclick="handleLogout()" id="drawer-logout-btn" class="w-full py-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm font-bold hover:bg-rose-500/20 transition hidden">
                     Keluar / Logout
                 </button>
             </div>
         </div>
         <div id="drawer-overlay" onclick="toggleMenu()" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 hidden"></div>
 
-        <div class="w-full my-auto py-2 space-y-5">
+        <div class="w-full my-auto py-2 space-y-4">
             
-            <div id="offline-banner" class="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-semibold text-center hidden">
-                🔴 Server sedang dalam mode OFFLINE. Fitur premium dinonaktifkan untuk User & VIP.
+            <div id="offline-banner" class="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-semibold text-center hidden">
+                🔴 Server sedang dalam mode OFFLINE. Fitur premium dinonaktifkan.
             </div>
 
             <!-- VIEW 1: AUTHENTICATION -->
-            <div id="auth-view" class="glass-panel p-7 rounded-3xl space-y-6">
+            <div id="auth-view" class="glass-panel space-y-5">
                 <div class="text-center space-y-1">
                     <h1 class="text-xl font-extrabold tracking-tight text-white">Selamat Datang</h1>
                     <p class="text-xs text-slate-400">Silakan masuk atau daftar untuk mengakses sistem</p>
                 </div>
                 
-                <div class="relative flex rounded-2xl bg-[#090b10] p-1.5 border border-white/5">
-                    <div id="tab-indicator" class="absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-xl transition-all duration-300 shadow-lg shadow-emerald-500/20"></div>
-                    <button onclick="switchAuthTab('login')" id="tab-login-btn" class="relative z-10 flex-1 py-3 text-xs font-bold tracking-wider rounded-xl transition-colors text-white">LOGIN</button>
-                    <button onclick="switchAuthTab('register')" id="tab-reg-btn" class="relative z-10 flex-1 py-3 text-xs font-bold tracking-wider rounded-xl transition-colors text-slate-400 hover:text-white">REGISTER</button>
+                <div class="relative flex rounded-full bg-[#07040d] p-1.5 border border-purple-500/20">
+                    <div id="tab-indicator" class="absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full transition-all duration-300 shadow-lg shadow-purple-500/20"></div>
+                    <button onclick="switchAuthTab('login')" id="tab-login-btn" class="relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-white">LOGIN</button>
+                    <button onclick="switchAuthTab('register')" id="tab-reg-btn" class="relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-slate-400 hover:text-white">REGISTER</button>
                 </div>
 
                 <div class="space-y-4">
                     <div class="space-y-1.5">
-                        <label class="text-[11px] font-bold uppercase tracking-widest text-slate-400 pl-1">Username ID</label>
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-500 text-xs">👤</span>
-                            <input type="text" id="auth-username" placeholder="Masukkan username unik..." class="input-glow w-full pl-11 pr-4 py-3.5 rounded-2xl text-xs text-slate-200 font-medium placeholder:text-slate-600">
-                        </div>
+                        <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-2">Username ID</label>
+                        <input type="text" id="auth-username" placeholder="Masukkan username unik..." class="input-glow w-full text-slate-200 font-medium placeholder:text-slate-600">
                     </div>
 
                     <div class="space-y-1.5">
-                        <label class="text-[11px] font-bold uppercase tracking-widest text-slate-400 pl-1">Security Password</label>
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-500 text-xs">🔒</span>
-                            <input type="password" id="auth-password" placeholder="••••••••" class="input-glow w-full pl-11 pr-4 py-3.5 rounded-2xl text-xs text-slate-200 font-medium placeholder:text-slate-600">
-                        </div>
+                        <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-2">Security Password</label>
+                        <input type="password" id="auth-password" placeholder="••••••••" class="input-glow w-full text-slate-200 font-medium placeholder:text-slate-600">
                     </div>
 
                     <div id="email-field-container" class="space-y-1.5 hidden transition-all duration-300">
-                        <label class="text-[11px] font-bold uppercase tracking-widest text-slate-400 pl-1">Recovery Email</label>
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-500 text-xs">✉️</span>
-                            <input type="email" id="auth-email" placeholder="nama@domain.com" class="input-glow w-full pl-11 pr-4 py-3.5 rounded-2xl text-xs text-slate-200 font-medium placeholder:text-slate-600">
-                        </div>
-                        <p class="text-[10px] text-amber-400/80 pl-1 pt-0.5">⚠️ Setiap perangkat/HP hanya diizinkan membuat 1 akun.</p>
+                        <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-2">Recovery Email</label>
+                        <input type="email" id="auth-email" placeholder="Masukan Gmail Anda" class="input-glow w-full text-slate-200 font-medium placeholder:text-slate-600">
+                        <p class="text-[10px] text-amber-400/90 pl-2 pt-0.5">⚠️ Setiap perangkat/HP hanya diizinkan membuat 1 akun.</p>
                     </div>
                 </div>
 
-                <button onclick="handleAuthAction()" id="auth-submit-btn" class="cyber-btn w-full py-4 rounded-2xl text-slate-950 font-extrabold text-xs uppercase tracking-widest flex items-center justify-center gap-2">
-                    <span>⚡</span> <span id="auth-btn-text">Masuk ke Terminal</span>
+                <button onclick="handleAuthAction()" id="auth-submit-btn" class="cyber-btn w-full text-white font-extrabold uppercase tracking-widest flex items-center justify-center gap-2">
+                    <span id="auth-btn-text">Masuk ke Terminal</span>
                 </button>
             </div>
 
             <!-- VIEW 2: HALAMAN UTAMA / GENERATOR -->
-            <div id="terminal-view" class="glass-panel p-6 rounded-3xl space-y-5 hidden">
+            <div id="terminal-view" class="space-y-4 hidden">
                 
-                <div class="input-glow p-3.5 rounded-2xl flex items-center justify-between text-xs">
-                    <div class="flex items-center gap-2.5 text-slate-300">
-                        <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-                        <span>ID: <strong id="logged-username" class="text-white font-bold"></strong></span>
+                <div class="w-full h-44 rounded-2xl overflow-hidden relative border border-purple-500/30 shadow-[0_0_25px_rgba(168,85,247,0.2)] bg-black">
+                    <video id="main-display-video" src="" autoplay loop muted playsinline class="w-full h-full object-cover"></video>
+                    <div class="absolute inset-0 bg-gradient-to-t from-[#0b0614] via-transparent to-transparent opacity-60 pointer-events-none"></div>
+                </div>
+
+                <div class="glass-panel py-3 px-4 flex items-center justify-between text-xs">
+                    <div class="flex items-center gap-2 text-slate-300 truncate">
+                        <div class="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></div>
+                        <span class="truncate">ID: <strong id="logged-username" class="text-white font-bold"></strong></span>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <div id="server-status-indicator" class="px-2.5 py-1 rounded-xl border text-[10px] flex items-center gap-1.5 font-semibold">
+                    <div class="flex items-center gap-2 shrink-0">
+                        <div id="server-status-indicator" class="px-2.5 py-1 rounded-full border text-[10px] flex items-center gap-1.5 font-semibold">
                             <span id="server-dot" class="w-1.5 h-1.5 rounded-full"></span>
                             <span id="server-status-text">Checking...</span>
                         </div>
-                        <span id="role-badge" class="px-2.5 py-1 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20 text-[10px] font-bold">👤 User</span>
+                        <span id="role-badge" class="px-2.5 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[10px] font-bold">User</span>
                     </div>
                 </div>
 
-                <div id="vip-status-banner" class="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/20 to-yellow-500/10 border border-amber-500/40 hidden flex items-center justify-between">
+                <div id="vip-status-banner" class="p-3 rounded-2xl bg-gradient-to-r from-amber-500/20 to-yellow-500/10 border border-amber-500/40 hidden flex items-center justify-between">
                     <div class="flex items-center gap-2.5">
                         <span class="text-xl">👑</span>
                         <div>
@@ -344,117 +387,121 @@ const htmlTemplate = `
                             <p id="vip-expiry-text" class="text-[10px] text-slate-300">Aktif hingga: -</p>
                         </div>
                     </div>
-                    <span class="px-2.5 py-1 bg-amber-500 text-slate-950 font-black text-[9px] rounded-lg uppercase tracking-wider">ACTIVE</span>
+                    <span class="px-2.5 py-1 bg-amber-500 text-slate-950 font-black text-[10px] rounded-full uppercase">ACTIVE</span>
                 </div>
 
-                <div class="input-glow p-4 rounded-2xl flex items-center justify-between">
-                    <div class="flex items-center gap-3">
-                        <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">🛡️</div>
+                <div class="glass-panel py-3 px-4 flex items-center justify-between">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 text-xs">⚡</div>
                         <div>
                             <p class="text-xs font-bold text-slate-200">Activation Quota</p>
-                            <p class="text-[10px] text-slate-400">Reset otomatis setiap 24 Jam</p>
+                            <p class="text-[10px] text-slate-400">Reset otomatis 24 Jam</p>
                         </div>
                     </div>
-                    <div class="flex items-center gap-1.5 text-emerald-400 text-xs font-extrabold bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20 mono">
-                        <span>🔒</span> <span id="quota-display">0/3</span>
+                    <div class="flex items-center gap-1.5 text-purple-300 text-xs font-extrabold bg-purple-500/10 px-3 py-1.5 rounded-full border border-purple-500/20 mono">
+                        <span id="quota-display">0/3</span>
                     </div>
                 </div>
 
-                <!-- FORM GENERATOR UTAMA -->
-                <div class="space-y-4 pt-2 border-t border-white/10">
-                    <p class="text-xs font-extrabold text-emerald-400 flex items-center gap-1.5"><span>⚡</span> Panel Generator Token</p>
+                <div class="glass-panel space-y-3.5">
                     
                     <div class="space-y-1.5">
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 pl-1">Email Target (Gmail)</label>
-                        <input type="email" id="target-email" placeholder="name@gmail.com" class="input-glow w-full px-4 py-3.5 rounded-2xl text-xs text-slate-200">
+                        <label class="text-xs font-bold text-purple-300 flex items-center gap-2 pl-1">
+                            <span>✉️</span> Kirim ke Alight Motion
+                        </label>
+                        <input type="email" id="target-email" placeholder="contoh@gmail.com" class="input-glow w-full text-slate-200">
                     </div>
 
-                    <button id="btn-send" onclick="handleSendEmail()" class="w-full py-3.5 rounded-2xl input-glow border-slate-700/50 hover:border-emerald-500/40 text-xs font-bold text-slate-200 flex items-center justify-center gap-2 transition duration-200">
-                        <span id="send-icon">✓</span> <span id="send-text">Kirim Magic Link</span>
+                    <button id="btn-send" onclick="handleSendEmail()" class="cyber-btn w-full text-white font-extrabold flex items-center justify-center gap-2">
+                        <span id="send-icon">🚀</span> <span id="send-text">Kirim</span>
                     </button>
 
-                    <div class="space-y-1.5">
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 pl-1">Magic Link URL</label>
-                        <input type="text" id="magic-url" placeholder="Paste magic link here..." class="input-glow w-full px-4 py-3.5 rounded-2xl text-xs text-emerald-400 font-medium placeholder:text-slate-600">
+                    <div class="space-y-3 pt-2">
+                        <label class="text-xs font-bold text-emerald-400 flex items-center gap-2 pl-1">
+                            <span>✅</span> Verifikasi
+                        </label>
+                        <input type="text" id="magic-url" placeholder="https://alight-creative.firebaseapp.com/_..." class="input-glow w-full text-emerald-300 font-medium text-xs placeholder:text-slate-600">
                     </div>
 
-                    <button onclick="handleActivate()" class="cyber-btn w-full py-4 rounded-2xl text-slate-950 font-extrabold text-xs uppercase tracking-widest flex items-center justify-center gap-2">
-                        <span>⚡</span> Aktivasi Token
+                    <button onclick="handleActivate()" class="cyber-btn-green w-full text-slate-950 font-extrabold flex items-center justify-center gap-2">
+                        <span>✓</span> Verifikasi
                     </button>
                 </div>
 
-                <div id="result-box" class="input-glow p-3.5 rounded-2xl text-[11px] hidden text-emerald-300 break-all bg-emerald-950/20 border-emerald-500/20 mono">
+                <div id="result-box" class="input-glow p-3 text-xs hidden text-purple-300 break-all bg-purple-950/20 border-purple-500/30 mono rounded-2xl">
                     <p id="result-text"></p>
                 </div>
             </div>
 
             <!-- VIEW 3: HALAMAN PROFIL KHUSUS AKUN -->
-            <div id="section-profile" class="glass-panel p-6 rounded-3xl space-y-5 hidden">
-                <div class="flex items-center justify-between pb-3 border-b border-white/10">
-                    <h2 class="text-xs font-extrabold text-emerald-400 flex items-center gap-2"><span>👤</span> Halaman Akun & Profil</h2>
-                    <button onclick="switchView('generator')" class="text-[10px] text-slate-400 hover:text-white underline">← Kembali</button>
+            <div id="section-profile" class="glass-panel space-y-5 hidden">
+                <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
+                    <h2 class="text-xs font-extrabold text-purple-400 uppercase tracking-wider">Halaman Akun & Profil</h2>
+                    <button onclick="switchView('generator')" class="text-xs text-slate-400 hover:text-white underline">← Kembali</button>
                 </div>
                 
-                <div class="space-y-3 text-xs text-slate-300 p-4 rounded-2xl bg-slate-900/60 border border-white/5">
+                <div class="space-y-2 text-xs text-slate-300 p-3.5 rounded-2xl bg-purple-950/20 border border-purple-500/20">
                     <p>Username Anda: <strong id="profile-uname" class="text-white font-bold"></strong></p>
-                    <p>Tipe Keanggotaan: <strong id="profile-role" class="text-emerald-400">Standard User</strong></p>
+                    <p>Tipe Keanggotaan: <strong id="profile-role" class="text-purple-400">Standard User</strong></p>
                     <p>Sisa Kuota Aktif: <strong id="profile-quota" class="text-cyan-400">0</strong></p>
                 </div>
 
-                <!-- UBAH USERNAME -->
-                <div class="space-y-2 pt-2 border-t border-white/10">
-                    <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 pl-1">Ganti Username Akun</label>
+                <div class="space-y-2 pt-2 border-t border-purple-500/10">
+                    <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-1">Ganti Username Akun</label>
                     <div class="flex gap-2">
-                        <input type="text" id="new-username-input" placeholder="Username baru..." class="input-glow flex-1 px-3 py-3 rounded-xl text-xs text-slate-200">
-                        <button onclick="triggerUpdateUsername()" class="px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-extrabold rounded-xl text-xs transition">Simpan</button>
+                        <input type="text" id="new-username-input" placeholder="Username baru..." class="input-glow flex-1 px-4 py-2.5 text-slate-200 text-xs">
+                        <button onclick="triggerUpdateUsername()" class="px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-full text-xs transition">Simpan</button>
                     </div>
                 </div>
 
-                <!-- KLAIM KODE REDEEM -->
-                <div class="space-y-2.5 pt-2 border-t border-white/10">
-                    <label class="text-[11px] font-bold tracking-wider text-slate-400 block flex items-center gap-1.5">
-                        <span>🎁</span> Klaim Kode Redeem Kuota
-                    </label>
+                <div class="space-y-2 pt-2 border-t border-purple-500/10">
+                    <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-1">Klaim Kode Redeem Kuota</label>
                     <div class="flex gap-2">
-                        <input type="text" id="redeem-code-input" placeholder="KODE-XXXX..." class="input-glow flex-1 px-3.5 py-3 rounded-xl text-xs text-emerald-400 font-bold uppercase tracking-widest">
-                        <button onclick="handleRedeemCode()" class="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-extrabold rounded-xl text-xs transition">Klaim</button>
+                        <input type="text" id="redeem-code-input" placeholder="KODE-XXXX..." class="input-glow flex-1 px-4 py-2.5 text-purple-300 font-bold uppercase tracking-widest text-xs">
+                        <button onclick="handleRedeemCode()" class="px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-full text-xs transition">Klaim</button>
                     </div>
                 </div>
 
                 <!-- ADMIN CONTROL PANEL -->
-                <div id="admin-control-panel" class="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-4 hidden pt-4">
+                <div id="admin-control-panel" class="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3.5 hidden">
                     <p class="text-xs font-extrabold text-amber-400 flex items-center gap-2">
                         <span>👑</span> Admin Master Control Panel
                     </p>
                     <div class="grid grid-cols-2 gap-2">
-                        <button onclick="changeServerState('online')" class="py-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 rounded-xl text-[10px] text-emerald-300 font-bold transition">🟢 Online</button>
-                        <button onclick="changeServerState('offline')" class="py-2 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 rounded-xl text-[10px] text-rose-300 font-bold transition">🔴 Offline</button>
+                        <button onclick="changeServerState('online')" class="py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 rounded-full text-[11px] text-emerald-300 font-bold transition">🟢 Online</button>
+                        <button onclick="changeServerState('offline')" class="py-2.5 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 rounded-full text-[11px] text-rose-300 font-bold transition">🔴 Offline</button>
                     </div>
 
-                    <div class="border-t border-amber-500/20 pt-3 space-y-2.5">
+                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
+                        <p class="text-[11px] text-amber-300 font-bold">Ubah Video Tampilan Utama (Upload File):</p>
+                        <input type="file" id="admin-video-file" accept="video/*" class="w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer">
+                        <button onclick="handleUploadVideo()" id="btn-upload-video" class="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-full text-xs transition">Upload & Perbarui Video</button>
+                    </div>
+
+                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
                         <p class="text-[11px] text-amber-300 font-bold">Pengaturan VIP User (Jumlah Hari):</p>
-                        <input type="text" id="vip-target-user" placeholder="Username Target..." class="input-glow w-full px-3 py-2.5 rounded-xl text-xs text-slate-200">
+                        <input type="text" id="vip-target-user" placeholder="Username Target..." class="input-glow w-full px-4 py-2.5 text-slate-200 text-xs">
                         <div class="flex gap-2">
-                            <input type="number" id="vip-duration-days" placeholder="Jumlah Hari (Cth: 30)" class="input-glow flex-1 px-3 py-2.5 rounded-xl text-xs text-slate-200">
-                            <button onclick="handleSetVip()" class="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-xl text-xs transition">Set VIP</button>
+                            <input type="number" id="vip-duration-days" placeholder="Jumlah Hari (Cth: 30)" class="input-glow flex-1 px-4 py-2.5 text-slate-200 text-xs">
+                            <button onclick="handleSetVip()" class="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-full text-[11px] transition">Set VIP</button>
                         </div>
-                        <div class="flex justify-between items-center text-[10px] text-amber-300 pt-1">
+                        <div class="flex justify-between items-center text-[10px] text-amber-300 pt-0.5">
                             <span>List Akun VIP Aktif:</span>
                             <button onclick="loadAdminVipList()" class="text-slate-400 hover:text-white underline">Refresh</button>
                         </div>
-                        <div id="admin-vip-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[10px]">
+                        <div id="admin-vip-list" class="space-y-1.5 max-h-28 overflow-y-auto text-[11px]">
                             <p class="text-slate-500 italic">Memuat list VIP...</p>
                         </div>
                     </div>
 
-                    <div class="border-t border-amber-500/20 pt-3 space-y-2.5">
+                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
                         <p class="text-[11px] text-amber-300 font-bold">Buat Kode Redeem Random:</p>
-                        <input type="text" id="gen-code" placeholder="Nama Kode (Cth: BONUSRAYA)" class="input-glow w-full px-3 py-2.5 rounded-xl text-xs text-slate-200 uppercase">
+                        <input type="text" id="gen-code" placeholder="Nama Kode (Cth: BONUSRAYA)" class="input-glow w-full px-4 py-2.5 text-slate-200 uppercase text-xs">
                         <div class="grid grid-cols-2 gap-2">
-                            <input type="number" id="gen-total-quota" placeholder="Total Kuota" class="input-glow px-3 py-2.5 rounded-xl text-xs text-slate-200">
-                            <input type="number" id="gen-max-claims" placeholder="Maks Orang" class="input-glow px-3 py-2.5 rounded-xl text-xs text-slate-200">
+                            <input type="number" id="gen-total-quota" placeholder="Total Kuota" class="input-glow px-4 py-2.5 text-slate-200 text-xs">
+                            <input type="number" id="gen-max-claims" placeholder="Maks Orang" class="input-glow px-4 py-2.5 text-slate-200 text-xs">
                         </div>
-                        <button onclick="handleCreateRedeem()" class="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-xl text-xs transition">Generate Kode Redeem</button>
+                        <button onclick="handleCreateRedeem()" class="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-full text-xs transition">Generate Kode Redeem</button>
                     </div>
 
                     <div class="border-t border-amber-500/20 pt-3 space-y-2">
@@ -462,7 +509,7 @@ const htmlTemplate = `
                             <span>Daftar Kode Aktif:</span>
                             <button onclick="loadAdminRedeems()" class="text-slate-400 hover:text-white underline">Refresh</button>
                         </div>
-                        <div id="admin-redeem-list" class="space-y-1.5 max-h-28 overflow-y-auto text-[10px]">
+                        <div id="admin-redeem-list" class="space-y-1.5 max-h-28 overflow-y-auto text-[11px]">
                             <p class="text-slate-500 italic">Memuat...</p>
                         </div>
                     </div>
@@ -470,50 +517,49 @@ const htmlTemplate = `
             </div>
 
             <!-- VIEW 4: HALAMAN PANDUAN PENGGUNAAN -->
-            <div id="section-guide" class="glass-panel p-6 rounded-3xl space-y-4 hidden">
-                <div class="flex items-center justify-between pb-3 border-b border-white/10">
-                    <h2 class="text-xs font-extrabold text-emerald-400 flex items-center gap-2"><span>📖</span> Panduan Cara Menggunakan</h2>
-                    <button onclick="switchView('generator')" class="text-[10px] text-slate-400 hover:text-white underline">← Kembali</button>
+            <div id="section-guide" class="glass-panel space-y-4 hidden">
+                <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
+                    <h2 class="text-xs font-extrabold text-purple-400 uppercase tracking-wider">Panduan Cara Menggunakan</h2>
+                    <button onclick="switchView('generator')" class="text-xs text-slate-400 hover:text-white underline">← Kembali</button>
                 </div>
-                <ol class="list-decimal list-inside space-y-2 text-xs text-slate-300 leading-relaxed">
+                <ol class="list-decimal list-inside space-y-2.5 text-xs text-slate-300 leading-relaxed">
                     <li>Pastikan Anda sudah berhasil masuk ke dalam sistem menggunakan akun Anda.</li>
                     <li>Beralih ke menu <strong>Generator Utama</strong> untuk mulai memproses token.</li>
                     <li>Masukkan email target Google/Gmail Anda pada kolom yang telah disediakan.</li>
-                    <li>Klik tombol <strong>Kirim Magic Link</strong> untuk memicu token verifikasi.</li>
-                    <li>Salin tautan Magic Link yang masuk ke email Anda, lalu tempel (*paste*) pada kolom Magic Link URL.</li>
-                    <li>Klik <strong>Aktivasi Token</strong> dan proses selesai dengan sempurna!</li>
+                    <li>Klik tombol <strong>Send</strong> untuk memicu token verifikasi.</li>
+                    <li>Salin tautan Magic Link yang masuk ke email Anda, lalu tempel (*paste*) pada kolom URL.</li>
+                    <li>Klik tombol hijau <strong>Verify</strong> dan proses selesai dengan sempurna!</li>
                 </ol>
             </div>
 
             <!-- VIEW 5: HALAMAN INFORMASI & PENGUMUMAN -->
-            <div id="section-announcement" class="glass-panel p-6 rounded-3xl space-y-4 hidden">
-                <div class="flex items-center justify-between pb-3 border-b border-white/10">
-                    <h2 class="text-xs font-extrabold text-cyan-400 flex items-center gap-2"><span>📢</span> Informasi & Pengumuman Resmi</h2>
-                    <button onclick="switchView('generator')" class="text-[10px] text-slate-400 hover:text-white underline">← Kembali</button>
+            <div id="section-announcement" class="glass-panel space-y-4 hidden">
+                <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
+                    <h2 class="text-xs font-extrabold text-cyan-400 uppercase tracking-wider">Informasi & Pengumuman Resmi</h2>
+                    <button onclick="switchView('generator')" class="text-xs text-slate-400 hover:text-white underline">← Kembali</button>
                 </div>
                 
                 <div id="user-announcement-container" class="space-y-3 max-h-72 overflow-y-auto text-xs pr-1">
                     <p class="text-slate-500 italic">Memuat informasi...</p>
                 </div>
 
-                <!-- ADMIN KELOLA INFORMASI -->
-                <div id="admin-announcement-panel" class="space-y-3 pt-3 border-t border-white/10 hidden">
+                <div id="admin-announcement-panel" class="space-y-3 pt-3 border-t border-purple-500/20 hidden">
                     <p class="text-xs font-extrabold text-amber-400">Panel Tambah/Edit Pengumuman (Admin)</p>
                     <input type="hidden" id="info-edit-id" value="">
-                    <input type="text" id="info-title" placeholder="Judul Informasi" class="input-glow w-full px-3 py-2.5 rounded-xl text-xs text-slate-200">
-                    <textarea id="info-content" placeholder="Isi pesan informasi..." class="input-glow w-full px-3 py-2.5 rounded-xl text-xs text-slate-200 h-20 resize-none"></textarea>
+                    <input type="text" id="info-title" placeholder="Judul Informasi" class="input-glow w-full px-4 py-2.5 text-slate-200 text-xs">
+                    <textarea id="info-content" placeholder="Isi pesan informasi..." class="input-glow w-full px-4 py-2.5 text-slate-200 h-24 resize-none text-xs rounded-2xl"></textarea>
                     <div class="flex gap-2">
-                        <button id="info-submit-btn" onclick="handleSaveAnnouncement()" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-extrabold rounded-xl text-xs transition">Publikasikan Info</button>
-                        <button id="info-cancel-btn" onclick="resetInfoForm()" class="px-3 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-xs hidden">Batal</button>
+                        <button id="info-submit-btn" onclick="handleSaveAnnouncement()" class="flex-1 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-full text-xs transition">Publikasikan Info</button>
+                        <button id="info-cancel-btn" onclick="resetInfoForm()" class="px-3 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-full text-xs hidden">Batal</button>
                     </div>
-                    <div id="admin-info-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[10px] pt-1">
+                    <div id="admin-info-list" class="space-y-1.5 max-h-28 overflow-y-auto text-[11px] pt-1">
                         <p class="text-slate-500 italic">Memuat list kelola info...</p>
                     </div>
                 </div>
             </div>
 
-            <div class="text-center">
-                <p class="text-[10px] text-slate-500 tracking-wider font-medium">AM Premium • Secure Gateway v2.6</p>
+            <div class="text-center pt-1">
+                <p class="text-[10px] text-slate-500 tracking-wider font-medium">AM Premium • By Banggus</p>
             </div>
         </div>
     </div>
@@ -522,60 +568,6 @@ const htmlTemplate = `
         let currentAuthMode = 'login';
         let loggedInUsername = '';
         let isAdminUser = false;
-
-        // Cek Sesi Tersimpan Saat Halaman Dimuat (Auto-Login / Persistent Session)
-        window.addEventListener('DOMContentLoaded', async () => {
-            const savedToken = localStorage.getItem('authToken');
-            const savedUser = localStorage.getItem('authUsername');
-
-            if (savedToken && savedUser) {
-                try {
-                    const res = await fetch('/api/verify-session', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username: savedUser, token: savedToken })
-                    });
-                    const data = await res.json();
-
-                    if (data.success) {
-                        loggedInUsername = data.username;
-                        isAdminUser = data.isAdmin;
-
-                        document.getElementById('auth-view').classList.add('hidden');
-                        document.getElementById('terminal-view').classList.remove('hidden');
-                        
-                        document.getElementById('header-menu-btn').classList.remove('hidden');
-                        document.getElementById('logged-username').innerText = data.username;
-                        
-                        document.getElementById('profile-uname').innerText = data.username;
-                        document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'Standard User');
-                        document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (3 + (data.bonusQuota || 0) - data.usedQuota);
-
-                        document.getElementById('drawer-status-role').innerText = data.username + ' (' + (data.isAdmin ? 'Admin' : 'User') + ')';
-                        document.getElementById('drawer-logout-btn').classList.remove('hidden');
-
-                        updateQuotaDisplay(data);
-                        checkVipStatus(data);
-                        loadUserAnnouncements();
-                        updateStatusUI(data.serverStatus);
-
-                        if(data.isAdmin) {
-                            document.getElementById('role-badge').className = "px-2.5 py-1 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-extrabold";
-                            document.getElementById('role-badge').innerText = "👑 Admin Master";
-                            document.getElementById('admin-control-panel').classList.remove('hidden');
-                            document.getElementById('admin-announcement-panel').classList.remove('hidden');
-                            loadAdminRedeems();
-                            loadAdminAnnouncements();
-                            loadAdminVipList();
-                        }
-                    } else {
-                        handleLogout(); // Bersihkan sesi jika token tidak valid/kadaluarsa
-                    }
-                } catch (e) {
-                    console.error("Gagal verifikasi sesi:", e);
-                }
-            }
-        });
 
         function toggleMenu() {
             const drawer = document.getElementById('nav-drawer');
@@ -612,6 +604,19 @@ const htmlTemplate = `
             } catch(e) {}
         }
 
+        async function fetchFeaturedVideo() {
+            try {
+                const res = await fetch('/api/video');
+                const data = await res.json();
+                if (data.success && data.videoUrl) {
+                    const videoEl = document.getElementById('main-display-video');
+                    if (videoEl && videoEl.src !== data.videoUrl) {
+                        videoEl.src = data.videoUrl;
+                    }
+                }
+            } catch(e) {}
+        }
+
         function updateStatusUI(status) {
             const ind = document.getElementById('server-status-indicator');
             const dot = document.getElementById('server-dot');
@@ -621,12 +626,12 @@ const htmlTemplate = `
             if (!ind || !dot || !txt) return;
 
             if (status === 'online') {
-                ind.className = "px-2.5 py-1 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-[10px] flex items-center gap-1.5 font-semibold";
+                ind.className = "px-2.5 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-[10px] flex items-center gap-1.5 font-semibold";
                 dot.className = "w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse";
                 txt.innerText = "Online";
                 if (offlineBanner) offlineBanner.classList.add('hidden');
             } else {
-                ind.className = "px-2.5 py-1 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-400 text-[10px] flex items-center gap-1.5 font-semibold";
+                ind.className = "px-2.5 py-1 rounded-full border border-rose-500/30 bg-rose-500/10 text-rose-400 text-[10px] flex items-center gap-1.5 font-semibold";
                 dot.className = "w-1.5 h-1.5 rounded-full bg-rose-500";
                 txt.innerText = "Offline";
                 if (offlineBanner && !isAdminUser) offlineBanner.classList.remove('hidden');
@@ -634,7 +639,9 @@ const htmlTemplate = `
         }
 
         fetchServerStatus();
+        fetchFeaturedVideo();
         setInterval(fetchServerStatus, 5000);
+        setInterval(fetchFeaturedVideo, 10000);
 
         function switchAuthTab(mode) {
             currentAuthMode = mode;
@@ -646,14 +653,14 @@ const htmlTemplate = `
 
             if(mode === 'login') {
                 indicator.style.transform = 'translateX(0%)';
-                loginBtn.className = "relative z-10 flex-1 py-3 text-xs font-bold tracking-wider rounded-xl transition-colors text-white";
-                regBtn.className = "relative z-10 flex-1 py-3 text-xs font-bold tracking-wider rounded-xl transition-colors text-slate-400 hover:text-white";
+                loginBtn.className = "relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-white";
+                regBtn.className = "relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-slate-400 hover:text-white";
                 emailField.classList.add('hidden');
                 btnText.innerText = "Masuk ke Terminal";
             } else {
                 indicator.style.transform = 'translateX(100%)';
-                regBtn.className = "relative z-10 flex-1 py-3 text-xs font-bold tracking-wider rounded-xl transition-colors text-white";
-                loginBtn.className = "relative z-10 flex-1 py-3 text-xs font-bold tracking-wider rounded-xl transition-colors text-slate-400 hover:text-white";
+                regBtn.className = "relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-white";
+                loginBtn.className = "relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-slate-400 hover:text-white";
                 emailField.classList.remove('hidden');
                 btnText.innerText = "Daftar Akun Baru";
             }
@@ -685,7 +692,7 @@ const htmlTemplate = `
                     }
                     if (data.token) {
                         localStorage.setItem('authToken', data.token);
-                        localStorage.setItem('authUsername', data.username);
+                        localStorage.setItem('savedUsername', data.username);
                     }
                     alert(data.message);
                     loggedInUsername = data.username;
@@ -699,7 +706,7 @@ const htmlTemplate = `
                     
                     document.getElementById('profile-uname').innerText = data.username;
                     document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'Standard User');
-                    document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (3 + (data.bonusQuota || 0) - data.usedQuota);
+                    document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (1 + (data.bonusQuota || 0) - data.usedQuota);
 
                     document.getElementById('drawer-status-role').innerText = data.username + ' (' + (data.isAdmin ? 'Admin' : 'User') + ')';
                     document.getElementById('drawer-logout-btn').classList.remove('hidden');
@@ -708,9 +715,10 @@ const htmlTemplate = `
                     checkVipStatus(data);
                     loadUserAnnouncements();
                     updateStatusUI(data.serverStatus);
+                    fetchFeaturedVideo();
 
                     if(data.isAdmin) {
-                        document.getElementById('role-badge').className = "px-2.5 py-1 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-extrabold";
+                        document.getElementById('role-badge').className = "px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-extrabold";
                         document.getElementById('role-badge').innerText = "👑 Admin Master";
                         document.getElementById('admin-control-panel').classList.remove('hidden');
                         document.getElementById('admin-announcement-panel').classList.remove('hidden');
@@ -725,6 +733,55 @@ const htmlTemplate = `
                 alert('Terjadi kesalahan koneksi server.');
             }
         }
+
+        async function checkSavedSession() {
+            const token = localStorage.getItem('authToken');
+            const savedUname = localStorage.getItem('savedUsername');
+            if (!token || !savedUname) return;
+
+            try {
+                const res = await fetch('/api/auth/session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: savedUname, token })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    loggedInUsername = data.username;
+                    isAdminUser = data.isAdmin;
+
+                    document.getElementById('auth-view').classList.add('hidden');
+                    document.getElementById('terminal-view').classList.remove('hidden');
+                    
+                    document.getElementById('header-menu-btn').classList.remove('hidden');
+                    document.getElementById('logged-username').innerText = data.username;
+                    
+                    document.getElementById('profile-uname').innerText = data.username;
+                    document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'Standard User');
+                    document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (1 + (data.bonusQuota || 0) - data.usedQuota);
+
+                    document.getElementById('drawer-status-role').innerText = data.username + ' (' + (data.isAdmin ? 'Admin' : 'User') + ')';
+                    document.getElementById('drawer-logout-btn').classList.remove('hidden');
+
+                    updateQuotaDisplay(data);
+                    checkVipStatus(data);
+                    loadUserAnnouncements();
+                    updateStatusUI(data.serverStatus);
+                    fetchFeaturedVideo();
+
+                    if(data.isAdmin) {
+                        document.getElementById('role-badge').className = "px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-extrabold";
+                        document.getElementById('role-badge').innerText = "👑 Admin Master";
+                        document.getElementById('admin-control-panel').classList.remove('hidden');
+                        document.getElementById('admin-announcement-panel').classList.remove('hidden');
+                        loadAdminRedeems();
+                        loadAdminAnnouncements();
+                        loadAdminVipList();
+                    }
+                }
+            } catch (e) {}
+        }
+        checkSavedSession();
 
         async function triggerUpdateUsername() {
             const newUsername = document.getElementById('new-username-input').value.trim();
@@ -747,7 +804,7 @@ const htmlTemplate = `
                 if (response.ok && result.success) {
                     alert('Username berhasil diubah!');
                     loggedInUsername = result.newUsername;
-                    localStorage.setItem('authUsername', loggedInUsername);
+                    localStorage.setItem('savedUsername', loggedInUsername);
                     document.getElementById('logged-username').innerText = loggedInUsername;
                     document.getElementById('profile-uname').innerText = loggedInUsername;
                     document.getElementById('new-username-input').value = '';
@@ -760,11 +817,53 @@ const htmlTemplate = `
             }
         }
 
+        async function handleUploadVideo() {
+            if (!isAdminUser) return alert('Akses ditolak! Hanya admin.');
+            const fileInput = document.getElementById('admin-video-file');
+            const file = fileInput.files[0];
+            if (!file) return alert('Silakan pilih file video terlebih dahulu!');
+
+            const uploadBtn = document.getElementById('btn-upload-video');
+            uploadBtn.innerText = "Mengunggah & Mengonversi...";
+            uploadBtn.disabled = true;
+
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = async function () {
+                const base64Video = reader.result;
+                try {
+                    const res = await fetch('/api/admin/set-video', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username: loggedInUsername, videoUrl: base64Video })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        alert('Video berhasil diperbarui dan disiarkan ke semua user!');
+                        fileInput.value = '';
+                        fetchFeaturedVideo();
+                    } else {
+                        alert(data.message || 'Gagal mengunggah video.');
+                    }
+                } catch(e) {
+                    alert('Terjadi kesalahan koneksi saat mengunggah video.');
+                } finally {
+                    uploadBtn.innerText = "Upload & Perbarui Video";
+                    uploadBtn.disabled = false;
+                }
+            };
+            reader.onerror = function() {
+                alert('Gagal membaca file.');
+                uploadBtn.innerText = "Upload & Perbarui Video";
+                uploadBtn.disabled = false;
+            };
+        }
+
         function updateQuotaDisplay(data) {
             if(data.isAdmin || data.isVip) {
-                document.getElementById('quota-display').innerText = "UNLIMITED (VIP/Admin)";
+                document.getElementById('quota-display').innerText = "UNLIMITED";
             } else {
-                document.getElementById('quota-display').innerText = data.usedQuota + "/3 (Bonus: +" + data.bonusQuota + ")";
+                document.getElementById('quota-display').innerText = data.usedQuota + "/1 (+" + data.bonusQuota + ")";
             }
         }
 
@@ -828,15 +927,15 @@ const htmlTemplate = `
 
                 if (data.success && Object.keys(data.vipUsers).length > 0) {
                     for (let [uname, val] of Object.entries(data.vipUsers)) {
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">${uname}</span>
-                                    <span class="text-slate-400 block text-[9px]">Expired: ${new Date(val.vipUntil).toLocaleDateString()}</span>
+                                    <span class="text-amber-300 font-bold">\${uname}</span>
+                                    <span class="text-slate-400 block text-[9px]">Expired: \${new Date(val.vipUntil).toLocaleDateString()}</span>
                                 </div>
-                                <button onclick="handleRemoveVip('${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded border border-rose-500/30">Hapus</button>
+                                <button onclick="handleRemoveVip('\${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Tidak ada akun VIP aktif.</p>';
@@ -870,15 +969,15 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += `
-                            <div class="p-3 rounded-xl bg-slate-900/60 border border-cyan-500/20 space-y-1">
-                                <div class="flex justify-between items-center text-cyan-300 font-bold">
-                                    <span>${val.title}</span>
-                                    <span class="text-[9px] text-slate-400 font-mono">${new Date(val.timestamp).toLocaleDateString()}</span>
+                        container.innerHTML += \`
+                            <div class="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/20 space-y-1">
+                                <div class="flex justify-between items-center text-cyan-300 font-bold text-xs">
+                                    <span>\${val.title}</span>
+                                    <span class="text-[9px] text-slate-400 font-mono">\${new Date(val.timestamp).toLocaleDateString()}</span>
                                 </div>
-                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">${val.content}</p>
+                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">\${val.content}</p>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi terbaru.</p>';
@@ -897,18 +996,18 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div class="truncate mr-2">
-                                    <span class="text-amber-300 font-bold block truncate">${val.title}</span>
-                                    <span class="text-slate-400 truncate block">${val.content.substring(0, 25)}...</span>
+                                    <span class="text-amber-300 font-bold block truncate">\${val.title}</span>
+                                    <span class="text-slate-400 truncate block text-[9px]">\${val.content.substring(0, 30)}...</span>
                                 </div>
                                 <div class="flex gap-1 shrink-0">
-                                    <button onclick="editAnnouncement('${id}', '${encodeURIComponent(val.title)}', '${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded border border-sky-500/30">Edit</button>
-                                    <button onclick="deleteAnnouncement('${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded border border-rose-500/30">Hapus</button>
+                                    <button onclick="editAnnouncement('\${id}', '\${encodeURIComponent(val.title)}', '\${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
+                                    <button onclick="deleteAnnouncement('\${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                                 </div>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi.</p>';
@@ -1010,15 +1109,15 @@ const htmlTemplate = `
 
                 if(data.success && Object.keys(data.redeems).length > 0) {
                     for(let [code, val] of Object.entries(data.redeems)) {
-                        listContainer.innerHTML += `
+                        listContainer.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">${code}</span>
-                                    <span class="text-slate-400 block text-[9px]">Kuota: ${val.totalQuota} | Klaim: ${val.claimedCount}/${val.maxClaims}</span>
+                                    <span class="text-amber-300 font-bold">\${code}</span>
+                                    <span class="text-slate-400 block text-[9px]">Kuota: \${val.totalQuota} | Klaim: \${val.claimedCount}/\${val.maxClaims}</span>
                                 </div>
-                                <button onclick="handleDeleteRedeem('${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded border border-rose-500/30">Hapus</button>
+                                <button onclick="handleDeleteRedeem('\${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     listContainer.innerHTML = '<p class="text-slate-500 italic">Belum ada kode aktif.</p>';
@@ -1073,7 +1172,7 @@ const htmlTemplate = `
             sendText.innerText = "Mengirim...";
             sendIcon.innerText = "⏳";
             resultBox.classList.remove('hidden');
-            resultText.innerText = "Memproses permintaan kirim magic link...";
+            resultText.innerText = "⏳ Pending...";
 
             try {
                 const res = await fetch('/api/magiclink', {
@@ -1084,9 +1183,10 @@ const htmlTemplate = `
                 const data = await res.json();
 
                 if(data.success) {
-                    sendText.innerText = "Kirim Magic Link";
-                    sendIcon.innerText = "✓";
+                    sendText.innerText = "KIRIM";
+                    sendIcon.innerText = "🚀";
                     resultText.innerText = JSON.stringify(data.result, null, 2);
+
                     if(!isAdminUser && data.quotaInfo) {
                         updateQuotaDisplay(data.quotaInfo);
                     }
@@ -1129,7 +1229,7 @@ const htmlTemplate = `
 
         function handleLogout() {
             localStorage.removeItem('authToken');
-            localStorage.removeItem('authUsername');
+            localStorage.removeItem('savedUsername');
             sessionStorage.clear();
             window.location.reload();
         }
@@ -1153,69 +1253,26 @@ const server = http.createServer(async (req, res) => {
     if (userDoc && userDoc.isAdmin) isRequesterAdmin = true;
   }
 
+  // Mengambil status server secara dinamis dari database untuk setiap request
+  let currentServerStatus = await getServerStatusFromDb();
+
   if (parsedUrl.pathname === '/' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(htmlTemplate);
   } else if (parsedUrl.pathname === '/api/status') {
     res.setHeader('Content-Type', 'application/json');
     res.writeHead(200);
-    res.end(JSON.stringify({ status: serverStatus }));
+    res.end(JSON.stringify({ status: currentServerStatus }));
+  } else if (parsedUrl.pathname === '/api/video') {
+    res.setHeader('Content-Type', 'application/json');
+    const videoUrl = await getVideoFromDb();
+    res.writeHead(200);
+    res.end(JSON.stringify({ success: true, videoUrl }));
   } else if (parsedUrl.pathname === '/api/announcements') {
     res.setHeader('Content-Type', 'application/json');
     const announcements = await getAllAnnouncementsFromDb();
     res.writeHead(200);
     res.end(JSON.stringify({ success: true, announcements }));
-  } else if (parsedUrl.pathname === '/api/verify-session' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, token } = JSON.parse(body);
-        if (!username || !token) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-
-        const cleanUser = username.toLowerCase();
-        const userObj = await getUserFromDb(cleanUser);
-
-        if (!userObj) {
-          res.writeHead(404);
-          res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
-          return;
-        }
-
-        const now = Date.now();
-        const twentyFourHours = 24 * 60 * 60 * 1000;
-        if (!userObj.lastResetTime) userObj.lastResetTime = now;
-
-        if (now - userObj.lastResetTime >= twentyFourHours) {
-          userObj.activatedEmails = [];
-          userObj.lastResetTime = now;
-          await saveUserToDb(cleanUser, userObj);
-        }
-
-        const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
-        const usedCount = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
-
-        res.writeHead(200);
-        res.end(JSON.stringify({
-          success: true,
-          username: cleanUser,
-          isAdmin: userObj.isAdmin,
-          usedQuota: usedCount,
-          bonusQuota: userObj.bonusQuota || 0,
-          isVip: isVipActive,
-          vipUntil: userObj.vipUntil || 0,
-          serverStatus
-        }));
-      } catch (e) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false }));
-      }
-    });
   } else if (parsedUrl.pathname === '/api/user/username' && req.method === 'PUT') {
     res.setHeader('Content-Type', 'application/json');
     let body = '';
@@ -1269,10 +1326,37 @@ const server = http.createServer(async (req, res) => {
           res.end(JSON.stringify({ success: false }));
           return;
         }
-        serverStatus = status;
+        await saveServerStatusToDb(status);
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, status: serverStatus }));
+        res.end(JSON.stringify({ success: true, status }));
       } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
+    });
+  } else if (parsedUrl.pathname === '/api/admin/set-video' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, videoUrl } = JSON.parse(body);
+        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!userObj || !userObj.isAdmin) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, message: 'Akses ditolak! Hanya admin.' }));
+          return;
+        }
+        if (!videoUrl) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, message: 'Data video kosong.' }));
+          return;
+        }
+
+        await saveVideoToDb(videoUrl);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, message: 'Video berhasil diperbarui.' }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, message: 'Kesalahan server saat menyimpan video.' }));
+      }
     });
   } else if (parsedUrl.pathname === '/api/admin/set-vip' && req.method === 'POST') {
     res.setHeader('Content-Type', 'application/json');
@@ -1483,9 +1567,9 @@ const server = http.createServer(async (req, res) => {
         const { username } = parsedBody;
         const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
 
-        if (serverStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
+        if (currentServerStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
           res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Pembuatan gagal: Server sedang offline. Fitur premium dinonaktifkan untuk user biasa & VIP.' }));
+          res.end(JSON.stringify({ success: false, message: 'Pembuatan gagal: Server sedang offline. Fitur dinonaktifkan.' }));
           return;
         }
 
@@ -1537,6 +1621,55 @@ const server = http.createServer(async (req, res) => {
         }));
       } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
     });
+  } else if (parsedUrl.pathname === '/api/auth/session' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, token } = JSON.parse(body);
+        if (!username || !token) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false }));
+          return;
+        }
+        const cleanUser = username.toLowerCase();
+        const existingUser = await getUserFromDb(cleanUser);
+        if (!existingUser) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ success: false }));
+          return;
+        }
+
+        const now = Date.now();
+        const twentyFourHours = 24 * 60 * 60 * 1000;
+        if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
+
+        if (now - existingUser.lastResetTime >= twentyFourHours) {
+          existingUser.activatedEmails = [];
+          existingUser.lastResetTime = now;
+          await saveUserToDb(cleanUser, existingUser);
+        }
+
+        const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
+        const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ 
+          success: true, 
+          username: cleanUser, 
+          isAdmin: existingUser.isAdmin, 
+          usedQuota: usedCount,
+          bonusQuota: existingUser.bonusQuota || 0,
+          isVip: isVipActive,
+          vipUntil: existingUser.vipUntil || 0,
+          serverStatus: currentServerStatus
+        }));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false }));
+      }
+    });
   } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
     res.setHeader('Content-Type', 'application/json');
     let body = '';
@@ -1578,7 +1711,7 @@ const server = http.createServer(async (req, res) => {
             usedQuota: 0, 
             bonusQuota: 0,
             isVip: false,
-            serverStatus,
+            serverStatus: currentServerStatus,
             deviceToken: newDeviceToken,
             token: fakeAuthToken
           }));
@@ -1608,7 +1741,7 @@ const server = http.createServer(async (req, res) => {
               bonusQuota: existingUser.bonusQuota || 0,
               isVip: isVipActive,
               vipUntil: existingUser.vipUntil || 0,
-              serverStatus,
+              serverStatus: currentServerStatus,
               token: fakeAuthToken
             }));
           } else {
@@ -1634,9 +1767,9 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        if (serverStatus !== 'online' && !userObj.isAdmin) {
+        if (currentServerStatus !== 'online' && !userObj.isAdmin) {
           res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Pembuatan gagal: Server sedang offline. Fitur premium dinonaktifkan untuk user biasa & VIP.' }));
+          res.end(JSON.stringify({ success: false, message: 'Pembuatan gagal: Server sedang offline.' }));
           return;
         }
 
@@ -1651,12 +1784,12 @@ const server = http.createServer(async (req, res) => {
         if (!userObj.bonusQuota) userObj.bonusQuota = 0;
 
         const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
-        const maxAllowed = 3 + userObj.bonusQuota;
+        const maxAllowed = 1 + userObj.bonusQuota;
 
         if (!userObj.isAdmin && !isVipActive) {
           if (!userObj.activatedEmails.includes(email) && userObj.activatedEmails.length >= maxAllowed) {
             res.writeHead(403);
-            res.end(JSON.stringify({ success: false, message: 'Kuota aktivasi Anda habis! Gunakan kode redeem atau upgrade VIP.' }));
+            res.end(JSON.stringify({ success: false, message: 'Kuota aktivasi Anda habis!' }));
             return;
           }
         }
@@ -1688,9 +1821,9 @@ const server = http.createServer(async (req, res) => {
         const { email, url: verifyUrl, username } = JSON.parse(body);
 
         let userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (serverStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
+        if (currentServerStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
           res.writeHead(403);
-          res.end(JSON.stringify({ error: 'Pembuatan gagal: Server sedang offline. Fitur premium dinonaktifkan untuk user biasa & VIP.' }));
+          res.end(JSON.stringify({ error: 'Pembuatan gagal: Server sedang offline.' }));
           return;
         }
 
