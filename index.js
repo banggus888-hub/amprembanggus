@@ -467,19 +467,7 @@ const htmlTemplate = `
                     <p class="text-xs font-extrabold text-amber-400 flex items-center gap-2">
                         <span>👑</span> Admin Master Control Panel
                     </p>
-                    
-                    <!-- FITUR BARU: LIST USERNAME AKTIF -->
-                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
-                        <div class="flex justify-between items-center text-[11px] text-amber-300 font-bold">
-                            <span>👥 Daftar Username Aktif:</span>
-                            <button onclick="loadAdminActiveUsers()" class="text-slate-400 hover:text-white underline">Refresh List</button>
-                        </div>
-                        <div id="admin-active-users-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px]">
-                            <p class="text-slate-500 italic">Klik tombol refresh untuk memuat...</p>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-2 pt-2">
+                    <div class="grid grid-cols-2 gap-2">
                         <button onclick="changeServerState('online')" class="py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 rounded-full text-[11px] text-emerald-300 font-bold transition">🟢 Online</button>
                         <button onclick="changeServerState('offline')" class="py-2.5 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 rounded-full text-[11px] text-rose-300 font-bold transition">🔴 Offline</button>
                     </div>
@@ -600,9 +588,6 @@ const htmlTemplate = `
                 document.getElementById('terminal-view').classList.remove('hidden');
             } else if (viewName === 'profile') {
                 document.getElementById('section-profile').classList.remove('hidden');
-                if(isAdminUser) {
-                    loadAdminActiveUsers();
-                }
             } else if (viewName === 'guide') {
                 document.getElementById('section-guide').classList.remove('hidden');
             } else if (viewName === 'announcement') {
@@ -740,7 +725,6 @@ const htmlTemplate = `
                         loadAdminRedeems();
                         loadAdminAnnouncements();
                         loadAdminVipList();
-                        loadAdminActiveUsers();
                     }
                 } else {
                     alert('Gagal: ' + data.message);
@@ -793,7 +777,6 @@ const htmlTemplate = `
                         loadAdminRedeems();
                         loadAdminAnnouncements();
                         loadAdminVipList();
-                        loadAdminActiveUsers();
                     }
                 }
             } catch (e) {}
@@ -831,35 +814,6 @@ const htmlTemplate = `
             } catch (error) {
                 console.error('Terjadi kesalahan:', error);
                 alert('Terjadi kesalahan jaringan.');
-            }
-        }
-
-        async function loadAdminActiveUsers() {
-            if (!isAdminUser) return;
-            try {
-                const res = await fetch('/api/admin/get-active-users?username=' + encodeURIComponent(loggedInUsername));
-                const data = await res.json();
-                const container = document.getElementById('admin-active-users-list');
-                container.innerHTML = '';
-
-                if (data.success && data.users && data.users.length > 0) {
-                    data.users.forEach(u => {
-                        const statusBadge = u.isAdmin ? '👑 Admin' : (u.isVip ? '🌟 VIP' : '👤 Standard');
-                        container.innerHTML += `
-                            <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
-                                <div>
-                                    <span class="text-amber-300 font-bold">${u.username}</span>
-                                    <span class="text-slate-400 block text-[9px]">Dipakai: ${u.usedCount} | Bonus: ${u.bonusQuota}</span>
-                                </div>
-                                <span class="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 text-[10px] font-semibold">${statusBadge}</span>
-                            </div>
-                        `;
-                    });
-                } else {
-                    container.innerHTML = '<p class="text-slate-500 italic">Tidak ada user aktif.</p>';
-                }
-            } catch (e) {
-                console.error(e);
             }
         }
 
@@ -973,15 +927,15 @@ const htmlTemplate = `
 
                 if (data.success && Object.keys(data.vipUsers).length > 0) {
                     for (let [uname, val] of Object.entries(data.vipUsers)) {
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">${uname}</span>
-                                    <span class="text-slate-400 block text-[9px]">Expired: ${new Date(val.vipUntil).toLocaleDateString()}</span>
+                                    <span class="text-amber-300 font-bold">\${uname}</span>
+                                    <span class="text-slate-400 block text-[9px]">Expired: \${new Date(val.vipUntil).toLocaleDateString()}</span>
                                 </div>
-                                <button onclick="handleRemoveVip('${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                <button onclick="handleRemoveVip('\${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Tidak ada akun VIP aktif.</p>';
@@ -1015,15 +969,15 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/20 space-y-1">
                                 <div class="flex justify-between items-center text-cyan-300 font-bold text-xs">
-                                    <span>${val.title}</span>
-                                    <span class="text-[9px] text-slate-400 font-mono">${new Date(val.timestamp).toLocaleDateString()}</span>
+                                    <span>\${val.title}</span>
+                                    <span class="text-[9px] text-slate-400 font-mono">\${new Date(val.timestamp).toLocaleDateString()}</span>
                                 </div>
-                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">${val.content}</p>
+                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">\${val.content}</p>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi terbaru.</p>';
@@ -1042,18 +996,18 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += `
+                        container.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div class="truncate mr-2">
-                                    <span class="text-amber-300 font-bold block truncate">${val.title}</span>
-                                    <span class="text-slate-400 truncate block text-[9px]">${val.content.substring(0, 30)}...</span>
+                                    <span class="text-amber-300 font-bold block truncate">\${val.title}</span>
+                                    <span class="text-slate-400 truncate block text-[9px]">\${val.content.substring(0, 30)}...</span>
                                 </div>
                                 <div class="flex gap-1 shrink-0">
-                                    <button onclick="editAnnouncement('${id}', '${encodeURIComponent(val.title)}', '${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
-                                    <button onclick="deleteAnnouncement('${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                    <button onclick="editAnnouncement('\${id}', '\${encodeURIComponent(val.title)}', '\${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
+                                    <button onclick="deleteAnnouncement('\${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                                 </div>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi.</p>';
@@ -1155,15 +1109,15 @@ const htmlTemplate = `
 
                 if(data.success && Object.keys(data.redeems).length > 0) {
                     for(let [code, val] of Object.entries(data.redeems)) {
-                        listContainer.innerHTML += `
+                        listContainer.innerHTML += \`
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">${code}</span>
-                                    <span class="text-slate-400 block text-[9px]">Kuota: ${val.totalQuota} | Klaim: ${val.claimedCount}/${val.maxClaims}</span>
+                                    <span class="text-amber-300 font-bold">\${code}</span>
+                                    <span class="text-slate-400 block text-[9px]">Kuota: \${val.totalQuota} | Klaim: \${val.claimedCount}/\${val.maxClaims}</span>
                                 </div>
-                                <button onclick="handleDeleteRedeem('${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                <button onclick="handleDeleteRedeem('\${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        `;
+                        \`;
                     }
                 } else {
                     listContainer.innerHTML = '<p class="text-slate-500 italic">Belum ada kode aktif.</p>';
@@ -1359,41 +1313,6 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan pada server.' }));
       }
     });
-  } else if (parsedUrl.pathname === '/api/admin/get-active-users') {
-    res.setHeader('Content-Type', 'application/json');
-    const username = parsedUrl.searchParams.get('username');
-    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-    if (!userObj || !userObj.isAdmin) {
-      res.writeHead(403);
-      res.end(JSON.stringify({ success: false, message: 'Akses ditolak.' }));
-      return;
-    }
-
-    const allUsers = await getAllUsersFromDb();
-    const now = Date.now();
-    const twentyFourHours = 24 * 60 * 60 * 1000;
-    const userList = [];
-
-    for (let [uname, udata] of Object.entries(allUsers)) {
-      // Cek reset 24 jam untuk setiap user saat admin melihat list
-      if (udata.lastResetTime && now - udata.lastResetTime >= twentyFourHours) {
-        udata.activatedEmails = [];
-        udata.lastResetTime = now;
-        await saveUserToDb(uname, udata);
-      }
-
-      const isVipActive = udata.vipUntil && udata.vipUntil > now;
-      userList.push({
-        username: uname,
-        isAdmin: udata.isAdmin || false,
-        isVip: isVipActive,
-        usedCount: udata.activatedEmails ? udata.activatedEmails.length : 0,
-        bonusQuota: udata.bonusQuota || 0
-      });
-    }
-
-    res.writeHead(200);
-    res.end(JSON.stringify({ success: true, users: userList }));
   } else if (parsedUrl.pathname === '/api/admin/set-status' && req.method === 'POST') {
     res.setHeader('Content-Type', 'application/json');
     let body = '';
@@ -1856,12 +1775,9 @@ const server = http.createServer(async (req, res) => {
 
         const now = Date.now();
         const twentyFourHours = 24 * 60 * 60 * 1000;
-        if (!userObj.lastResetTime) userObj.lastResetTime = now;
-
-        if (now - userObj.lastResetTime >= twentyFourHours) {
+        if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
           userObj.activatedEmails = [];
           userObj.lastResetTime = now;
-          await saveUserToDb(cleanUser, userObj);
         }
 
         if (!userObj.activatedEmails) userObj.activatedEmails = [];
