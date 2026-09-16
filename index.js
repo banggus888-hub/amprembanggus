@@ -1,3 +1,4 @@
+name=index.js
 const http = require('http');
 const Go = require('@xof/fetch');
 const { initializeApp } = require('firebase/app');
@@ -131,6 +132,20 @@ async function getVideoFromDb() {
 
 async function saveVideoToDb(videoUrl) {
   await set(ref(db, `settings/featuredVideo`), videoUrl);
+}
+
+async function getPricesFromDb() {
+  const dbRef = ref(db);
+  const snapshot = await get(child(dbRef, `settings/prices`));
+  if (snapshot.exists()) return snapshot.val();
+  return [
+    { id: 'p1', name: 'Paket VIP 7 Hari', price: 'Rp 15.000' },
+    { id: 'p2', name: 'Paket VIP 30 Hari', price: 'Rp 45.000' }
+  ];
+}
+
+async function savePricesToDb(pricesData) {
+  await set(ref(db, `settings/prices`), pricesData);
 }
 
 async function initAdmin() {
@@ -295,6 +310,9 @@ const htmlTemplate = `
                     <button onclick="switchView('profile')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
                         Halaman Akun & Profil
                     </button>
+                    <button onclick="switchView('pricing')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
+                        List Harga Akses Premium
+                    </button>
                     <button onclick="switchView('guide')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
                         Panduan Penggunaan
                     </button>
@@ -395,7 +413,7 @@ const htmlTemplate = `
                         <div class="w-8 h-8 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 text-xs">⚡</div>
                         <div>
                             <p class="text-xs font-bold text-slate-200">Activation Quota</p>
-                            <p class="text-[10px] text-slate-400">Reset otomatis 24 Jam</p>
+                            <p class="text-[10px] text-slate-400" id="quota-subtext">Reset otomatis 24 Jam</p>
                         </div>
                     </div>
                     <div class="flex items-center gap-1.5 text-purple-300 text-xs font-extrabold bg-purple-500/10 px-3 py-1.5 rounded-full border border-purple-500/20 mono">
@@ -467,7 +485,19 @@ const htmlTemplate = `
                     <p class="text-xs font-extrabold text-amber-400 flex items-center gap-2">
                         <span>👑</span> Admin Master Control Panel
                     </p>
-                    <div class="grid grid-cols-2 gap-2">
+                    
+                    <!-- FITUR LIST USERNAME AKTIF KHUSUS ADMIN -->
+                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
+                        <div class="flex justify-between items-center text-[11px] text-amber-300 font-bold">
+                            <span>List Username Aktif (Database):</span>
+                            <button onclick="loadAdminActiveUsers()" class="text-slate-400 hover:text-white underline text-[10px]">Refresh</button>
+                        </div>
+                        <div id="admin-active-users-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px]">
+                            <p class="text-slate-500 italic">Memuat list user...</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 pt-2">
                         <button onclick="changeServerState('online')" class="py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 rounded-full text-[11px] text-emerald-300 font-bold transition">🟢 Online</button>
                         <button onclick="changeServerState('offline')" class="py-2.5 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 rounded-full text-[11px] text-rose-300 font-bold transition">🔴 Offline</button>
                     </div>
@@ -512,6 +542,30 @@ const htmlTemplate = `
                         <div id="admin-redeem-list" class="space-y-1.5 max-h-28 overflow-y-auto text-[11px]">
                             <p class="text-slate-500 italic">Memuat...</p>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW 3.5: LIST HARGA PEMBELIAN AKSES PREMIUM -->
+            <div id="section-pricing" class="glass-panel space-y-4 hidden">
+                <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
+                    <h2 class="text-xs font-extrabold text-purple-400 uppercase tracking-wider">List Harga Akses Premium</h2>
+                    <button onclick="switchView('generator')" class="text-xs text-slate-400 hover:text-white underline">← Kembali</button>
+                </div>
+                
+                <div id="pricing-list-container" class="space-y-2.5 text-xs">
+                    <p class="text-slate-500 italic">Memuat daftar harga...</p>
+                </div>
+
+                <!-- Panel Admin untuk Mengubah/Menghapus/Menambah Harga -->
+                <div id="admin-pricing-panel" class="pt-3 border-t border-purple-500/20 space-y-3 hidden">
+                    <p class="text-xs font-extrabold text-amber-400">Kelola Harga Akses (Admin)</p>
+                    <input type="hidden" id="price-edit-id" value="">
+                    <input type="text" id="price-name" placeholder="Nama Paket (Cth: VIP 1 Bulan)" class="input-glow w-full px-4 py-2.5 text-slate-200 text-xs">
+                    <input type="text" id="price-nominal" placeholder="Harga (Cth: Rp 50.000)" class="input-glow w-full px-4 py-2.5 text-slate-200 text-xs">
+                    <div class="flex gap-2">
+                        <button onclick="handleSavePrice()" id="price-submit-btn" class="flex-1 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-full text-xs transition">Simpan / Tambah Harga</button>
+                        <button onclick="resetPriceForm()" id="price-cancel-btn" class="px-3 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-full text-xs hidden">Batal</button>
                     </div>
                 </div>
             </div>
@@ -568,6 +622,7 @@ const htmlTemplate = `
         let currentAuthMode = 'login';
         let loggedInUsername = '';
         let isAdminUser = false;
+        let quotaTimerInterval = null;
 
         function toggleMenu() {
             const drawer = document.getElementById('nav-drawer');
@@ -581,6 +636,7 @@ const htmlTemplate = `
             
             document.getElementById('terminal-view').classList.add('hidden');
             document.getElementById('section-profile').classList.add('hidden');
+            document.getElementById('section-pricing').classList.add('hidden');
             document.getElementById('section-guide').classList.add('hidden');
             document.getElementById('section-announcement').classList.add('hidden');
 
@@ -588,6 +644,9 @@ const htmlTemplate = `
                 document.getElementById('terminal-view').classList.remove('hidden');
             } else if (viewName === 'profile') {
                 document.getElementById('section-profile').classList.remove('hidden');
+            } else if (viewName === 'pricing') {
+                document.getElementById('section-pricing').classList.remove('hidden');
+                loadPricingList();
             } else if (viewName === 'guide') {
                 document.getElementById('section-guide').classList.remove('hidden');
             } else if (viewName === 'announcement') {
@@ -722,9 +781,11 @@ const htmlTemplate = `
                         document.getElementById('role-badge').innerText = "👑 Admin Master";
                         document.getElementById('admin-control-panel').classList.remove('hidden');
                         document.getElementById('admin-announcement-panel').classList.remove('hidden');
+                        document.getElementById('admin-pricing-panel').classList.remove('hidden');
                         loadAdminRedeems();
                         loadAdminAnnouncements();
                         loadAdminVipList();
+                        loadAdminActiveUsers();
                     }
                 } else {
                     alert('Gagal: ' + data.message);
@@ -774,9 +835,11 @@ const htmlTemplate = `
                         document.getElementById('role-badge').innerText = "👑 Admin Master";
                         document.getElementById('admin-control-panel').classList.remove('hidden');
                         document.getElementById('admin-announcement-panel').classList.remove('hidden');
+                        document.getElementById('admin-pricing-panel').classList.remove('hidden');
                         loadAdminRedeems();
                         loadAdminAnnouncements();
                         loadAdminVipList();
+                        loadAdminActiveUsers();
                     }
                 }
             } catch (e) {}
@@ -860,10 +923,42 @@ const htmlTemplate = `
         }
 
         function updateQuotaDisplay(data) {
+            if (quotaTimerInterval) clearInterval(quotaTimerInterval);
+
             if(data.isAdmin || data.isVip) {
                 document.getElementById('quota-display').innerText = "UNLIMITED";
+                document.getElementById('quota-subtext').innerText = "Akses Tanpa Batas";
             } else {
-                document.getElementById('quota-display').innerText = data.usedQuota + "/1 (+" + data.bonusQuota + ")";
+                const maxQuota = 1 + (data.bonusQuota || 0);
+                const used = data.usedQuota || 0;
+                
+                if (used >= maxQuota) {
+                    document.getElementById('quota-display').innerText = "HABIS (0)";
+                    
+                    // Hitung waktu mundur 24 jam dari lastResetTime
+                    const lastReset = data.lastResetTime || Date.now();
+                    const resetTarget = lastReset + (24 * 60 * 60 * 1000);
+
+                    quotaTimerInterval = setInterval(() => {
+                        const now = Date.now();
+                        const diff = resetTarget - now;
+
+                        if (diff <= 0) {
+                            clearInterval(quotaTimerInterval);
+                            document.getElementById('quota-subtext').innerText = "Kuota mereset, silakan refresh halaman.";
+                            return;
+                        }
+
+                        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+                        document.getElementById('quota-subtext').innerText = `Reset: ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                    }, 1000);
+                } else {
+                    document.getElementById('quota-display').innerText = `${used}/${maxQuota}`;
+                    document.getElementById('quota-subtext').innerText = "Reset otomatis 24 Jam";
+                }
             }
         }
 
@@ -892,6 +987,119 @@ const htmlTemplate = `
                     alert('Status server diubah: ' + newState.toUpperCase());
                 }
             } catch(e) { alert('Gagal mengubah status server.'); }
+        }
+
+        async function loadAdminActiveUsers() {
+            if (!isAdminUser) return;
+            try {
+                const res = await fetch('/api/admin/get-active-users?username=' + encodeURIComponent(loggedInUsername));
+                const data = await res.json();
+                const container = document.getElementById('admin-active-users-list');
+                container.innerHTML = '';
+
+                if (data.success && data.users && data.users.length > 0) {
+                    data.users.forEach(u => {
+                        container.innerHTML += `
+                            <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
+                                <span class="text-amber-300 font-bold">${u.username}</span>
+                                <span class="text-slate-400 text-[10px]">${u.isAdmin ? 'Admin' : (u.isVip ? 'VIP' : 'User')}</span>
+                            </div>
+                        `;
+                    });
+                } else {
+                    container.innerHTML = '<p class="text-slate-500 italic">Tidak ada user aktif.</p>';
+                }
+            } catch(e) {}
+        }
+
+        async function loadPricingList() {
+            try {
+                const res = await fetch('/api/prices');
+                const data = await res.json();
+                const container = document.getElementById('pricing-list-container');
+                container.innerHTML = '';
+
+                if (data.success && data.prices && data.prices.length > 0) {
+                    data.prices.forEach(p => {
+                        let deleteEditButtons = '';
+                        if (isAdminUser) {
+                            deleteEditButtons = `
+                                <div class="flex gap-1 mt-2">
+                                    <button onclick="editPrice('${p.id}', '${encodeURIComponent(p.name)}', '${encodeURIComponent(p.price)}')" class="px-2.5 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
+                                    <button onclick="deletePrice('${p.id}')" class="px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                </div>
+                            `;
+                        }
+                        container.innerHTML += `
+                            <div class="p-3.5 rounded-2xl bg-purple-950/20 border border-purple-500/20 flex justify-between items-center">
+                                <div>
+                                    <p class="font-bold text-slate-200 text-xs">${p.name}</p>
+                                    <p class="text-purple-300 font-extrabold text-sm mt-0.5">${p.price}</p>
+                                    ${deleteEditButtons}
+                                </div>
+                                <a href="https://wa.me/?text=Halo%20Admin,%20saya%20ingin%20membeli%20akses%20${encodeURIComponent(p.name)}%20harga%20${encodeURIComponent(p.price)}" target="_blank" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-full text-[11px] transition">Beli</a>
+                            </div>
+                        `;
+                    });
+                } else {
+                    container.innerHTML = '<p class="text-slate-500 italic">Belum ada daftar harga.</p>';
+                }
+            } catch(e) {}
+        }
+
+        async function handleSavePrice() {
+            if (!isAdminUser) return;
+            const id = document.getElementById('price-edit-id').value || ('p_' + Date.now());
+            const name = document.getElementById('price-name').value.trim();
+            const price = document.getElementById('price-nominal').value.trim();
+
+            if (!name || !price) return alert('Nama paket dan harga wajib diisi!');
+
+            try {
+                const res = await fetch('/api/admin/save-price', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: loggedInUsername, id, name, price })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('Harga berhasil disimpan!');
+                    resetPriceForm();
+                    loadPricingList();
+                } else { alert(data.message); }
+            } catch(e) { alert('Gagal menyimpan harga.'); }
+        }
+
+        function editPrice(id, encName, encPrice) {
+            document.getElementById('price-edit-id').value = id;
+            document.getElementById('price-name').value = decodeURIComponent(encName);
+            document.getElementById('price-nominal').value = decodeURIComponent(encPrice);
+            document.getElementById('price-submit-btn').innerText = "Perbarui Harga";
+            document.getElementById('price-cancel-btn').classList.remove('hidden');
+        }
+
+        function resetPriceForm() {
+            document.getElementById('price-edit-id').value = '';
+            document.getElementById('price-name').value = '';
+            document.getElementById('price-nominal').value = '';
+            document.getElementById('price-submit-btn').innerText = "Simpan / Tambah Harga";
+            document.getElementById('price-cancel-btn').classList.add('hidden');
+        }
+
+        async function deletePrice(id) {
+            if (!confirm('Hapus paket harga ini?')) return;
+            try {
+                const res = await fetch('/api/admin/delete-price', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: loggedInUsername, id })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('Harga berhasil dihapus.');
+                    loadPricingList();
+                }
+            } catch(e) { alert('Gagal menghapus harga.'); }
         }
 
         async function handleSetVip() {
@@ -927,15 +1135,15 @@ const htmlTemplate = `
 
                 if (data.success && Object.keys(data.vipUsers).length > 0) {
                     for (let [uname, val] of Object.entries(data.vipUsers)) {
-                        container.innerHTML += \`
+                        container.innerHTML += `
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">\${uname}</span>
-                                    <span class="text-slate-400 block text-[9px]">Expired: \${new Date(val.vipUntil).toLocaleDateString()}</span>
+                                    <span class="text-amber-300 font-bold">${uname}</span>
+                                    <span class="text-slate-400 block text-[9px]">Expired: ${new Date(val.vipUntil).toLocaleDateString()}</span>
                                 </div>
-                                <button onclick="handleRemoveVip('\${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                <button onclick="handleRemoveVip('${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Tidak ada akun VIP aktif.</p>';
@@ -969,15 +1177,15 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += \`
+                        container.innerHTML += `
                             <div class="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/20 space-y-1">
                                 <div class="flex justify-between items-center text-cyan-300 font-bold text-xs">
-                                    <span>\${val.title}</span>
-                                    <span class="text-[9px] text-slate-400 font-mono">\${new Date(val.timestamp).toLocaleDateString()}</span>
+                                    <span>${val.title}</span>
+                                    <span class="text-[9px] text-slate-400 font-mono">${new Date(val.timestamp).toLocaleDateString()}</span>
                                 </div>
-                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">\${val.content}</p>
+                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">${val.content}</p>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi terbaru.</p>';
@@ -996,18 +1204,18 @@ const htmlTemplate = `
                 if (data.success && Object.keys(data.announcements).length > 0) {
                     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
                     for (let [id, val] of entries) {
-                        container.innerHTML += \`
+                        container.innerHTML += `
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div class="truncate mr-2">
-                                    <span class="text-amber-300 font-bold block truncate">\${val.title}</span>
-                                    <span class="text-slate-400 truncate block text-[9px]">\${val.content.substring(0, 30)}...</span>
+                                    <span class="text-amber-300 font-bold block truncate">${val.title}</span>
+                                    <span class="text-slate-400 truncate block text-[9px]">${val.content.substring(0, 30)}...</span>
                                 </div>
                                 <div class="flex gap-1 shrink-0">
-                                    <button onclick="editAnnouncement('\${id}', '\${encodeURIComponent(val.title)}', '\${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
-                                    <button onclick="deleteAnnouncement('\${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                    <button onclick="editAnnouncement('${id}', '${encodeURIComponent(val.title)}', '${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
+                                    <button onclick="deleteAnnouncement('${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                                 </div>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi.</p>';
@@ -1109,15 +1317,15 @@ const htmlTemplate = `
 
                 if(data.success && Object.keys(data.redeems).length > 0) {
                     for(let [code, val] of Object.entries(data.redeems)) {
-                        listContainer.innerHTML += \`
+                        listContainer.innerHTML += `
                             <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
                                 <div>
-                                    <span class="text-amber-300 font-bold">\${code}</span>
-                                    <span class="text-slate-400 block text-[9px]">Kuota: \${val.totalQuota} | Klaim: \${val.claimedCount}/\${val.maxClaims}</span>
+                                    <span class="text-amber-300 font-bold">${code}</span>
+                                    <span class="text-slate-400 block text-[9px]">Kuota: ${val.totalQuota} | Klaim: ${val.claimedCount}/${val.maxClaims}</span>
                                 </div>
-                                <button onclick="handleDeleteRedeem('\${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
+                                <button onclick="handleDeleteRedeem('${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
                             </div>
-                        \`;
+                        `;
                     }
                 } else {
                     listContainer.innerHTML = '<p class="text-slate-500 italic">Belum ada kode aktif.</p>';
@@ -1268,6 +1476,11 @@ const server = http.createServer(async (req, res) => {
     const videoUrl = await getVideoFromDb();
     res.writeHead(200);
     res.end(JSON.stringify({ success: true, videoUrl }));
+  } else if (parsedUrl.pathname === '/api/prices') {
+    res.setHeader('Content-Type', 'application/json');
+    const prices = await getPricesFromDb();
+    res.writeHead(200);
+    res.end(JSON.stringify({ success: true, prices }));
   } else if (parsedUrl.pathname === '/api/announcements') {
     res.setHeader('Content-Type', 'application/json');
     const announcements = await getAllAnnouncementsFromDb();
@@ -1329,6 +1542,76 @@ const server = http.createServer(async (req, res) => {
         await saveServerStatusToDb(status);
         res.writeHead(200);
         res.end(JSON.stringify({ success: true, status }));
+      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
+    });
+  } else if (parsedUrl.pathname === '/api/admin/get-active-users') {
+    res.setHeader('Content-Type', 'application/json');
+    const username = parsedUrl.searchParams.get('username');
+    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+    if (!userObj || !userObj.isAdmin) {
+      res.writeHead(403);
+      res.end(JSON.stringify({ success: false, message: 'Akses ditolak.' }));
+      return;
+    }
+    const allUsers = await getAllUsersFromDb();
+    const now = Date.now();
+    const usersList = [];
+    for (let [uname, udata] of Object.entries(allUsers)) {
+      usersList.push({
+        username: uname,
+        isAdmin: udata.isAdmin || false,
+        isVip: udata.vipUntil && udata.vipUntil > now
+      });
+    }
+    res.writeHead(200);
+    res.end(JSON.stringify({ success: true, users: usersList }));
+  } else if (parsedUrl.pathname === '/api/admin/save-price' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, id, name, price } = JSON.parse(body);
+        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!userObj || !userObj.isAdmin) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, message: 'Akses ditolak.' }));
+          return;
+        }
+        let currentPrices = await getPricesFromDb();
+        if (!Array.isArray(currentPrices)) currentPrices = [];
+        
+        const index = currentPrices.findIndex(p => p.id === id);
+        if (index >= 0) {
+          currentPrices[index] = { id, name, price };
+        } else {
+          currentPrices.push({ id, name, price });
+        }
+        await savePricesToDb(currentPrices);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, message: 'Harga berhasil disimpan.' }));
+      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
+    });
+  } else if (parsedUrl.pathname === '/api/admin/delete-price' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { username, id } = JSON.parse(body);
+        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+        if (!userObj || !userObj.isAdmin) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false }));
+          return;
+        }
+        let currentPrices = await getPricesFromDb();
+        if (Array.isArray(currentPrices)) {
+          currentPrices = currentPrices.filter(p => p.id !== id);
+          await savePricesToDb(currentPrices);
+        }
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true }));
       } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
     });
   } else if (parsedUrl.pathname === '/api/admin/set-video' && req.method === 'POST') {
@@ -1663,7 +1946,8 @@ const server = http.createServer(async (req, res) => {
           bonusQuota: existingUser.bonusQuota || 0,
           isVip: isVipActive,
           vipUntil: existingUser.vipUntil || 0,
-          serverStatus: currentServerStatus
+          serverStatus: currentServerStatus,
+          lastResetTime: existingUser.lastResetTime
         }));
       } catch (e) {
         res.writeHead(500);
@@ -1713,7 +1997,8 @@ const server = http.createServer(async (req, res) => {
             isVip: false,
             serverStatus: currentServerStatus,
             deviceToken: newDeviceToken,
-            token: fakeAuthToken
+            token: fakeAuthToken,
+            lastResetTime: newUserData.lastResetTime
           }));
         } else {
           if (existingUser && existingUser.password === password) {
@@ -1742,7 +2027,8 @@ const server = http.createServer(async (req, res) => {
               isVip: isVipActive,
               vipUntil: existingUser.vipUntil || 0,
               serverStatus: currentServerStatus,
-              token: fakeAuthToken
+              token: fakeAuthToken,
+              lastResetTime: existingUser.lastResetTime
             }));
           } else {
             res.writeHead(401);
@@ -1805,7 +2091,7 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ 
           success: true, 
           result, 
-          quotaInfo: { usedQuota: userObj.activatedEmails.length, bonusQuota: userObj.bonusQuota } 
+          quotaInfo: { usedQuota: userObj.activatedEmails.length, bonusQuota: userObj.bonusQuota, lastResetTime: userObj.lastResetTime } 
         }));
       } catch (error) {
         res.writeHead(400);
