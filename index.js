@@ -128,7 +128,7 @@ async function removeVipAccountFromDb(id) {
   await set(ref(db, `vipAccounts/${id}`), null);
 }
 
-// ====== FEATURE REQUESTS HELPERS (NEW) ======
+// ====== FEATURE REQUESTS HELPERS ======
 async function getAllFeatureRequestsFromDb() {
   const snapshot = await get(child(ref(db), `featureRequests`));
   return snapshot.exists() ? snapshot.val() : {};
@@ -179,7 +179,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>AM Premium • Banggus v3.1</title>
+<title>AM Premium • Banggus v3.2</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
@@ -898,7 +898,7 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- REDEEM SECTION (MOVED TO GENERATOR) -->
+      <!-- REDEEM SECTION -->
       <div class="glass-panel space-y-3.5" style="border-color: rgba(16,185,129,0.3);">
         <div class="section-title" style="color: #6ee7b7; margin-bottom: 0;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 12v10H4V12"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
@@ -960,7 +960,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- VIEW: REQUEST FITUR (NEW) -->
+    <!-- VIEW: REQUEST FITUR -->
     <div id="section-request" class="glass-panel space-y-4 hidden">
       <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
         <h2 class="section-title" style="margin: 0; color: #67e8f9;">
@@ -1144,7 +1144,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- VIEW: ADMIN PANEL (NEW - TERPISAH) -->
+    <!-- VIEW: ADMIN PANEL -->
     <div id="section-admin" class="glass-panel space-y-4 hidden">
       <div class="flex items-center justify-between pb-3 border-b border-amber-500/30">
         <h2 class="section-title" style="margin: 0; color: #fbbf24;">
@@ -1186,7 +1186,7 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- ADMIN TAB: VIDEO -->
+      <!-- ADMIN TAB: VIDEO (CHUNKED UPLOAD) -->
       <div id="admin-tab-video" class="admin-tab-content space-y-3 hidden">
         <div>
           <p class="section-title" style="color: #fbbf24;">Upload Video (>5MB Support)</p>
@@ -1342,7 +1342,7 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- ADMIN TAB: FEATURE REQUESTS (NEW) -->
+      <!-- ADMIN TAB: FEATURE REQUESTS -->
       <div id="admin-tab-requests" class="admin-tab-content space-y-3 hidden">
         <div class="flex justify-between items-center">
           <p class="section-title" style="color: #fbbf24; margin: 0;">
@@ -1433,7 +1433,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <p class="text-center text-[10px] text-slate-600 tracking-wider py-2">AM PREMIUM • BY BANGGUS • v3.1</p>
+    <p class="text-center text-[10px] text-slate-600 tracking-wider py-2">AM PREMIUM • BY BANGGUS • v3.2</p>
   </div>
 </div>
 
@@ -2040,7 +2040,7 @@ function copyEmail(email) {
   });
 }
 
-// ============ ACTIVE REDEEMS (NEW) ============
+// ============ ACTIVE REDEEMS ============
 async function loadActiveRedeems() {
   const container = document.getElementById('active-redeems-list');
   if (!container) return;
@@ -2113,7 +2113,7 @@ function quickClaimRedeem(code) {
   handleRedeemCode();
 }
 
-// ============ FEATURE REQUESTS (NEW) ============
+// ============ FEATURE REQUESTS ============
 async function handleSubmitFeatureRequest() {
   if (!loggedInUsername) return showToast('Harus login dulu!', 'error');
   const title = document.getElementById('feature-req-title').value.trim();
@@ -3396,7 +3396,7 @@ const server = http.createServer(async (req, res) => {
       const announcements = await getAllAnnouncementsFromDb();
       jsonResponse(res, 200, { success: true, announcements });
 
-    // ===== ACTIVE REDEEMS (NEW) =====
+    // ===== ACTIVE REDEEMS =====
     } else if (parsedUrl.pathname === '/api/redeems/active') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
@@ -3424,7 +3424,6 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      // Sort: not claimed first, then by remaining
       activeRedeems.sort((a, b) => {
         if (a.claimedByMe !== b.claimedByMe) return a.claimedByMe ? 1 : -1;
         return b.remaining - a.remaining;
@@ -3432,7 +3431,7 @@ const server = http.createServer(async (req, res) => {
 
       jsonResponse(res, 200, { success: true, redeems: activeRedeems });
 
-    // ===== FEATURE REQUESTS (NEW) =====
+    // ===== FEATURE REQUESTS =====
     } else if (parsedUrl.pathname === '/api/feature-request' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, title, description } = JSON.parse(body);
@@ -4228,7 +4227,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\\n╔══════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v3.1                  ║');
+  console.log('║  🚀 AM Premium Banggus v3.2                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                      ║');
   console.log('║  📦 Chunked Upload Ready (>200MB)            ║');
   console.log('║  👥 User List Viewer + Delete Account        ║');
