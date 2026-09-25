@@ -386,11 +386,6 @@ const htmlTemplate = `<!DOCTYPE html>
     background: black;
   }
   .video-container video { width: 100%; height: 100%; object-fit: cover; }
-  .video-container::after {
-    content: ''; position: absolute; inset: 0;
-    background: linear-gradient(to top, rgba(7,4,15,0.7), transparent 50%);
-    pointer-events: none;
-  }
 
   .icon-btn {
     width: 2.75rem; height: 2.75rem;
@@ -573,13 +568,6 @@ const htmlTemplate = `<!DOCTYPE html>
 
       <div class="video-container">
         <video id="main-display-video" src="" autoplay loop muted playsinline></video>
-        <div class="absolute bottom-0 left-0 right-0 p-3 flex items-center justify-between z-10">
-          <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span class="text-[10px] font-bold text-white/90 uppercase tracking-wider">Live Preview</span>
-          </div>
-          <span id="video-resolution" class="text-[9px] mono text-white/60"></span>
-        </div>
       </div>
 
       <div class="glass-panel py-2.5 px-3.5 flex items-center justify-between">
@@ -764,7 +752,7 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- NEW: RIWAYAT GMAIL TERVERIFIKASI -->
+      <!-- RIWAYAT GMAIL TERVERIFIKASI -->
       <div class="pt-3 border-t border-cyan-500/20">
         <div class="flex justify-between items-center mb-2">
           <div class="section-title" style="color: #67e8f9; margin: 0;">
@@ -1035,7 +1023,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <p class="text-center text-[10px] text-slate-600 tracking-wider py-2">AM PREMIUM • BY BANGGUS • v2.2</p>
+    <p class="text-center text-[10px] text-slate-600 tracking-wider py-2">AM PREMIUM • BY BANGGUS • v2.3</p>
   </div>
 </div>
 
@@ -1113,9 +1101,6 @@ async function fetchFeaturedVideo() {
       const v = document.getElementById('main-display-video');
       if (v && v.src !== data.videoUrl) {
         v.src = data.videoUrl;
-        v.onloadedmetadata = () => {
-          document.getElementById('video-resolution').innerText = v.videoWidth + '×' + v.videoHeight;
-        };
       }
     }
   } catch(e) {}
@@ -1403,15 +1388,12 @@ function handleCountdown(data) {
   const used = data.usedQuota || 0;
   const remain = Math.max(0, total - used);
 
-  // Clear interval lama
   if (quotaCountdownInterval) { clearInterval(quotaCountdownInterval); quotaCountdownInterval = null; }
   if (globalCountdownInterval) { clearInterval(globalCountdownInterval); globalCountdownInterval = null; }
 
-  // Sembunyikan dulu
   if (countdownCard) countdownCard.classList.add('hidden');
   if (resetBannerMain) resetBannerMain.classList.add('hidden');
 
-  // Update reset timer di stat card
   updateResetTimerDisplay(data);
 
   const shouldShow = remain <= 0 && !data.isAdmin && !data.isVip && data.nextResetTime > 0;
@@ -1508,7 +1490,6 @@ function updateResetTimerDisplay(data) {
     return;
   }
 
-  // Update countdown di stat card setiap detik saat kuota habis
   if (globalCountdownInterval) clearInterval(globalCountdownInterval);
 
   function updateStatCard() {
@@ -2286,7 +2267,7 @@ const server = http.createServer(async (req, res) => {
       const announcements = await getAllAnnouncementsFromDb();
       jsonResponse(res, 200, { success: true, announcements });
 
-    // ===== NEW: USER EMAILS + RESET TIME =====
+    // ===== USER EMAILS + RESET TIME =====
     } else if (parsedUrl.pathname === '/api/user/my-emails') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
@@ -2301,7 +2282,6 @@ const server = http.createServer(async (req, res) => {
       const nextReset = lastReset + twentyFourHours;
       const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
 
-      // Auto-reset jika sudah lewat 24 jam
       if (now - lastReset >= twentyFourHours) {
         userObj.activatedEmails = [];
         userObj.lastResetTime = now;
@@ -2757,7 +2737,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\\n╔══════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v2.2              ║');
+  console.log('║  🚀 AM Premium Banggus v2.3              ║');
   console.log('║  📡 http://localhost:' + PORT + '                  ║');
   console.log('║  📦 Chunked Upload Ready (>200MB)        ║');
   console.log('║  👥 User List Viewer Ready (Admin Only)  ║');
