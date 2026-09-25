@@ -1,4 +1,7 @@
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const Go = require('@xof/fetch');
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, get, set, child } = require('firebase/database');
@@ -22,113 +25,78 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getDatabase(firebaseApp);
 
 const go = Go.create({
-	baseURL: config.base,
-	browser: true,
-	cookieJar: true,
-	keepAlive: true
+  baseURL: config.base,
+  browser: true,
+  cookieJar: true,
+  keepAlive: true
 });
 
-// Fungsi helper untuk mengambil status server dari database
-async function getServerStatusFromDb() {
-  const dbRef = ref(db);
-  const snapshot = await get(child(dbRef, `settings/serverStatus`));
-  if (snapshot.exists()) return snapshot.val();
-  return 'online'; // Default online jika belum diset
-}
+// ====== STORAGE UNTUK CHUNK UPLOAD ======
+const UPLOAD_DIR = path.join(os.tmpdir(), 'am-uploads');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// Fungsi helper untuk menyimpan status server ke database
+setInterval(() => {
+  try {
+    const files = fs.readdirSync(UPLOAD_DIR);
+    const now = Date.now();
+    files.forEach(f => {
+      const fp = path.join(UPLOAD_DIR, f);
+      try {
+        const stat = fs.statSync(fp);
+        if (now - stat.mtimeMs > 3600000) fs.unlinkSync(fp);
+      } catch (e) {}
+    });
+  } catch (e) {}
+}, 3600000);
+
+// ====== FIREBASE HELPERS ======
+async function getServerStatusFromDb() {
+  const snapshot = await get(child(ref(db), `settings/serverStatus`));
+  return snapshot.exists() ? snapshot.val() : 'online';
+}
 async function saveServerStatusToDb(status) {
   await set(ref(db, `settings/serverStatus`), status);
 }
-
-const am = {
-  async magiclink(email) {
-    if (!email.includes("@") || !email.includes(".")) throw new Error("Invalid email.");
-    const { data } = await go.get('/api/am', {
-      query: {
-        action: 'send',
-        apikey: config.apikey,
-        email: email
-      }
-    });
-    return data;
-  },
-   
-  async verif(email, url) {
-    const { data } = await go.get('/api/am', {
-      query: {
-        action: 'verif',
-        apikey: config.apikey,
-        email: email,
-        url: url
-      }
-    });
-    return data;
-  }
-};
-
 async function getUserFromDb(username) {
-  const dbRef = ref(db);
-  const snapshot = await get(child(dbRef, `users/${username}`));
-  if (snapshot.exists()) return snapshot.val();
-  return null;
+  if (!username) return null;
+  const snapshot = await get(child(ref(db), `users/${username}`));
+  return snapshot.exists() ? snapshot.val() : null;
 }
-
 async function saveUserToDb(username, userData) {
   await set(ref(db, `users/${username}`), userData);
 }
-
 async function getRedeemFromDb(code) {
-  const dbRef = ref(db);
-  const snapshot = await get(child(dbRef, `redeems/${code}`));
-  if (snapshot.exists()) return snapshot.val();
-  return null;
+  const snapshot = await get(child(ref(db), `redeems/${code}`));
+  return snapshot.exists() ? snapshot.val() : null;
 }
-
-async function saveRedeemToDb(code, redeemData) {
-  await set(ref(db, `redeems/${code}`), redeemData);
+async function saveRedeemToDb(code, data) {
+  await set(ref(db, `redeems/${code}`), data);
 }
-
 async function removeRedeemFromDb(code) {
   await set(ref(db, `redeems/${code}`), null);
 }
-
 async function getAllRedeemsFromDb() {
-  const dbRef = ref(db);
-  const snapshot = await get(child(dbRef, `redeems`));
-  if (snapshot.exists()) return snapshot.val();
-  return {};
+  const snapshot = await get(child(ref(db), `redeems`));
+  return snapshot.exists() ? snapshot.val() : {};
 }
-
 async function getAllAnnouncementsFromDb() {
-  const dbRef = ref(db);
-  const snapshot = await get(child(dbRef, `announcements`));
-  if (snapshot.exists()) return snapshot.val();
-  return {};
+  const snapshot = await get(child(ref(db), `announcements`));
+  return snapshot.exists() ? snapshot.val() : {};
 }
-
-async function saveAnnouncementToDb(id, announcementData) {
-  await set(ref(db, `announcements/${id}`), announcementData);
+async function saveAnnouncementToDb(id, data) {
+  await set(ref(db, `announcements/${id}`), data);
 }
-
 async function removeAnnouncementFromDb(id) {
   await set(ref(db, `announcements/${id}`), null);
 }
-
 async function getAllUsersFromDb() {
-  const dbRef = ref(db);
-  const snapshot = await get(child(dbRef, `users`));
-  if (snapshot.exists()) return snapshot.val();
-  return {};
+  const snapshot = await get(child(ref(db), `users`));
+  return snapshot.exists() ? snapshot.val() : {};
 }
-
 async function getVideoFromDb() {
-  const dbRef = ref(db);
-  const snapshot = await get(child(dbRef, `settings/featuredVideo`));
-  if (snapshot.exists()) return snapshot.val();
-  return 'https://assets.mixkit.co/videos/preview/mixkit-digital-animation-of-screens-and-lights-31910-large.mp4';
+  const snapshot = await get(child(ref(db), `settings/featuredVideo`));
+  return snapshot.exists() ? snapshot.val() : 'https://assets.mixkit.co/videos/preview/mixkit-digital-animation-of-screens-and-lights-31910-large.mp4';
 }
-
 async function saveVideoToDb(videoUrl) {
   await set(ref(db, `settings/featuredVideo`), videoUrl);
 }
@@ -148,1705 +116,2220 @@ async function initAdmin() {
 }
 initAdmin();
 
+const am = {
+  async magiclink(email) {
+    if (!email.includes("@") || !email.includes(".")) throw new Error("Invalid email.");
+    const { data } = await go.get('/api/am', {
+      query: { action: 'send', apikey: config.apikey, email }
+    });
+    return data;
+  },
+  async verif(email, url) {
+    const { data } = await go.get('/api/am', {
+      query: { action: 'verif', apikey: config.apikey, email, url }
+    });
+    return data;
+  }
+};
+
 // ==========================================
-// KODE HTML UI MODERN & FITUR UBAH VIDEO
+// HTML TEMPLATE
 // ==========================================
-const htmlTemplate = `
-<!DOCTYPE html>
+const htmlTemplate = `<!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AM Premium Banggus</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-    <style>
-        html, body {
-            width: 100%;
-            max-width: 100%;
-            overflow-x: hidden;
-            margin: 0;
-            padding: 0;
-            background-color: #0b0614;
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            font-size: 1.125rem;
-        }
-        .mono { font-family: 'JetBrains Mono', monospace; }
-        
-        .phone-wrapper {
-            width: 100%;
-            max-width: 520px;
-            margin: 0 auto;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            padding: 1.25rem;
-            position: relative;
-            box-sizing: border-box;
-            overflow-x: hidden;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>AM Premium • Banggus</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-primary: #07040f;
+    --bg-secondary: #0f0a1e;
+    --purple: #a855f7;
+    --purple-dark: #7e22ce;
+    --cyan: #06b6d4;
+    --emerald: #10b981;
+    --rose: #f43f5e;
+    --amber: #f59e0b;
+  }
+  * { -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%; max-width: 100%; overflow-x: hidden; margin: 0; padding: 0;
+    background: var(--bg-primary);
+    color: #e2e8f0;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse at 20% 0%, rgba(168,85,247,0.15) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 100%, rgba(6,182,212,0.12) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 50%, rgba(126,34,206,0.05) 0%, transparent 70%);
+    pointer-events: none; z-index: 0;
+  }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  
+  .phone-wrapper {
+    width: 100%; max-width: 540px; margin: 0 auto;
+    min-height: 100vh; display: flex; flex-direction: column;
+    padding: 1rem; position: relative; z-index: 1; box-sizing: border-box;
+  }
 
-        .glass-panel {
-            background: rgba(18, 12, 30, 0.75);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(168, 85, 247, 0.15);
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(168, 85, 247, 0.05);
-            border-radius: 1.75rem;
-            padding: 1.5rem;
-        }
-        .input-glow {
-            background: rgba(12, 8, 22, 0.9);
-            border: 1px solid rgba(168, 85, 247, 0.2);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            border-radius: 9999px;
-            padding: 0.85rem 1.25rem;
-            font-size: 0.95rem;
-        }
-        .input-glow:focus {
-            border-color: rgba(168, 85, 247, 0.8);
-            box-shadow: 0 0 20px rgba(168, 85, 247, 0.25);
-            outline: none;
-        }
-        .cyber-btn {
-            background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);
-            box-shadow: 0 10px 25px -5px rgba(168, 85, 247, 0.4);
-            transition: all 0.3s ease;
-            border-radius: 9999px;
-            padding-top: 0.95rem;
-            padding-bottom: 0.95rem;
-            font-size: 0.95rem;
-        }
-        .cyber-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 15px 30px -5px rgba(168, 85, 247, 0.6);
-        }
-        .cyber-btn-green {
-            background: linear-gradient(135deg, #22c55e 0%, #15803d 100%);
-            box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4);
-            transition: all 0.3s ease;
-            border-radius: 9999px;
-            padding-top: 0.95rem;
-            padding-bottom: 0.95rem;
-            font-size: 0.95rem;
-        }
-        .cyber-btn-green:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.6);
-        }
-        @keyframes pulseGlow {
-            0%, 100% { opacity: 0.3; }
-            50% { opacity: 0.6; }
-        }
-        .glow-bg {
-            animation: pulseGlow 6s infinite ease-in-out;
-        }
-        
-        #nav-drawer {
-            transition: transform 0.3s ease-in-out;
-            transform: translateX(100%);
-            width: 100%;
-            max-width: 360px;
-            padding: 1.75rem;
-        }
-        #nav-drawer.open {
-            transform: translateX(0%);
-        }
-    </style>
+  .glass-panel {
+    background: linear-gradient(145deg, rgba(20,14,38,0.85), rgba(12,8,24,0.75));
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    border: 1px solid rgba(168,85,247,0.18);
+    box-shadow: 0 20px 60px -20px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.04);
+    border-radius: 1.5rem;
+    padding: 1.5rem;
+    position: relative;
+  }
+  .glass-panel::before {
+    content: '';
+    position: absolute; inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(168,85,247,0.4), transparent 40%, transparent 60%, rgba(6,182,212,0.3));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  .input-glow {
+    background: rgba(7,4,15,0.85);
+    border: 1.5px solid rgba(168,85,247,0.18);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 1rem;
+    padding: 0.85rem 1.15rem;
+    font-size: 0.92rem;
+    color: #e2e8f0;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .input-glow:focus {
+    border-color: rgba(168,85,247,0.8);
+    box-shadow: 0 0 0 4px rgba(168,85,247,0.12), 0 0 30px rgba(168,85,247,0.2);
+    outline: none;
+    background: rgba(7,4,15,0.95);
+  }
+  .input-glow::placeholder { color: #4b5563; }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);
+    box-shadow: 0 12px 30px -10px rgba(168,85,247,0.6), inset 0 1px 0 rgba(255,255,255,0.2);
+    transition: all 0.25s ease;
+    border-radius: 1rem;
+    padding: 0.95rem 1rem;
+    font-weight: 700;
+    color: white;
+    width: 100%;
+    border: none;
+    cursor: pointer;
+    font-size: 0.92rem;
+    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  }
+  .btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(168,85,247,0.8); }
+  .btn-primary:active:not(:disabled) { transform: translateY(0); }
+  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .btn-success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    box-shadow: 0 12px 30px -10px rgba(16,185,129,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
+    border-radius: 1rem; padding: 0.95rem 1rem;
+    font-weight: 700; color: #031a12; width: 100%; border: none;
+    cursor: pointer; font-size: 0.92rem;
+    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+    transition: all 0.25s ease;
+  }
+  .btn-success:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(16,185,129,0.7); }
+
+  .btn-secondary {
+    background: rgba(168,85,247,0.1);
+    border: 1px solid rgba(168,85,247,0.25);
+    color: #c4b5fd;
+    border-radius: 0.85rem; padding: 0.65rem 1rem;
+    font-weight: 600; font-size: 0.82rem;
+    cursor: pointer; transition: all 0.2s;
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+  }
+  .btn-secondary:hover { background: rgba(168,85,247,0.2); border-color: rgba(168,85,247,0.5); }
+
+  #nav-drawer {
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    transform: translateX(105%);
+    width: 85%; max-width: 340px;
+    padding: 1.5rem;
+    background: linear-gradient(180deg, rgba(15,10,30,0.98), rgba(7,4,15,0.99));
+    backdrop-filter: blur(30px);
+    border-left: 1px solid rgba(168,85,247,0.2);
+  }
+  #nav-drawer.open { transform: translateX(0); }
+
+  .nav-item {
+    width: 100%; display: flex; align-items: center; gap: 0.85rem;
+    padding: 0.85rem 1rem; border-radius: 0.9rem;
+    color: #94a3b8; font-weight: 600; font-size: 0.88rem;
+    transition: all 0.2s; text-align: left; background: transparent;
+    border: 1px solid transparent; cursor: pointer;
+  }
+  .nav-item:hover {
+    background: rgba(168,85,247,0.08);
+    color: #c4b5fd;
+    border-color: rgba(168,85,247,0.15);
+  }
+  .nav-item.active {
+    background: linear-gradient(135deg, rgba(168,85,247,0.18), rgba(126,34,206,0.1));
+    color: #e9d5ff;
+    border-color: rgba(168,85,247,0.35);
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { opacity: 0.4; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.05); }
+  }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .animate-slide-up { animation: slide-up 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+  
+  .toast {
+    position: fixed; top: 1.25rem; left: 50%; transform: translateX(-50%) translateY(-120%);
+    padding: 0.85rem 1.25rem; border-radius: 1rem;
+    font-weight: 600; font-size: 0.85rem;
+    z-index: 9999; transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    max-width: 90%; display: flex; align-items: center; gap: 0.6rem;
+    box-shadow: 0 20px 40px -10px rgba(0,0,0,0.7);
+    backdrop-filter: blur(20px);
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast-success { background: rgba(16,185,129,0.95); color: #031a12; }
+  .toast-error { background: rgba(244,63,94,0.95); color: white; }
+  .toast-info { background: rgba(168,85,247,0.95); color: white; }
+
+  .progress-bar {
+    width: 100%; height: 8px; background: rgba(168,85,247,0.1);
+    border-radius: 999px; overflow: hidden; position: relative;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #a855f7, #06b6d4, #a855f7);
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+    border-radius: 999px;
+    transition: width 0.3s ease;
+    width: 0%;
+  }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.3rem 0.7rem; border-radius: 999px;
+    font-size: 0.7rem; font-weight: 700;
+    border: 1px solid;
+  }
+  .badge-online { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.35); color: #6ee7b7; }
+  .badge-offline { background: rgba(244,63,94,0.12); border-color: rgba(244,63,94,0.35); color: #fda4af; }
+  .badge-admin { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.4); color: #fbbf24; }
+  .badge-vip { background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.4); color: #d8b4fe; }
+  .badge-user { background: rgba(148,163,184,0.1); border-color: rgba(148,163,184,0.3); color: #cbd5e1; }
+
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(168,85,247,0.25), transparent);
+    margin: 0.75rem 0;
+  }
+
+  .section-title {
+    font-size: 0.72rem; font-weight: 800;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    color: #a78bfa; margin-bottom: 0.6rem;
+    display: flex; align-items: center; gap: 0.4rem;
+  }
+
+  .stat-card {
+    background: rgba(7,4,15,0.6);
+    border: 1px solid rgba(168,85,247,0.15);
+    border-radius: 1rem; padding: 0.85rem 1rem;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  .file-drop {
+    border: 2px dashed rgba(168,85,247,0.3);
+    border-radius: 1rem; padding: 1.5rem 1rem;
+    text-align: center; transition: all 0.25s;
+    cursor: pointer; background: rgba(7,4,15,0.4);
+  }
+  .file-drop:hover, .file-drop.dragover {
+    border-color: rgba(168,85,247,0.7);
+    background: rgba(168,85,247,0.08);
+  }
+
+  .video-container {
+    width: 100%; height: 180px; border-radius: 1.25rem;
+    overflow: hidden; position: relative;
+    border: 1px solid rgba(168,85,247,0.3);
+    box-shadow: 0 0 40px rgba(168,85,247,0.15);
+    background: black;
+  }
+  .video-container video { width: 100%; height: 100%; object-fit: cover; }
+  .video-container::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(to top, rgba(7,4,15,0.7), transparent 50%);
+    pointer-events: none;
+  }
+
+  .icon-btn {
+    width: 2.75rem; height: 2.75rem;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 0.85rem;
+    background: rgba(15,10,30,0.9);
+    border: 1px solid rgba(168,85,247,0.25);
+    color: #c4b5fd; cursor: pointer;
+    transition: all 0.25s ease;
+  }
+  .icon-btn:hover {
+    border-color: rgba(168,85,247,0.6);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px -5px rgba(168,85,247,0.4);
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(168,85,247,0.3); border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(168,85,247,0.5); }
+
+  @media (max-width: 480px) {
+    .phone-wrapper { padding: 0.75rem; }
+    .glass-panel { padding: 1.15rem; border-radius: 1.25rem; }
+  }
+</style>
 </head>
-<body class="min-h-screen text-slate-100 selection:bg-purple-500 selection:text-white">
+<body>
 
-    <div class="absolute top-[-10%] left-[-10%] w-[350px] h-[350px] bg-purple-600/10 rounded-full blur-[120px] pointer-events-none glow-bg"></div>
-    <div class="absolute bottom-[-10%] right-[-10%] w-[350px] h-[350px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none glow-bg"></div>
+<div id="toast-container"></div>
 
-    <div class="phone-wrapper z-10">
-        
-        <!-- HEADER -->
-        <header class="w-full flex items-center justify-between py-3 px-2 border-b border-purple-500/10 mb-4">
-            <div class="flex items-center gap-3">
-                <div class="p-2.5 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-400 text-base">⚡</div>
-                <span id="app-title-header" class="font-extrabold text-sm tracking-tight bg-gradient-to-r from-white to-purple-400 bg-clip-text text-transparent cursor-pointer" onclick="switchView('generator')">UPGRADE AM MENJADI PREMIUM</span>
-            </div>
-            <!-- Tombol Menu Modern -->
-            <button id="header-menu-btn" onclick="toggleMenu()" class="group relative p-3 rounded-2xl bg-slate-900/90 border border-purple-500/20 hover:border-purple-500/60 text-slate-200 transition-all duration-300 flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.1)] hover:shadow-[0_0_20px_rgba(168,85,247,0.3)] hidden" style="width: 3.25rem; height: 3.25rem;">
-                <div class="flex flex-col justify-between items-center h-5 w-5 py-0.5 transition-transform duration-300 group-hover:scale-110">
-                    <span class="w-2 h-2 bg-purple-400 rounded-full shadow-[0_0_8px_#c084fc]"></span>
-                    <span class="w-3.5 h-2 bg-purple-400 rounded-full shadow-[0_0_8px_#c084fc] transition-all duration-300 group-hover:w-5"></span>
-                    <span class="w-2 h-2 bg-purple-400 rounded-full shadow-[0_0_8px_#c084fc]"></span>
-                </div>
-            </button>
-        </header>
+<div class="phone-wrapper">
 
-        <!-- MENU DRAWER SLIDE SAMPING -->
-        <div id="nav-drawer" class="fixed inset-y-0 right-0 z-50 bg-[#0b0614]/95 backdrop-blur-xl border-l border-purple-500/20 flex flex-col justify-between shadow-2xl">
-            <div class="space-y-6">
-                <div class="flex items-center justify-between pb-4 border-b border-purple-500/20">
-                    <div class="flex items-center gap-2">
-                        <h3 class="text-sm font-black uppercase tracking-widest text-purple-400">MENU DASBOARD</h3>
-                    </div>
-                    <button onclick="toggleMenu()" class="w-10 h-10 rounded-xl bg-purple-950/50 border border-purple-500/30 flex items-center justify-center text-slate-300 hover:text-white text-base">✕</button>
-                </div>
+  <header class="flex items-center justify-between py-2 mb-3">
+    <div class="flex items-center gap-2.5">
+      <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: linear-gradient(135deg, rgba(168,85,247,0.25), rgba(6,182,212,0.15)); border: 1px solid rgba(168,85,247,0.3);">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+        </svg>
+      </div>
+      <div>
+        <p class="text-[10px] font-bold uppercase tracking-widest text-purple-400">Premium Access</p>
+        <p class="text-sm font-extrabold text-white">AM BANGGUS</p>
+      </div>
+    </div>
+    <button id="header-menu-btn" onclick="toggleMenu()" class="icon-btn hidden">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <line x1="3" y1="6" x2="21" y2="6"/>
+        <line x1="3" y1="12" x2="21" y2="12"/>
+        <line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+  </header>
 
-                <nav class="space-y-3 text-sm font-semibold">
-                    <button onclick="switchView('generator')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
-                        Generator Utama
-                    </button>
-                    <button onclick="switchView('profile')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
-                        Halaman Akun & Profil
-                    </button>
-                    <button onclick="switchView('guide')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
-                        Panduan Penggunaan
-                    </button>
-                    <button onclick="switchView('announcement')" class="w-full flex items-center gap-3.5 p-3.5 rounded-xl hover:bg-purple-500/10 hover:text-purple-400 text-slate-300 transition text-left">
-                        Informasi & Pengumuman
-                    </button>
-                </nav>
-            </div>
+  <div id="drawer-overlay" onclick="toggleMenu()" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 hidden transition-opacity"></div>
 
-            <div class="pt-5 border-t border-purple-500/20 space-y-3">
-                <div id="drawer-user-info" class="text-xs text-slate-300 truncate">
-                    Status: <span id="drawer-status-role" class="text-purple-400 font-bold">Belum Login</span>
-                </div>
-                <button onclick="handleLogout()" id="drawer-logout-btn" class="w-full py-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm font-bold hover:bg-rose-500/20 transition hidden">
-                    Keluar / Logout
-                </button>
-            </div>
+  <div id="nav-drawer" class="fixed inset-y-0 right-0 z-50 flex flex-col justify-between">
+    <div>
+      <div class="flex items-center justify-between pb-4 mb-4 border-b border-purple-500/20">
+        <div>
+          <p class="text-[10px] font-bold uppercase tracking-widest text-purple-400">Dashboard</p>
+          <h3 class="text-base font-extrabold text-white">MENU</h3>
         </div>
-        <div id="drawer-overlay" onclick="toggleMenu()" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 hidden"></div>
+        <button onclick="toggleMenu()" class="icon-btn" style="width:2.25rem;height:2.25rem;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
 
-        <div class="w-full my-auto py-2 space-y-4">
-            
-            <div id="offline-banner" class="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-semibold text-center hidden">
-                🔴 Server sedang dalam mode OFFLINE. Fitur premium dinonaktifkan.
-            </div>
-
-            <!-- VIEW 1: AUTHENTICATION -->
-            <div id="auth-view" class="glass-panel space-y-5">
-                <div class="text-center space-y-1">
-                    <h1 class="text-xl font-extrabold tracking-tight text-white">Selamat Datang</h1>
-                    <p class="text-xs text-slate-400">Silakan masuk atau daftar untuk mengakses sistem</p>
-                </div>
-                
-                <div class="relative flex rounded-full bg-[#07040d] p-1.5 border border-purple-500/20">
-                    <div id="tab-indicator" class="absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full transition-all duration-300 shadow-lg shadow-purple-500/20"></div>
-                    <button onclick="switchAuthTab('login')" id="tab-login-btn" class="relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-white">LOGIN</button>
-                    <button onclick="switchAuthTab('register')" id="tab-reg-btn" class="relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-slate-400 hover:text-white">REGISTER</button>
-                </div>
-
-                <div class="space-y-4">
-                    <div class="space-y-1.5">
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-2">Username ID</label>
-                        <input type="text" id="auth-username" placeholder="Masukkan username unik..." class="input-glow w-full text-slate-200 font-medium placeholder:text-slate-600">
-                    </div>
-
-                    <div class="space-y-1.5">
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-2">Security Password</label>
-                        <input type="password" id="auth-password" placeholder="••••••••" class="input-glow w-full text-slate-200 font-medium placeholder:text-slate-600">
-                    </div>
-
-                    <div id="email-field-container" class="space-y-1.5 hidden transition-all duration-300">
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-2">Recovery Email</label>
-                        <input type="email" id="auth-email" placeholder="Masukan Gmail Anda" class="input-glow w-full text-slate-200 font-medium placeholder:text-slate-600">
-                        <p class="text-[10px] text-amber-400/90 pl-2 pt-0.5">⚠️ Setiap perangkat/HP hanya diizinkan membuat 1 akun.</p>
-                    </div>
-                </div>
-
-                <button onclick="handleAuthAction()" id="auth-submit-btn" class="cyber-btn w-full text-white font-extrabold uppercase tracking-widest flex items-center justify-center gap-2">
-                    <span id="auth-btn-text">Masuk ke Terminal</span>
-                </button>
-            </div>
-
-            <!-- VIEW 2: HALAMAN UTAMA / GENERATOR -->
-            <div id="terminal-view" class="space-y-4 hidden">
-                
-                <div class="w-full h-44 rounded-2xl overflow-hidden relative border border-purple-500/30 shadow-[0_0_25px_rgba(168,85,247,0.2)] bg-black">
-                    <video id="main-display-video" src="" autoplay loop muted playsinline class="w-full h-full object-cover"></video>
-                    <div class="absolute inset-0 bg-gradient-to-t from-[#0b0614] via-transparent to-transparent opacity-60 pointer-events-none"></div>
-                </div>
-
-                <div class="glass-panel py-3 px-4 flex items-center justify-between text-xs">
-                    <div class="flex items-center gap-2 text-slate-300 truncate">
-                        <div class="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></div>
-                        <span class="truncate">ID: <strong id="logged-username" class="text-white font-bold"></strong></span>
-                    </div>
-                    <div class="flex items-center gap-2 shrink-0">
-                        <div id="server-status-indicator" class="px-2.5 py-1 rounded-full border text-[10px] flex items-center gap-1.5 font-semibold">
-                            <span id="server-dot" class="w-1.5 h-1.5 rounded-full"></span>
-                            <span id="server-status-text">Checking...</span>
-                        </div>
-                        <span id="role-badge" class="px-2.5 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[10px] font-bold">User</span>
-                    </div>
-                </div>
-
-                <div id="vip-status-banner" class="p-3 rounded-2xl bg-gradient-to-r from-amber-500/20 to-yellow-500/10 border border-amber-500/40 hidden flex items-center justify-between">
-                    <div class="flex items-center gap-2.5">
-                        <span class="text-xl">👑</span>
-                        <div>
-                            <p class="text-xs font-extrabold text-amber-400">VIP Premium Member</p>
-                            <p id="vip-expiry-text" class="text-[10px] text-slate-300">Aktif hingga: -</p>
-                        </div>
-                    </div>
-                    <span class="px-2.5 py-1 bg-amber-500 text-slate-950 font-black text-[10px] rounded-full uppercase">ACTIVE</span>
-                </div>
-
-                <div class="glass-panel py-3 px-4 flex items-center justify-between">
-                    <div class="flex items-center gap-2.5">
-                        <div class="w-8 h-8 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 text-xs">⚡</div>
-                        <div>
-                            <p class="text-xs font-bold text-slate-200">Activation Quota</p>
-                            <p class="text-[10px] text-slate-400">Reset otomatis 24 Jam</p>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-1.5 text-purple-300 text-xs font-extrabold bg-purple-500/10 px-3 py-1.5 rounded-full border border-purple-500/20 mono">
-                        <span id="quota-display">0/3</span>
-                    </div>
-                </div>
-
-                <div class="glass-panel space-y-3.5">
-                    
-                    <div class="space-y-1.5">
-                        <label class="text-xs font-bold text-purple-300 flex items-center gap-2 pl-1">
-                            <span>✉️</span> Kirim ke Alight Motion
-                        </label>
-                        <input type="email" id="target-email" placeholder="contoh@gmail.com" class="input-glow w-full text-slate-200">
-                    </div>
-
-                    <button id="btn-send" onclick="handleSendEmail()" class="cyber-btn w-full text-white font-extrabold flex items-center justify-center gap-2">
-                        <span id="send-icon">🚀</span> <span id="send-text">Kirim</span>
-                    </button>
-
-                    <div class="space-y-3 pt-2">
-                        <label class="text-xs font-bold text-emerald-400 flex items-center gap-2 pl-1">
-                            <span>✅</span> Verifikasi
-                        </label>
-                        <input type="text" id="magic-url" placeholder="https://alight-creative.firebaseapp.com/_..." class="input-glow w-full text-emerald-300 font-medium text-xs placeholder:text-slate-600">
-                    </div>
-
-                    <button onclick="handleActivate()" class="cyber-btn-green w-full text-slate-950 font-extrabold flex items-center justify-center gap-2">
-                        <span>✓</span> Verifikasi
-                    </button>
-                </div>
-
-                <div id="result-box" class="input-glow p-3 text-xs hidden text-purple-300 break-all bg-purple-950/20 border-purple-500/30 mono rounded-2xl">
-                    <p id="result-text"></p>
-                </div>
-            </div>
-
-            <!-- VIEW 3: HALAMAN PROFIL KHUSUS AKUN -->
-            <div id="section-profile" class="glass-panel space-y-5 hidden">
-                <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
-                    <h2 class="text-xs font-extrabold text-purple-400 uppercase tracking-wider">Halaman Akun & Profil</h2>
-                    <button onclick="switchView('generator')" class="text-xs text-slate-400 hover:text-white underline">← Kembali</button>
-                </div>
-                
-                <div class="space-y-2 text-xs text-slate-300 p-3.5 rounded-2xl bg-purple-950/20 border border-purple-500/20">
-                    <p>Username Anda: <strong id="profile-uname" class="text-white font-bold"></strong></p>
-                    <p>Tipe Keanggotaan: <strong id="profile-role" class="text-purple-400">Standard User</strong></p>
-                    <p>Sisa Kuota Aktif: <strong id="profile-quota" class="text-cyan-400">0</strong></p>
-                </div>
-
-                <div class="space-y-2 pt-2 border-t border-purple-500/10">
-                    <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-1">Ganti Username Akun</label>
-                    <div class="flex gap-2">
-                        <input type="text" id="new-username-input" placeholder="Username baru..." class="input-glow flex-1 px-4 py-2.5 text-slate-200 text-xs">
-                        <button onclick="triggerUpdateUsername()" class="px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-full text-xs transition">Simpan</button>
-                    </div>
-                </div>
-
-                <div class="space-y-2 pt-2 border-t border-purple-500/10">
-                    <label class="text-[11px] font-bold uppercase tracking-wider text-purple-300 pl-1">Klaim Kode Redeem Kuota</label>
-                    <div class="flex gap-2">
-                        <input type="text" id="redeem-code-input" placeholder="KODE-XXXX..." class="input-glow flex-1 px-4 py-2.5 text-purple-300 font-bold uppercase tracking-widest text-xs">
-                        <button onclick="handleRedeemCode()" class="px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-full text-xs transition">Klaim</button>
-                    </div>
-                </div>
-
-                <!-- ADMIN CONTROL PANEL -->
-                <div id="admin-control-panel" class="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3.5 hidden">
-                    <p class="text-xs font-extrabold text-amber-400 flex items-center gap-2">
-                        <span>👑</span> Admin Master Control Panel
-                    </p>
-                    <div class="grid grid-cols-2 gap-2">
-                        <button onclick="changeServerState('online')" class="py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 rounded-full text-[11px] text-emerald-300 font-bold transition">🟢 Online</button>
-                        <button onclick="changeServerState('offline')" class="py-2.5 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 rounded-full text-[11px] text-rose-300 font-bold transition">🔴 Offline</button>
-                    </div>
-
-                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
-                        <p class="text-[11px] text-amber-300 font-bold">Ubah Video Tampilan Utama (Upload File):</p>
-                        <input type="file" id="admin-video-file" accept="video/*" class="w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer">
-                        <button onclick="handleUploadVideo()" id="btn-upload-video" class="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-full text-xs transition">Upload & Perbarui Video</button>
-                    </div>
-
-                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
-                        <p class="text-[11px] text-amber-300 font-bold">Pengaturan VIP User (Jumlah Hari):</p>
-                        <input type="text" id="vip-target-user" placeholder="Username Target..." class="input-glow w-full px-4 py-2.5 text-slate-200 text-xs">
-                        <div class="flex gap-2">
-                            <input type="number" id="vip-duration-days" placeholder="Jumlah Hari (Cth: 30)" class="input-glow flex-1 px-4 py-2.5 text-slate-200 text-xs">
-                            <button onclick="handleSetVip()" class="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-full text-[11px] transition">Set VIP</button>
-                        </div>
-                        <div class="flex justify-between items-center text-[10px] text-amber-300 pt-0.5">
-                            <span>List Akun VIP Aktif:</span>
-                            <button onclick="loadAdminVipList()" class="text-slate-400 hover:text-white underline">Refresh</button>
-                        </div>
-                        <div id="admin-vip-list" class="space-y-1.5 max-h-28 overflow-y-auto text-[11px]">
-                            <p class="text-slate-500 italic">Memuat list VIP...</p>
-                        </div>
-                    </div>
-
-                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
-                        <p class="text-[11px] text-amber-300 font-bold">Buat Kode Redeem Random:</p>
-                        <input type="text" id="gen-code" placeholder="Nama Kode (Cth: BONUSRAYA)" class="input-glow w-full px-4 py-2.5 text-slate-200 uppercase text-xs">
-                        <div class="grid grid-cols-2 gap-2">
-                            <input type="number" id="gen-total-quota" placeholder="Total Kuota" class="input-glow px-4 py-2.5 text-slate-200 text-xs">
-                            <input type="number" id="gen-max-claims" placeholder="Maks Orang" class="input-glow px-4 py-2.5 text-slate-200 text-xs">
-                        </div>
-                        <button onclick="handleCreateRedeem()" class="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-full text-xs transition">Generate Kode Redeem</button>
-                    </div>
-
-                    <div class="border-t border-amber-500/20 pt-3 space-y-2">
-                        <div class="flex justify-between items-center text-[10px] text-amber-300">
-                            <span>Daftar Kode Aktif:</span>
-                            <button onclick="loadAdminRedeems()" class="text-slate-400 hover:text-white underline">Refresh</button>
-                        </div>
-                        <div id="admin-redeem-list" class="space-y-1.5 max-h-28 overflow-y-auto text-[11px]">
-                            <p class="text-slate-500 italic">Memuat...</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- VIEW 4: HALAMAN PANDUAN PENGGUNAAN -->
-            <div id="section-guide" class="glass-panel space-y-4 hidden">
-                <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
-                    <h2 class="text-xs font-extrabold text-purple-400 uppercase tracking-wider">Panduan Cara Menggunakan</h2>
-                    <button onclick="switchView('generator')" class="text-xs text-slate-400 hover:text-white underline">← Kembali</button>
-                </div>
-                <ol class="list-decimal list-inside space-y-2.5 text-xs text-slate-300 leading-relaxed">
-                    <li>Pastikan Anda sudah berhasil masuk ke dalam sistem menggunakan akun Anda.</li>
-                    <li>Beralih ke menu <strong>Generator Utama</strong> untuk mulai memproses token.</li>
-                    <li>Masukkan email target Google/Gmail Anda pada kolom yang telah disediakan.</li>
-                    <li>Klik tombol <strong>Send</strong> untuk memicu token verifikasi.</li>
-                    <li>Salin tautan Magic Link yang masuk ke email Anda, lalu tempel (*paste*) pada kolom URL.</li>
-                    <li>Klik tombol hijau <strong>Verify</strong> dan proses selesai dengan sempurna!</li>
-                </ol>
-            </div>
-
-            <!-- VIEW 5: HALAMAN INFORMASI & PENGUMUMAN -->
-            <div id="section-announcement" class="glass-panel space-y-4 hidden">
-                <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
-                    <h2 class="text-xs font-extrabold text-cyan-400 uppercase tracking-wider">Informasi & Pengumuman Resmi</h2>
-                    <button onclick="switchView('generator')" class="text-xs text-slate-400 hover:text-white underline">← Kembali</button>
-                </div>
-                
-                <div id="user-announcement-container" class="space-y-3 max-h-72 overflow-y-auto text-xs pr-1">
-                    <p class="text-slate-500 italic">Memuat informasi...</p>
-                </div>
-
-                <div id="admin-announcement-panel" class="space-y-3 pt-3 border-t border-purple-500/20 hidden">
-                    <p class="text-xs font-extrabold text-amber-400">Panel Tambah/Edit Pengumuman (Admin)</p>
-                    <input type="hidden" id="info-edit-id" value="">
-                    <input type="text" id="info-title" placeholder="Judul Informasi" class="input-glow w-full px-4 py-2.5 text-slate-200 text-xs">
-                    <textarea id="info-content" placeholder="Isi pesan informasi..." class="input-glow w-full px-4 py-2.5 text-slate-200 h-24 resize-none text-xs rounded-2xl"></textarea>
-                    <div class="flex gap-2">
-                        <button id="info-submit-btn" onclick="handleSaveAnnouncement()" class="flex-1 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-full text-xs transition">Publikasikan Info</button>
-                        <button id="info-cancel-btn" onclick="resetInfoForm()" class="px-3 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-full text-xs hidden">Batal</button>
-                    </div>
-                    <div id="admin-info-list" class="space-y-1.5 max-h-28 overflow-y-auto text-[11px] pt-1">
-                        <p class="text-slate-500 italic">Memuat list kelola info...</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="text-center pt-1">
-                <p class="text-[10px] text-slate-500 tracking-wider font-medium">AM Premium • By Banggus</p>
-            </div>
-        </div>
+      <nav class="space-y-1.5">
+        <button onclick="switchView('generator')" data-nav="generator" class="nav-item active">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Generator Utama
+        </button>
+        <button onclick="switchView('profile')" data-nav="profile" class="nav-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Akun & Profil
+        </button>
+        <button onclick="switchView('guide')" data-nav="guide" class="nav-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          Panduan
+        </button>
+        <button onclick="switchView('announcement')" data-nav="announcement" class="nav-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
+          Pengumuman
+        </button>
+      </nav>
     </div>
 
-    <script>
-        let currentAuthMode = 'login';
-        let loggedInUsername = '';
-        let isAdminUser = false;
-
-        function toggleMenu() {
-            const drawer = document.getElementById('nav-drawer');
-            const overlay = document.getElementById('drawer-overlay');
-            drawer.classList.toggle('open');
-            overlay.classList.toggle('hidden');
-        }
-
-        function switchView(viewName) {
-            toggleMenu(); 
-            
-            document.getElementById('terminal-view').classList.add('hidden');
-            document.getElementById('section-profile').classList.add('hidden');
-            document.getElementById('section-guide').classList.add('hidden');
-            document.getElementById('section-announcement').classList.add('hidden');
-
-            if (viewName === 'generator') {
-                document.getElementById('terminal-view').classList.remove('hidden');
-            } else if (viewName === 'profile') {
-                document.getElementById('section-profile').classList.remove('hidden');
-            } else if (viewName === 'guide') {
-                document.getElementById('section-guide').classList.remove('hidden');
-            } else if (viewName === 'announcement') {
-                document.getElementById('section-announcement').classList.remove('hidden');
-                loadUserAnnouncements();
-            }
-        }
-
-        async function fetchServerStatus() {
-            try {
-                const res = await fetch('/api/status');
-                const data = await res.json();
-                updateStatusUI(data.status);
-            } catch(e) {}
-        }
-
-        async function fetchFeaturedVideo() {
-            try {
-                const res = await fetch('/api/video');
-                const data = await res.json();
-                if (data.success && data.videoUrl) {
-                    const videoEl = document.getElementById('main-display-video');
-                    if (videoEl && videoEl.src !== data.videoUrl) {
-                        videoEl.src = data.videoUrl;
-                    }
-                }
-            } catch(e) {}
-        }
-
-        function updateStatusUI(status) {
-            const ind = document.getElementById('server-status-indicator');
-            const dot = document.getElementById('server-dot');
-            const txt = document.getElementById('server-status-text');
-            const offlineBanner = document.getElementById('offline-banner');
-
-            if (!ind || !dot || !txt) return;
-
-            if (status === 'online') {
-                ind.className = "px-2.5 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-[10px] flex items-center gap-1.5 font-semibold";
-                dot.className = "w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse";
-                txt.innerText = "Online";
-                if (offlineBanner) offlineBanner.classList.add('hidden');
-            } else {
-                ind.className = "px-2.5 py-1 rounded-full border border-rose-500/30 bg-rose-500/10 text-rose-400 text-[10px] flex items-center gap-1.5 font-semibold";
-                dot.className = "w-1.5 h-1.5 rounded-full bg-rose-500";
-                txt.innerText = "Offline";
-                if (offlineBanner && !isAdminUser) offlineBanner.classList.remove('hidden');
-            }
-        }
-
-        fetchServerStatus();
-        fetchFeaturedVideo();
-        setInterval(fetchServerStatus, 5000);
-        setInterval(fetchFeaturedVideo, 10000);
-
-        function switchAuthTab(mode) {
-            currentAuthMode = mode;
-            const loginBtn = document.getElementById('tab-login-btn');
-            const regBtn = document.getElementById('tab-reg-btn');
-            const indicator = document.getElementById('tab-indicator');
-            const emailField = document.getElementById('email-field-container');
-            const btnText = document.getElementById('auth-btn-text');
-
-            if(mode === 'login') {
-                indicator.style.transform = 'translateX(0%)';
-                loginBtn.className = "relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-white";
-                regBtn.className = "relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-slate-400 hover:text-white";
-                emailField.classList.add('hidden');
-                btnText.innerText = "Masuk ke Terminal";
-            } else {
-                indicator.style.transform = 'translateX(100%)';
-                regBtn.className = "relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-white";
-                loginBtn.className = "relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-full transition-colors text-slate-400 hover:text-white";
-                emailField.classList.remove('hidden');
-                btnText.innerText = "Daftar Akun Baru";
-            }
-        }
-
-        async function handleAuthAction() {
-            const username = document.getElementById('auth-username').value.trim();
-            const password = document.getElementById('auth-password').value.trim();
-            const email = document.getElementById('auth-email').value.trim();
-
-            if (!username || !password) return alert('Username dan password wajib diisi!');
-
-            let deviceToken = localStorage.getItem('am_device_token');
-            if (currentAuthMode === 'register' && deviceToken) {
-                return alert('Perangkat/HP ini sudah pernah mendaftarkan akun sebelumnya!');
-            }
-
-            try {
-                const res = await fetch('/api/auth', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mode: currentAuthMode, username, password, email, deviceToken })
-                });
-                const data = await res.json();
-
-                if (data.success) {
-                    if (currentAuthMode === 'register' && data.deviceToken) {
-                        localStorage.setItem('am_device_token', data.deviceToken);
-                    }
-                    if (data.token) {
-                        localStorage.setItem('authToken', data.token);
-                        localStorage.setItem('savedUsername', data.username);
-                    }
-                    alert(data.message);
-                    loggedInUsername = data.username;
-                    isAdminUser = data.isAdmin;
-
-                    document.getElementById('auth-view').classList.add('hidden');
-                    document.getElementById('terminal-view').classList.remove('hidden');
-                    
-                    document.getElementById('header-menu-btn').classList.remove('hidden');
-                    document.getElementById('logged-username').innerText = data.username;
-                    
-                    document.getElementById('profile-uname').innerText = data.username;
-                    document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'Standard User');
-                    document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (1 + (data.bonusQuota || 0) - data.usedQuota);
-
-                    document.getElementById('drawer-status-role').innerText = data.username + ' (' + (data.isAdmin ? 'Admin' : 'User') + ')';
-                    document.getElementById('drawer-logout-btn').classList.remove('hidden');
-
-                    updateQuotaDisplay(data);
-                    checkVipStatus(data);
-                    loadUserAnnouncements();
-                    updateStatusUI(data.serverStatus);
-                    fetchFeaturedVideo();
-
-                    if(data.isAdmin) {
-                        document.getElementById('role-badge').className = "px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-extrabold";
-                        document.getElementById('role-badge').innerText = "👑 Admin Master";
-                        document.getElementById('admin-control-panel').classList.remove('hidden');
-                        document.getElementById('admin-announcement-panel').classList.remove('hidden');
-                        loadAdminRedeems();
-                        loadAdminAnnouncements();
-                        loadAdminVipList();
-                    }
-                } else {
-                    alert('Gagal: ' + data.message);
-                }
-            } catch (err) {
-                alert('Terjadi kesalahan koneksi server.');
-            }
-        }
-
-        async function checkSavedSession() {
-            const token = localStorage.getItem('authToken');
-            const savedUname = localStorage.getItem('savedUsername');
-            if (!token || !savedUname) return;
-
-            try {
-                const res = await fetch('/api/auth/session', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: savedUname, token })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    loggedInUsername = data.username;
-                    isAdminUser = data.isAdmin;
-
-                    document.getElementById('auth-view').classList.add('hidden');
-                    document.getElementById('terminal-view').classList.remove('hidden');
-                    
-                    document.getElementById('header-menu-btn').classList.remove('hidden');
-                    document.getElementById('logged-username').innerText = data.username;
-                    
-                    document.getElementById('profile-uname').innerText = data.username;
-                    document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'Standard User');
-                    document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (1 + (data.bonusQuota || 0) - data.usedQuota);
-
-                    document.getElementById('drawer-status-role').innerText = data.username + ' (' + (data.isAdmin ? 'Admin' : 'User') + ')';
-                    document.getElementById('drawer-logout-btn').classList.remove('hidden');
-
-                    updateQuotaDisplay(data);
-                    checkVipStatus(data);
-                    loadUserAnnouncements();
-                    updateStatusUI(data.serverStatus);
-                    fetchFeaturedVideo();
-
-                    if(data.isAdmin) {
-                        document.getElementById('role-badge').className = "px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-extrabold";
-                        document.getElementById('role-badge').innerText = "👑 Admin Master";
-                        document.getElementById('admin-control-panel').classList.remove('hidden');
-                        document.getElementById('admin-announcement-panel').classList.remove('hidden');
-                        loadAdminRedeems();
-                        loadAdminAnnouncements();
-                        loadAdminVipList();
-                    }
-                }
-            } catch (e) {}
-        }
-        checkSavedSession();
-
-        async function triggerUpdateUsername() {
-            const newUsername = document.getElementById('new-username-input').value.trim();
-            if (!newUsername) return alert('Masukkan username baru!');
-            await handleUpdateUsername(newUsername);
-        }
-
-        async function handleUpdateUsername(newUsername) {
-            try {
-                const response = await fetch('/api/user/username', {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer ' + (localStorage.getItem('authToken') || '')
-                    },
-                    body: JSON.stringify({ currentUsername: loggedInUsername, newUsername })
-                });
-
-                const result = await response.json();
-                if (response.ok && result.success) {
-                    alert('Username berhasil diubah!');
-                    loggedInUsername = result.newUsername;
-                    localStorage.setItem('savedUsername', loggedInUsername);
-                    document.getElementById('logged-username').innerText = loggedInUsername;
-                    document.getElementById('profile-uname').innerText = loggedInUsername;
-                    document.getElementById('new-username-input').value = '';
-                } else {
-                    alert(result.message || 'Gagal mengubah username.');
-                }
-            } catch (error) {
-                console.error('Terjadi kesalahan:', error);
-                alert('Terjadi kesalahan jaringan.');
-            }
-        }
-
-        async function handleUploadVideo() {
-            if (!isAdminUser) return alert('Akses ditolak! Hanya admin.');
-            const fileInput = document.getElementById('admin-video-file');
-            const file = fileInput.files[0];
-            if (!file) return alert('Silakan pilih file video terlebih dahulu!');
-
-            const uploadBtn = document.getElementById('btn-upload-video');
-            uploadBtn.innerText = "Mengunggah & Mengonversi...";
-            uploadBtn.disabled = true;
-
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = async function () {
-                const base64Video = reader.result;
-                try {
-                    const res = await fetch('/api/admin/set-video', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username: loggedInUsername, videoUrl: base64Video })
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        alert('Video berhasil diperbarui dan disiarkan ke semua user!');
-                        fileInput.value = '';
-                        fetchFeaturedVideo();
-                    } else {
-                        alert(data.message || 'Gagal mengunggah video.');
-                    }
-                } catch(e) {
-                    alert('Terjadi kesalahan koneksi saat mengunggah video.');
-                } finally {
-                    uploadBtn.innerText = "Upload & Perbarui Video";
-                    uploadBtn.disabled = false;
-                }
-            };
-            reader.onerror = function() {
-                alert('Gagal membaca file.');
-                uploadBtn.innerText = "Upload & Perbarui Video";
-                uploadBtn.disabled = false;
-            };
-        }
-
-        function updateQuotaDisplay(data) {
-            if(data.isAdmin || data.isVip) {
-                document.getElementById('quota-display').innerText = "UNLIMITED";
-            } else {
-                document.getElementById('quota-display').innerText = data.usedQuota + "/1 (+" + data.bonusQuota + ")";
-            }
-        }
-
-        function checkVipStatus(data) {
-            const banner = document.getElementById('vip-status-banner');
-            const expiryText = document.getElementById('vip-expiry-text');
-            if (data.isVip && !data.isAdmin) {
-                banner.classList.remove('hidden');
-                expiryText.innerText = "Aktif hingga: " + new Date(data.vipUntil).toLocaleString();
-            } else {
-                banner.classList.add('hidden');
-            }
-        }
-
-        async function changeServerState(newState) {
-            if (!isAdminUser) return alert('Akses ditolak!');
-            try {
-                const res = await fetch('/api/admin/set-status', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: newState, username: loggedInUsername })
-                });
-                const data = await res.json();
-                if(data.success) {
-                    updateStatusUI(newState);
-                    alert('Status server diubah: ' + newState.toUpperCase());
-                }
-            } catch(e) { alert('Gagal mengubah status server.'); }
-        }
-
-        async function handleSetVip() {
-            if (!isAdminUser) return;
-            const targetUser = document.getElementById('vip-target-user').value.trim();
-            const days = parseInt(document.getElementById('vip-duration-days').value);
-
-            if (!targetUser || isNaN(days)) return alert('Username dan jumlah hari wajib diisi!');
-
-            try {
-                const res = await fetch('/api/admin/set-vip', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: loggedInUsername, targetUser, days })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    alert(data.message);
-                    document.getElementById('vip-target-user').value = '';
-                    document.getElementById('vip-duration-days').value = '';
-                    loadAdminVipList();
-                } else { alert(data.message); }
-            } catch(e) { alert('Gagal mengatur status VIP.'); }
-        }
-
-        async function loadAdminVipList() {
-            if (!isAdminUser) return;
-            try {
-                const res = await fetch('/api/admin/get-vip-list?username=' + encodeURIComponent(loggedInUsername));
-                const data = await res.json();
-                const container = document.getElementById('admin-vip-list');
-                container.innerHTML = '';
-
-                if (data.success && Object.keys(data.vipUsers).length > 0) {
-                    for (let [uname, val] of Object.entries(data.vipUsers)) {
-                        container.innerHTML += \`
-                            <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
-                                <div>
-                                    <span class="text-amber-300 font-bold">\${uname}</span>
-                                    <span class="text-slate-400 block text-[9px]">Expired: \${new Date(val.vipUntil).toLocaleDateString()}</span>
-                                </div>
-                                <button onclick="handleRemoveVip('\${uname}')" class="px-2 py-1 bg-rose-500/25 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
-                            </div>
-                        \`;
-                    }
-                } else {
-                    container.innerHTML = '<p class="text-slate-500 italic">Tidak ada akun VIP aktif.</p>';
-                }
-            } catch(e) {}
-        }
-
-        async function handleRemoveVip(targetUser) {
-            if (!confirm('Cabut status VIP untuk user ' + targetUser + '?')) return;
-            try {
-                const res = await fetch('/api/admin/remove-vip', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: loggedInUsername, targetUser })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    alert('Status VIP berhasil dicabut.');
-                    loadAdminVipList();
-                }
-            } catch(e) { alert('Gagal mencabut VIP.'); }
-        }
-
-        async function loadUserAnnouncements() {
-            try {
-                const res = await fetch('/api/announcements');
-                const data = await res.json();
-                const container = document.getElementById('user-announcement-container');
-                container.innerHTML = '';
-
-                if (data.success && Object.keys(data.announcements).length > 0) {
-                    const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
-                    for (let [id, val] of entries) {
-                        container.innerHTML += \`
-                            <div class="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/20 space-y-1">
-                                <div class="flex justify-between items-center text-cyan-300 font-bold text-xs">
-                                    <span>\${val.title}</span>
-                                    <span class="text-[9px] text-slate-400 font-mono">\${new Date(val.timestamp).toLocaleDateString()}</span>
-                                </div>
-                                <p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">\${val.content}</p>
-                            </div>
-                        \`;
-                    }
-                } else {
-                    container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi terbaru.</p>';
-                }
-            } catch(e) {}
-        }
-
-        async function loadAdminAnnouncements() {
-            if (!isAdminUser) return;
-            try {
-                const res = await fetch('/api/announcements');
-                const data = await res.json();
-                const container = document.getElementById('admin-info-list');
-                container.innerHTML = '';
-
-                if (data.success && Object.keys(data.announcements).length > 0) {
-                    const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
-                    for (let [id, val] of entries) {
-                        container.innerHTML += \`
-                            <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
-                                <div class="truncate mr-2">
-                                    <span class="text-amber-300 font-bold block truncate">\${val.title}</span>
-                                    <span class="text-slate-400 truncate block text-[9px]">\${val.content.substring(0, 30)}...</span>
-                                </div>
-                                <div class="flex gap-1 shrink-0">
-                                    <button onclick="editAnnouncement('\${id}', '\${encodeURIComponent(val.title)}', '\${encodeURIComponent(val.content)}')" class="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 rounded-lg border border-sky-500/30 text-[10px]">Edit</button>
-                                    <button onclick="deleteAnnouncement('\${id}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
-                                </div>
-                            </div>
-                        \`;
-                    }
-                } else {
-                    container.innerHTML = '<p class="text-slate-500 italic">Belum ada informasi.</p>';
-                }
-            } catch(e) {}
-        }
-
-        async function handleSaveAnnouncement() {
-            if (!isAdminUser) return;
-            const id = document.getElementById('info-edit-id').value;
-            const title = document.getElementById('info-title').value.trim();
-            const content = document.getElementById('info-content').value.trim();
-
-            if (!title || !content) return alert('Judul dan isi informasi wajib diisi!');
-
-            const endpoint = id ? '/api/admin/update-announcement' : '/api/admin/create-announcement';
-
-            try {
-                const res = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: loggedInUsername, id, title, content })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    alert(data.message);
-                    resetInfoForm();
-                    loadAdminAnnouncements();
-                    loadUserAnnouncements();
-                } else { alert(data.message); }
-            } catch(e) { alert('Gagal menyimpan informasi.'); }
-        }
-
-        function editAnnouncement(id, encTitle, encContent) {
-            document.getElementById('info-edit-id').value = id;
-            document.getElementById('info-title').value = decodeURIComponent(encTitle);
-            document.getElementById('info-content').value = decodeURIComponent(encContent);
-            document.getElementById('info-submit-btn').innerText = "Perbarui Info";
-            document.getElementById('info-cancel-btn').classList.remove('hidden');
-        }
-
-        function resetInfoForm() {
-            document.getElementById('info-edit-id').value = '';
-            document.getElementById('info-title').value = '';
-            document.getElementById('info-content').value = '';
-            document.getElementById('info-submit-btn').innerText = "Publikasikan Info";
-            document.getElementById('info-cancel-btn').classList.add('hidden');
-        }
-
-        async function deleteAnnouncement(id) {
-            if (!confirm('Hapus informasi ini?')) return;
-            try {
-                const res = await fetch('/api/admin/delete-announcement', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: loggedInUsername, id })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    alert('Informasi berhasil dihapus.');
-                    loadAdminAnnouncements();
-                    loadUserAnnouncements();
-                }
-            } catch(e) { alert('Gagal menghapus informasi.'); }
-        }
-
-        async function handleCreateRedeem() {
-            if (!isAdminUser) return;
-            const code = document.getElementById('gen-code').value.trim().toUpperCase();
-            const totalQuota = parseInt(document.getElementById('gen-total-quota').value);
-            const maxClaims = parseInt(document.getElementById('gen-max-claims').value);
-
-            if (!code || isNaN(totalQuota) || isNaN(maxClaims)) return alert('Semua field redeem wajib diisi!');
-
-            try {
-                const res = await fetch('/api/admin/create-redeem', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: loggedInUsername, code, totalQuota, maxClaims })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    alert(data.message);
-                    document.getElementById('gen-code').value = '';
-                    document.getElementById('gen-total-quota').value = '';
-                    document.getElementById('gen-max-claims').value = '';
-                    loadAdminRedeems();
-                } else { alert(data.message); }
-            } catch(e) { alert('Gagal membuat kode.'); }
-        }
-
-        async function loadAdminRedeems() {
-            if (!isAdminUser) return;
-            try {
-                const res = await fetch('/api/admin/get-redeems?username=' + encodeURIComponent(loggedInUsername));
-                const data = await res.json();
-                const listContainer = document.getElementById('admin-redeem-list');
-                listContainer.innerHTML = '';
-
-                if(data.success && Object.keys(data.redeems).length > 0) {
-                    for(let [code, val] of Object.entries(data.redeems)) {
-                        listContainer.innerHTML += \`
-                            <div class="flex justify-between items-center bg-slate-900/80 p-2 rounded-xl border border-amber-500/20">
-                                <div>
-                                    <span class="text-amber-300 font-bold">\${code}</span>
-                                    <span class="text-slate-400 block text-[9px]">Kuota: \${val.totalQuota} | Klaim: \${val.claimedCount}/\${val.maxClaims}</span>
-                                </div>
-                                <button onclick="handleDeleteRedeem('\${code}')" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg border border-rose-500/30 text-[10px]">Hapus</button>
-                            </div>
-                        \`;
-                    }
-                } else {
-                    listContainer.innerHTML = '<p class="text-slate-500 italic">Belum ada kode aktif.</p>';
-                }
-            } catch(e) {}
-        }
-
-        async function handleDeleteRedeem(code) {
-            if(!confirm('Hapus kode redeem ' + code + '?')) return;
-            try {
-                const res = await fetch('/api/admin/delete-redeem', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: loggedInUsername, code })
-                });
-                const data = await res.json();
-                if(data.success) {
-                    alert('Kode berhasil dihapus.');
-                    loadAdminRedeems();
-                }
-            } catch(e) { alert('Gagal menghapus kode.'); }
-        }
-
-        async function handleRedeemCode() {
-            const code = document.getElementById('redeem-code-input').value.trim().toUpperCase();
-            if (!code) return alert('Masukkan kode redeem!');
-
-            try {
-                const res = await fetch('/api/redeem', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: loggedInUsername, code })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    alert(data.message);
-                    document.getElementById('redeem-code-input').value = '';
-                    updateQuotaDisplay(data);
-                } else { alert(data.message); }
-            } catch(e) { alert('Gagal memproses redeem.'); }
-        }
-
-        async function handleSendEmail() {
-            const email = document.getElementById('target-email').value.trim();
-            const sendText = document.getElementById('send-text');
-            const sendIcon = document.getElementById('send-icon');
-            const resultBox = document.getElementById('result-box');
-            const resultText = document.getElementById('result-text');
-
-            if (!email) return alert('Harap masukkan email target!');
-
-            sendText.innerText = "Mengirim...";
-            sendIcon.innerText = "⏳";
-            resultBox.classList.remove('hidden');
-            resultText.innerText = "⏳ Pending...";
-
-            try {
-                const res = await fetch('/api/magiclink', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: loggedInUsername, email })
-                });
-                const data = await res.json();
-
-                if(data.success) {
-                    sendText.innerText = "KIRIM";
-                    sendIcon.innerText = "🚀";
-                    resultText.innerText = JSON.stringify(data.result, null, 2);
-
-                    if(!isAdminUser && data.quotaInfo) {
-                        updateQuotaDisplay(data.quotaInfo);
-                    }
-                } else {
-                    sendText.innerText = "Gagal";
-                    sendIcon.innerText = "✕";
-                    resultText.innerText = "Error: " + data.message;
-                    alert(data.message);
-                }
-            } catch (err) {
-                sendText.innerText = "Gagal";
-                sendIcon.innerText = "✕";
-                resultText.innerText = "Error: " + err.message;
-            }
-        }
-
-        async function handleActivate() {
-            const email = document.getElementById('target-email').value;
-            const magicUrl = document.getElementById('magic-url').value;
-            const resultBox = document.getElementById('result-box');
-            const resultText = document.getElementById('result-text');
-
-            if (!email || !magicUrl) return alert('Email dan URL wajib diisi!');
-
-            resultBox.classList.remove('hidden');
-            resultText.innerText = "Memverifikasi token aktivasi...";
-
-            try {
-                const res = await fetch('/api/verif', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, url: magicUrl, username: loggedInUsername })
-                });
-                const data = await res.json();
-                resultText.innerText = JSON.stringify(data, null, 2);
-            } catch (err) {
-                resultText.innerText = "Error: " + err.message;
-            }
-        }
-
-        function handleLogout() {
-            localStorage.removeItem('authToken');
-            localStorage.removeItem('savedUsername');
-            sessionStorage.clear();
-            window.location.reload();
-        }
-    </script>
+    <div class="pt-4 border-t border-purple-500/20 space-y-3">
+      <div class="flex items-center gap-2.5 p-3 rounded-xl" style="background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.15);">
+        <div class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-black" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">
+          <span id="drawer-avatar">?</span>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p id="drawer-username" class="text-xs font-bold text-white truncate">Guest</p>
+          <p id="drawer-role" class="text-[10px] text-purple-400 font-semibold">Belum Login</p>
+        </div>
+      </div>
+      <button onclick="handleLogout()" id="drawer-logout-btn" class="w-full py-2.5 rounded-xl text-rose-400 text-xs font-bold transition hidden flex items-center justify-center gap-2" style="background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.25);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Keluar
+      </button>
+    </div>
+  </div>
+
+  <div class="flex-1 flex flex-col justify-center py-2 space-y-3">
+
+    <div id="offline-banner" class="p-3 rounded-2xl text-xs font-semibold text-center hidden animate-slide-up" style="background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.3); color: #fda4af;">
+      <div class="flex items-center justify-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+        Server sedang OFFLINE — Fitur premium dinonaktifkan
+      </div>
+    </div>
+
+    <!-- VIEW: AUTH -->
+    <div id="auth-view" class="glass-panel space-y-5 animate-slide-up">
+      <div class="text-center space-y-1.5">
+        <div class="inline-flex w-14 h-14 rounded-2xl items-center justify-center mb-1" style="background: linear-gradient(135deg, rgba(168,85,247,0.25), rgba(6,182,212,0.15)); border: 1px solid rgba(168,85,247,0.35);">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        </div>
+        <h1 class="text-xl font-extrabold text-white tracking-tight">Selamat Datang</h1>
+        <p class="text-xs text-slate-400">Masuk atau daftar untuk mengakses sistem premium</p>
+      </div>
+
+      <div class="relative flex rounded-2xl p-1" style="background: rgba(7,4,15,0.8); border: 1px solid rgba(168,85,247,0.15);">
+        <div id="tab-indicator" class="absolute top-1 bottom-1 left-1 w-[calc(50%-4px)] rounded-xl transition-all duration-300" style="background: linear-gradient(135deg, #a855f7, #7e22ce); box-shadow: 0 4px 15px rgba(168,85,247,0.4);"></div>
+        <button onclick="switchAuthTab('login')" id="tab-login-btn" class="relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-xl transition-colors text-white">LOGIN</button>
+        <button onclick="switchAuthTab('register')" id="tab-reg-btn" class="relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-xl transition-colors text-slate-400">REGISTER</button>
+      </div>
+
+      <div class="space-y-3.5">
+        <div class="space-y-1.5">
+          <label class="text-[10px] font-bold uppercase tracking-widest text-purple-300 pl-1">Username</label>
+          <input type="text" id="auth-username" placeholder="username_unik" class="input-glow mono">
+        </div>
+        <div class="space-y-1.5">
+          <label class="text-[10px] font-bold uppercase tracking-widest text-purple-300 pl-1">Password</label>
+          <input type="password" id="auth-password" placeholder="••••••••" class="input-glow">
+        </div>
+        <div id="email-field-container" class="space-y-1.5 hidden">
+          <label class="text-[10px] font-bold uppercase tracking-widest text-purple-300 pl-1">Recovery Email</label>
+          <input type="email" id="auth-email" placeholder="email@gmail.com" class="input-glow">
+          <p class="text-[10px] text-amber-400/90 pl-1 flex items-center gap-1.5">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            1 perangkat hanya bisa daftar 1 akun
+          </p>
+        </div>
+      </div>
+
+      <button onclick="handleAuthAction()" id="auth-submit-btn" class="btn-primary">
+        <span id="auth-btn-text">Masuk ke Terminal</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </button>
+    </div>
+
+    <!-- VIEW: TERMINAL -->
+    <div id="terminal-view" class="space-y-3 hidden">
+
+      <div class="video-container">
+        <video id="main-display-video" src="" autoplay loop muted playsinline></video>
+        <div class="absolute bottom-0 left-0 right-0 p-3 flex items-center justify-between z-10">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span class="text-[10px] font-bold text-white/90 uppercase tracking-wider">Live Preview</span>
+          </div>
+          <span id="video-resolution" class="text-[9px] mono text-white/60"></span>
+        </div>
+      </div>
+
+      <div class="glass-panel py-2.5 px-3.5 flex items-center justify-between">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-9 h-9 rounded-xl flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">
+            <span id="user-avatar">U</span>
+          </div>
+          <div class="min-w-0">
+            <p class="text-xs font-bold text-white truncate" id="logged-username">-</p>
+            <span id="role-badge" class="badge badge-user mt-0.5">User</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <span id="server-status-indicator" class="badge badge-online">
+            <span id="server-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span id="server-status-text">...</span>
+          </span>
+        </div>
+      </div>
+
+      <div id="vip-status-banner" class="p-3.5 rounded-2xl hidden animate-slide-up" style="background: linear-gradient(135deg, rgba(245,158,11,0.2), rgba(168,85,247,0.15)); border: 1px solid rgba(245,158,11,0.4);">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: rgba(245,158,11,0.2);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
+            </div>
+            <div>
+              <p class="text-xs font-extrabold text-amber-300">VIP PREMIUM MEMBER</p>
+              <p id="vip-expiry-text" class="text-[10px] text-slate-300">Aktif hingga: -</p>
+            </div>
+          </div>
+          <span class="badge badge-vip">ACTIVE</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2.5">
+        <div class="stat-card">
+          <div>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-purple-300">Kuota</p>
+            <p id="quota-display" class="text-sm font-extrabold text-white mono mt-0.5">0/1</p>
+          </div>
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(168,85,247,0.15);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-cyan-300">Reset</p>
+            <p class="text-sm font-extrabold text-white mono mt-0.5">24 Jam</p>
+          </div>
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(6,182,212,0.15);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#67e8f9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-panel space-y-3.5">
+        <div>
+          <div class="section-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            Kirim Magic Link
+          </div>
+          <input type="email" id="target-email" placeholder="target@gmail.com" class="input-glow">
+        </div>
+
+        <button id="btn-send" onclick="handleSendEmail()" class="btn-primary">
+          <svg id="send-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          <span id="send-text">Kirim Magic Link</span>
+        </button>
+
+        <div class="divider"></div>
+
+        <div>
+          <div class="section-title" style="color: #6ee7b7;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            Verifikasi Magic URL
+          </div>
+          <input type="text" id="magic-url" placeholder="https://alight-creative.firebaseapp.com/_..." class="input-glow mono" style="font-size: 0.8rem;">
+        </div>
+
+        <button onclick="handleActivate()" class="btn-success">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Verifikasi Sekarang
+        </button>
+      </div>
+
+      <div id="result-box" class="hidden">
+        <div class="glass-panel" style="padding: 1rem;">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-purple-300">Response</span>
+            <button onclick="copyResult()" class="btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.68rem;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy
+            </button>
+          </div>
+          <pre id="result-text" class="mono text-[11px] text-purple-300 whitespace-pre-wrap break-all" style="max-height: 200px; overflow-y: auto;"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: PROFILE -->
+    <div id="section-profile" class="glass-panel space-y-4 hidden">
+      <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
+        <h2 class="section-title" style="margin: 0;">Akun & Profil</h2>
+        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+      </div>
+
+      <div class="space-y-2.5">
+        <div class="stat-card">
+          <div>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Username</p>
+            <p id="profile-uname" class="text-sm font-bold text-white mono mt-0.5">-</p>
+          </div>
+          <div class="w-9 h-9 rounded-xl flex items-center justify-center" style="background: rgba(168,85,247,0.15);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2.5">
+          <div class="stat-card">
+            <div>
+              <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tipe</p>
+              <p id="profile-role" class="text-xs font-bold text-purple-400 mt-0.5">Standard</p>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div>
+              <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Kuota</p>
+              <p id="profile-quota" class="text-xs font-bold text-cyan-400 mono mt-0.5">0</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div>
+        <div class="section-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Ganti Username
+        </div>
+        <div class="flex gap-2">
+          <input type="text" id="new-username-input" placeholder="username_baru" class="input-glow" style="flex: 1; padding: 0.7rem 1rem; font-size: 0.85rem;">
+          <button onclick="triggerUpdateUsername()" class="btn-primary" style="width: auto; padding: 0.7rem 1rem; font-size: 0.8rem;">Simpan</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title" style="color: #67e8f9;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 12v10H4V12"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+          Klaim Kode Redeem
+        </div>
+        <div class="flex gap-2">
+          <input type="text" id="redeem-code-input" placeholder="KODE-REDEEM" class="input-glow mono uppercase" style="flex: 1; padding: 0.7rem 1rem; font-size: 0.85rem; font-weight: 700;">
+          <button onclick="handleRedeemCode()" class="btn-primary" style="width: auto; padding: 0.7rem 1rem; font-size: 0.8rem;">Klaim</button>
+        </div>
+      </div>
+
+      <!-- ADMIN PANEL -->
+      <div id="admin-control-panel" class="hidden space-y-4 pt-3 border-t border-amber-500/20">
+        <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(168,85,247,0.08)); border: 1px solid rgba(245,158,11,0.3);">
+          <p class="text-xs font-extrabold text-amber-300 flex items-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
+            ADMIN MASTER CONTROL
+          </p>
+        </div>
+
+        <div>
+          <p class="section-title" style="color: #fbbf24;">Status Server</p>
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="changeServerState('online')" class="btn-secondary" style="background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.35); color: #6ee7b7;">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Online
+            </button>
+            <button onclick="changeServerState('offline')" class="btn-secondary" style="background: rgba(244,63,94,0.12); border-color: rgba(244,63,94,0.35); color: #fda4af;">
+              <span class="w-2 h-2 rounded-full bg-rose-500"></span> Offline
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <p class="section-title" style="color: #fbbf24;">Upload Video (>5MB Support)</p>
+          <div id="file-drop-zone" class="file-drop">
+            <input type="file" id="admin-video-file" accept="video/*" class="hidden">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.5" style="margin: 0 auto 0.5rem; display: block;">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <p class="text-xs font-bold text-slate-300">Klik atau drop video di sini</p>
+            <p class="text-[10px] text-slate-500 mt-1">Support MP4, WebM, MOV • Max 200MB</p>
+            <p id="file-info" class="text-[10px] text-purple-300 mono mt-2 hidden"></p>
+          </div>
+          
+          <div id="upload-progress-container" class="hidden mt-3">
+            <div class="flex justify-between text-[10px] text-slate-400 mb-1.5">
+              <span id="upload-status-text">Mengunggah...</span>
+              <span id="upload-percent" class="mono font-bold text-purple-300">0%</span>
+            </div>
+            <div class="progress-bar">
+              <div id="upload-progress-fill" class="progress-fill"></div>
+            </div>
+            <p id="upload-speed" class="text-[10px] text-slate-500 mono mt-1.5 text-center"></p>
+          </div>
+
+          <button onclick="handleUploadVideo()" id="btn-upload-video" class="btn-primary mt-3" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span id="btn-upload-text">Upload & Perbarui Video</span>
+          </button>
+        </div>
+
+        <div>
+          <p class="section-title" style="color: #fbbf24;">Kelola VIP User</p>
+          <input type="text" id="vip-target-user" placeholder="Username target" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+          <div class="flex gap-2">
+            <input type="number" id="vip-duration-days" placeholder="Jumlah hari" class="input-glow" style="flex: 1; padding: 0.7rem 1rem; font-size: 0.85rem;">
+            <button onclick="handleSetVip()" class="btn-primary" style="width: auto; padding: 0.7rem 1rem; font-size: 0.8rem;">Set VIP</button>
+          </div>
+          <div class="flex justify-between items-center mt-2 mb-1">
+            <span class="text-[10px] text-amber-300 font-bold">Daftar VIP Aktif</span>
+            <button onclick="loadAdminVipList()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+          </div>
+          <div id="admin-vip-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px]">
+            <p class="text-slate-500 italic text-center py-2">Memuat...</p>
+          </div>
+        </div>
+
+        <!-- NEW: DAFTAR USER TERDAFTAR -->
+        <div>
+          <div class="flex justify-between items-center mb-2">
+            <p class="section-title" style="color: #fbbf24; margin: 0;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              Daftar User Terdaftar
+            </p>
+            <button onclick="loadAllUsers()" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.68rem;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Refresh
+            </button>
+          </div>
+
+          <div class="space-y-2 mb-2.5">
+            <div class="relative">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 0.85rem; top: 50%; transform: translateY(-50%); pointer-events: none;">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input type="text" id="user-search-input" oninput="filterUserList()" placeholder="Cari username atau email..." class="input-glow" style="padding: 0.6rem 0.85rem 0.6rem 2.4rem; font-size: 0.82rem;">
+            </div>
+
+            <div class="flex flex-wrap gap-1.5">
+              <button onclick="setUserFilter('all')" data-filter="all" class="user-filter-btn btn-secondary active-filter" style="padding: 0.3rem 0.7rem; font-size: 0.68rem; background: rgba(168,85,247,0.25); border-color: rgba(168,85,247,0.6); color: white;">Semua</button>
+              <button onclick="setUserFilter('admin')" data-filter="admin" class="user-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">👑 Admin</button>
+              <button onclick="setUserFilter('vip')" data-filter="vip" class="user-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">⭐ VIP</button>
+              <button onclick="setUserFilter('regular')" data-filter="regular" class="user-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">👤 Reguler</button>
+              <button onclick="setUserFilter('reset')" data-filter="reset" class="user-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">🔄 Reset Due</button>
+            </div>
+          </div>
+
+          <div id="user-stats-bar" class="grid grid-cols-4 gap-1.5 mb-2.5 text-center">
+            <div class="p-1.5 rounded-lg" style="background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.2);">
+              <p class="text-[9px] text-purple-300 font-bold uppercase">Total</p>
+              <p id="stat-total" class="text-xs font-extrabold text-white mono">-</p>
+            </div>
+            <div class="p-1.5 rounded-lg" style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2);">
+              <p class="text-[9px] text-amber-300 font-bold uppercase">Admin</p>
+              <p id="stat-admins" class="text-xs font-extrabold text-amber-300 mono">-</p>
+            </div>
+            <div class="p-1.5 rounded-lg" style="background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.2);">
+              <p class="text-[9px] text-purple-300 font-bold uppercase">VIP</p>
+              <p id="stat-vips" class="text-xs font-extrabold text-purple-300 mono">-</p>
+            </div>
+            <div class="p-1.5 rounded-lg" style="background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.2);">
+              <p class="text-[9px] text-cyan-300 font-bold uppercase">Reset</p>
+              <p id="stat-reset" class="text-xs font-extrabold text-cyan-300 mono">-</p>
+            </div>
+          </div>
+
+          <div id="all-users-list" class="space-y-1.5 max-h-64 overflow-y-auto text-[11px]">
+            <p class="text-slate-500 italic text-center py-2">Klik Refresh untuk memuat daftar user...</p>
+          </div>
+        </div>
+
+        <div>
+          <p class="section-title" style="color: #fbbf24;">Generate Redeem Code</p>
+          <input type="text" id="gen-code" placeholder="NAMA-KODE" class="input-glow uppercase mono mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem; font-weight: 700;">
+          <div class="grid grid-cols-2 gap-2 mb-2">
+            <input type="number" id="gen-total-quota" placeholder="Total kuota" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+            <input type="number" id="gen-max-claims" placeholder="Maks orang" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+          </div>
+          <button onclick="handleCreateRedeem()" class="btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Generate Kode Redeem
+          </button>
+        </div>
+
+        <div>
+          <div class="flex justify-between items-center mb-1.5">
+            <span class="text-[10px] text-amber-300 font-bold">Daftar Kode Aktif</span>
+            <button onclick="loadAdminRedeems()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+          </div>
+          <div id="admin-redeem-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px]">
+            <p class="text-slate-500 italic text-center py-2">Memuat...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: GUIDE -->
+    <div id="section-guide" class="glass-panel space-y-4 hidden">
+      <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
+        <h2 class="section-title" style="margin: 0;">Panduan Penggunaan</h2>
+        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+      </div>
+
+      <div class="space-y-2.5">
+        ${[1,2,3,4,5,6].map((n, i) => {
+          const steps = [
+            'Pastikan Anda sudah login ke sistem dengan akun Anda.',
+            'Beralih ke menu Generator Utama untuk mulai memproses.',
+            'Masukkan email target Google/Gmail pada kolom yang tersedia.',
+            'Klik tombol Kirim Magic Link untuk memicu token verifikasi.',
+            'Salin tautan Magic Link dari email, paste di kolom URL.',
+            'Klik Verifikasi Sekarang — proses selesai!'
+          ];
+          return `
+          <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
+            <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">${n}</div>
+            <p class="text-xs text-slate-300 leading-relaxed pt-0.5">${steps[i]}</p>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+
+    <!-- VIEW: ANNOUNCEMENT -->
+    <div id="section-announcement" class="glass-panel space-y-4 hidden">
+      <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
+        <h2 class="section-title" style="margin: 0; color: #67e8f9;">Informasi & Pengumuman</h2>
+        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+      </div>
+
+      <div id="user-announcement-container" class="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+        <p class="text-slate-500 italic text-xs text-center py-3">Memuat informasi...</p>
+      </div>
+
+      <div id="admin-announcement-panel" class="space-y-3 pt-3 border-t border-purple-500/20 hidden">
+        <p class="section-title" style="color: #fbbf24; margin: 0;">Panel Kelola Pengumuman</p>
+        <input type="hidden" id="info-edit-id" value="">
+        <input type="text" id="info-title" placeholder="Judul informasi" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+        <textarea id="info-content" placeholder="Isi pesan informasi..." class="input-glow" style="height: 90px; resize: none; padding: 0.7rem 1rem; font-size: 0.85rem;"></textarea>
+        <div class="flex gap-2">
+          <button id="info-submit-btn" onclick="handleSaveAnnouncement()" class="btn-primary" style="flex: 1;">Publikasikan</button>
+          <button id="info-cancel-btn" onclick="resetInfoForm()" class="btn-secondary hidden">Batal</button>
+        </div>
+        <div id="admin-info-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px] pt-1"></div>
+      </div>
+    </div>
+
+    <p class="text-center text-[10px] text-slate-600 tracking-wider py-2">AM PREMIUM • BY BANGGUS • v2.1</p>
+  </div>
+</div>
+
+<script>
+// ============ STATE ============
+let currentAuthMode = 'login';
+let loggedInUsername = '';
+let isAdminUser = false;
+let selectedVideoFile = null;
+let currentResultText = '';
+let cachedUserList = [];
+let currentUserFilter = 'all';
+
+// ============ TOAST ============
+function showToast(message, type = 'info', duration = 3000) {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'toast toast-' + type;
+  const icons = {
+    success: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>',
+    error: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+    info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+  };
+  toast.innerHTML = (icons[type] || icons.info) + '<span>' + message + '</span>';
+  container.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 400);
+  }, duration);
+}
+
+// ============ DRAWER ============
+function toggleMenu() {
+  document.getElementById('nav-drawer').classList.toggle('open');
+  document.getElementById('drawer-overlay').classList.toggle('hidden');
+}
+
+function switchView(viewName) {
+  document.querySelectorAll('[data-nav]').forEach(el => {
+    el.classList.toggle('active', el.dataset.nav === viewName);
+  });
+  toggleMenu();
+  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement'].forEach(id => {
+    document.getElementById(id).classList.add('hidden');
+  });
+  if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hidden');
+  else if (viewName === 'profile') document.getElementById('section-profile').classList.remove('hidden');
+  else if (viewName === 'guide') document.getElementById('section-guide').classList.remove('hidden');
+  else if (viewName === 'announcement') {
+    document.getElementById('section-announcement').classList.remove('hidden');
+    loadUserAnnouncements();
+  }
+}
+
+// ============ STATUS & VIDEO ============
+async function fetchServerStatus() {
+  try {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    updateStatusUI(data.status);
+  } catch(e) {}
+}
+async function fetchFeaturedVideo() {
+  try {
+    const res = await fetch('/api/video');
+    const data = await res.json();
+    if (data.success && data.videoUrl) {
+      const v = document.getElementById('main-display-video');
+      if (v && v.src !== data.videoUrl) {
+        v.src = data.videoUrl;
+        v.onloadedmetadata = () => {
+          document.getElementById('video-resolution').innerText = v.videoWidth + '×' + v.videoHeight;
+        };
+      }
+    }
+  } catch(e) {}
+}
+function updateStatusUI(status) {
+  const ind = document.getElementById('server-status-indicator');
+  const dot = document.getElementById('server-dot');
+  const txt = document.getElementById('server-status-text');
+  const banner = document.getElementById('offline-banner');
+  if (!ind) return;
+  if (status === 'online') {
+    ind.className = 'badge badge-online';
+    dot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse';
+    txt.innerText = 'Online';
+    banner.classList.add('hidden');
+  } else {
+    ind.className = 'badge badge-offline';
+    dot.className = 'w-1.5 h-1.5 rounded-full bg-rose-500';
+    txt.innerText = 'Offline';
+    if (!isAdminUser) banner.classList.remove('hidden');
+  }
+}
+
+fetchServerStatus();
+fetchFeaturedVideo();
+setInterval(fetchServerStatus, 5000);
+setInterval(fetchFeaturedVideo, 15000);
+
+// ============ AUTH ============
+function switchAuthTab(mode) {
+  currentAuthMode = mode;
+  const loginBtn = document.getElementById('tab-login-btn');
+  const regBtn = document.getElementById('tab-reg-btn');
+  const ind = document.getElementById('tab-indicator');
+  const emailField = document.getElementById('email-field-container');
+  const btnText = document.getElementById('auth-btn-text');
+  if (mode === 'login') {
+    ind.style.transform = 'translateX(0%)';
+    loginBtn.className = 'relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-xl transition-colors text-white';
+    regBtn.className = 'relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-xl transition-colors text-slate-400';
+    emailField.classList.add('hidden');
+    btnText.innerText = 'Masuk ke Terminal';
+  } else {
+    ind.style.transform = 'translateX(100%)';
+    regBtn.className = 'relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-xl transition-colors text-white';
+    loginBtn.className = 'relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-xl transition-colors text-slate-400';
+    emailField.classList.remove('hidden');
+    btnText.innerText = 'Daftar Akun Baru';
+  }
+}
+
+async function handleAuthAction() {
+  const username = document.getElementById('auth-username').value.trim();
+  const password = document.getElementById('auth-password').value.trim();
+  const email = document.getElementById('auth-email').value.trim();
+  if (!username || !password) return showToast('Username dan password wajib diisi!', 'error');
+
+  let deviceToken = localStorage.getItem('am_device_token');
+  if (currentAuthMode === 'register' && deviceToken) {
+    return showToast('Perangkat ini sudah terdaftar!', 'error');
+  }
+
+  const btn = document.getElementById('auth-submit-btn');
+  const originalText = document.getElementById('auth-btn-text').innerText;
+  document.getElementById('auth-btn-text').innerText = 'Memproses...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: currentAuthMode, username, password, email, deviceToken })
+    });
+    const data = await res.json();
+    if (data.success) {
+      if (currentAuthMode === 'register' && data.deviceToken) localStorage.setItem('am_device_token', data.deviceToken);
+      if (data.token) {
+        localStorage.setItem('authToken', data.token);
+        localStorage.setItem('savedUsername', data.username);
+      }
+      showToast(data.message, 'success');
+      applySession(data);
+    } else {
+      showToast(data.message, 'error');
+    }
+  } catch (err) {
+    showToast('Kesalahan koneksi server', 'error');
+  } finally {
+    document.getElementById('auth-btn-text').innerText = originalText;
+    btn.disabled = false;
+  }
+}
+
+function applySession(data) {
+  loggedInUsername = data.username;
+  isAdminUser = data.isAdmin;
+  document.getElementById('auth-view').classList.add('hidden');
+  document.getElementById('terminal-view').classList.remove('hidden');
+  document.getElementById('header-menu-btn').classList.remove('hidden');
+  document.getElementById('logged-username').innerText = data.username;
+  document.getElementById('user-avatar').innerText = data.username.charAt(0).toUpperCase();
+  document.getElementById('drawer-avatar').innerText = data.username.charAt(0).toUpperCase();
+  document.getElementById('drawer-username').innerText = data.username;
+  document.getElementById('drawer-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'User');
+  document.getElementById('drawer-logout-btn').classList.remove('hidden');
+  document.getElementById('profile-uname').innerText = data.username;
+  document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'Standard User');
+  document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (1 + (data.bonusQuota || 0) - data.usedQuota);
+
+  updateQuotaDisplay(data);
+  checkVipStatus(data);
+  loadUserAnnouncements();
+  updateStatusUI(data.serverStatus);
+  fetchFeaturedVideo();
+
+  const roleBadge = document.getElementById('role-badge');
+  if (data.isAdmin) {
+    roleBadge.className = 'badge badge-admin';
+    roleBadge.innerText = '👑 Admin';
+    document.getElementById('admin-control-panel').classList.remove('hidden');
+    document.getElementById('admin-announcement-panel').classList.remove('hidden');
+    loadAdminRedeems();
+    loadAdminAnnouncements();
+    loadAdminVipList();
+    loadAllUsers();
+  } else if (data.isVip) {
+    roleBadge.className = 'badge badge-vip';
+    roleBadge.innerText = 'VIP Member';
+  } else {
+    roleBadge.className = 'badge badge-user';
+    roleBadge.innerText = 'User';
+  }
+}
+
+async function checkSavedSession() {
+  const token = localStorage.getItem('authToken');
+  const savedUname = localStorage.getItem('savedUsername');
+  if (!token || !savedUname) return;
+  try {
+    const res = await fetch('/api/auth/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: savedUname, token })
+    });
+    const data = await res.json();
+    if (data.success) applySession(data);
+  } catch (e) {}
+}
+checkSavedSession();
+
+// ============ USERNAME UPDATE ============
+async function triggerUpdateUsername() {
+  const newUsername = document.getElementById('new-username-input').value.trim();
+  if (!newUsername) return showToast('Masukkan username baru!', 'error');
+  try {
+    const response = await fetch('/api/user/username', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (localStorage.getItem('authToken') || '') },
+      body: JSON.stringify({ currentUsername: loggedInUsername, newUsername })
+    });
+    const result = await response.json();
+    if (response.ok && result.success) {
+      showToast('Username berhasil diubah!', 'success');
+      loggedInUsername = result.newUsername;
+      localStorage.setItem('savedUsername', loggedInUsername);
+      document.getElementById('logged-username').innerText = loggedInUsername;
+      document.getElementById('profile-uname').innerText = loggedInUsername;
+      document.getElementById('drawer-username').innerText = loggedInUsername;
+      document.getElementById('new-username-input').value = '';
+    } else {
+      showToast(result.message || 'Gagal mengubah username.', 'error');
+    }
+  } catch (e) {
+    showToast('Kesalahan jaringan', 'error');
+  }
+}
+
+// ============ CHUNKED UPLOAD ============
+function initFileDrop() {
+  const dropZone = document.getElementById('file-drop-zone');
+  const fileInput = document.getElementById('admin-video-file');
+  
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) {
+      fileInput.files = e.dataTransfer.files;
+      handleFileSelect(e.dataTransfer.files[0]);
+    }
+  });
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files.length) handleFileSelect(e.target.files[0]);
+  });
+}
+
+function handleFileSelect(file) {
+  const info = document.getElementById('file-info');
+  const btn = document.getElementById('btn-upload-video');
+  
+  if (!file.type.startsWith('video/')) {
+    showToast('File harus berupa video!', 'error');
+    return;
+  }
+  if (file.size > 200 * 1024 * 1024) {
+    showToast('File terlalu besar! Maksimal 200MB', 'error');
+    return;
+  }
+  
+  selectedVideoFile = file;
+  const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+  info.innerText = '📁 ' + file.name + ' (' + sizeMB + ' MB)';
+  info.classList.remove('hidden');
+  btn.disabled = false;
+  showToast('Video siap diupload: ' + sizeMB + 'MB', 'info');
+}
+
+async function handleUploadVideo() {
+  if (!isAdminUser) return showToast('Akses ditolak!', 'error');
+  if (!selectedVideoFile) return showToast('Pilih video terlebih dahulu!', 'error');
+
+  const file = selectedVideoFile;
+  const CHUNK_SIZE = 512 * 1024;
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  const uploadId = 'up_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+
+  const progressContainer = document.getElementById('upload-progress-container');
+  const progressFill = document.getElementById('upload-progress-fill');
+  const percentText = document.getElementById('upload-percent');
+  const statusText = document.getElementById('upload-status-text');
+  const speedText = document.getElementById('upload-speed');
+  const btn = document.getElementById('btn-upload-video');
+  const btnText = document.getElementById('btn-upload-text');
+
+  progressContainer.classList.remove('hidden');
+  btn.disabled = true;
+  btnText.innerText = 'Mengunggah...';
+
+  const startTime = Date.now();
+  let uploadedBytes = 0;
+
+  try {
+    statusText.innerText = 'Memulai upload...';
+    const initRes = await fetch('/api/admin/upload-init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: loggedInUsername,
+        uploadId,
+        filename: file.name,
+        totalChunks,
+        fileSize: file.size,
+        fileType: file.type
+      })
+    });
+    const initData = await initRes.json();
+    if (!initData.success) throw new Error(initData.message || 'Gagal init upload');
+
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const chunk = file.slice(start, end);
+      
+      const chunkBase64 = await blobToBase64(chunk);
+      
+      statusText.innerText = 'Upload chunk ' + (i + 1) + '/' + totalChunks;
+      
+      const chunkRes = await fetch('/api/admin/upload-chunk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: loggedInUsername,
+          uploadId,
+          chunkIndex: i,
+          chunkData: chunkBase64
+        })
+      });
+      const chunkData = await chunkRes.json();
+      if (!chunkData.success) throw new Error(chunkData.message || 'Gagal upload chunk ' + i);
+
+      uploadedBytes += chunk.size;
+      const percent = Math.round((uploadedBytes / file.size) * 100);
+      progressFill.style.width = percent + '%';
+      percentText.innerText = percent + '%';
+
+      const elapsed = (Date.now() - startTime) / 1000;
+      const speed = (uploadedBytes / 1024 / 1024) / elapsed;
+      speedText.innerText = '⚡ ' + speed.toFixed(2) + ' MB/s • ' + (uploadedBytes / 1024 / 1024).toFixed(2) + ' / ' + (file.size / 1024 / 1024).toFixed(2) + ' MB';
+    }
+
+    statusText.innerText = 'Menyelesaikan...';
+    const finalRes = await fetch('/api/admin/upload-finalize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername, uploadId })
+    });
+    const finalData = await finalRes.json();
+    if (!finalData.success) throw new Error(finalData.message || 'Gagal finalize');
+
+    progressFill.style.width = '100%';
+    percentText.innerText = '100%';
+    statusText.innerText = '✓ Upload berhasil!';
+    speedText.innerText = 'Total waktu: ' + ((Date.now() - startTime) / 1000).toFixed(1) + 's';
+    
+    showToast('Video berhasil diperbarui!', 'success');
+    selectedVideoFile = null;
+    document.getElementById('admin-video-file').value = '';
+    document.getElementById('file-info').classList.add('hidden');
+    fetchFeaturedVideo();
+
+    setTimeout(() => {
+      progressContainer.classList.add('hidden');
+      progressFill.style.width = '0%';
+    }, 2500);
+
+  } catch (err) {
+    showToast('Upload gagal: ' + err.message, 'error');
+    statusText.innerText = '✗ Upload gagal';
+    progressFill.style.background = 'linear-gradient(90deg, #f43f5e, #dc2626)';
+  } finally {
+    btn.disabled = false;
+    btnText.innerText = 'Upload & Perbarui Video';
+  }
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// ============ QUOTA & VIP ============
+function updateQuotaDisplay(data) {
+  if (data.isAdmin || data.isVip) {
+    document.getElementById('quota-display').innerText = '∞';
+  } else {
+    document.getElementById('quota-display').innerText = data.usedQuota + '/' + (1 + (data.bonusQuota || 0));
+  }
+}
+function checkVipStatus(data) {
+  const banner = document.getElementById('vip-status-banner');
+  if (data.isVip && !data.isAdmin) {
+    banner.classList.remove('hidden');
+    document.getElementById('vip-expiry-text').innerText = 'Aktif hingga: ' + new Date(data.vipUntil).toLocaleString('id-ID');
+  } else {
+    banner.classList.add('hidden');
+  }
+}
+
+// ============ ADMIN ACTIONS ============
+async function changeServerState(newState) {
+  if (!isAdminUser) return;
+  try {
+    const res = await fetch('/api/admin/set-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newState, username: loggedInUsername })
+    });
+    const data = await res.json();
+    if (data.success) {
+      updateStatusUI(newState);
+      showToast('Server: ' + newState.toUpperCase(), 'success');
+    }
+  } catch(e) { showToast('Gagal ubah status', 'error'); }
+}
+
+async function handleSetVip() {
+  if (!isAdminUser) return;
+  const targetUser = document.getElementById('vip-target-user').value.trim();
+  const days = parseInt(document.getElementById('vip-duration-days').value);
+  if (!targetUser || isNaN(days)) return showToast('Lengkapi username dan hari!', 'error');
+  try {
+    const res = await fetch('/api/admin/set-vip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername, targetUser, days })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success');
+      document.getElementById('vip-target-user').value = '';
+      document.getElementById('vip-duration-days').value = '';
+      loadAdminVipList();
+      loadAllUsers();
+    } else showToast(data.message, 'error');
+  } catch(e) { showToast('Gagal set VIP', 'error'); }
+}
+
+async function loadAdminVipList() {
+  if (!isAdminUser) return;
+  try {
+    const res = await fetch('/api/admin/get-vip-list?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+    const container = document.getElementById('admin-vip-list');
+    if (data.success && Object.keys(data.vipUsers).length > 0) {
+      container.innerHTML = Object.entries(data.vipUsers).map(([uname, val]) => 
+        '<div class="flex justify-between items-center p-2 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(245,158,11,0.2);">' +
+          '<div><span class="text-amber-300 font-bold">' + uname + '</span>' +
+          '<span class="text-slate-500 block text-[9px]">Exp: ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span></div>' +
+          '<button onclick="handleRemoveVip(\\'' + uname + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(244,63,94,0.2); color: #fda4af; border: 1px solid rgba(244,63,94,0.3);">Hapus</button>' +
+        '</div>'
+      ).join('');
+    } else {
+      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Tidak ada VIP aktif</p>';
+    }
+  } catch(e) {}
+}
+
+async function handleRemoveVip(targetUser) {
+  if (!confirm('Cabut VIP untuk ' + targetUser + '?')) return;
+  try {
+    const res = await fetch('/api/admin/remove-vip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername, targetUser })
+    });
+    const data = await res.json();
+    if (data.success) { 
+      showToast('VIP dicabut', 'success'); 
+      loadAdminVipList(); 
+      loadAllUsers();
+    }
+  } catch(e) {}
+}
+
+// ============ CEK USER TERDAFTAR (ADMIN ONLY) ============
+async function loadAllUsers() {
+  if (!isAdminUser) return showToast('Akses ditolak!', 'error');
+  const container = document.getElementById('all-users-list');
+  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 animate-pulse">⏳ Memuat daftar user...</p>';
+
+  try {
+    const res = await fetch('/api/admin/get-all-users?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+
+    if (!data.success) {
+      container.innerHTML = '<p class="text-rose-400 italic text-center py-2">Gagal: ' + (data.message || 'Error') + '</p>';
+      return;
+    }
+
+    cachedUserList = data.users || [];
+    document.getElementById('stat-total').innerText = data.stats.total;
+    document.getElementById('stat-admins').innerText = data.stats.admins;
+    document.getElementById('stat-vips').innerText = data.stats.vips;
+    document.getElementById('stat-reset').innerText = data.stats.resetDue;
+
+    renderUserList();
+    showToast('Berhasil memuat ' + data.stats.total + ' user', 'success');
+  } catch (e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-center py-2">Kesalahan koneksi</p>';
+    showToast('Gagal memuat daftar user', 'error');
+  }
+}
+
+function setUserFilter(filter) {
+  currentUserFilter = filter;
+  document.querySelectorAll('.user-filter-btn').forEach(btn => {
+    const isActive = btn.dataset.filter === filter;
+    if (isActive) {
+      btn.style.background = 'rgba(168,85,247,0.25)';
+      btn.style.borderColor = 'rgba(168,85,247,0.6)';
+      btn.style.color = 'white';
+    } else {
+      btn.style.background = '';
+      btn.style.borderColor = '';
+      btn.style.color = '';
+    }
+  });
+  renderUserList();
+}
+
+function filterUserList() {
+  renderUserList();
+}
+
+function renderUserList() {
+  const container = document.getElementById('all-users-list');
+  const search = (document.getElementById('user-search-input').value || '').toLowerCase().trim();
+
+  let filtered = cachedUserList.filter(u => {
+    if (currentUserFilter === 'admin' && !u.isAdmin) return false;
+    if (currentUserFilter === 'vip' && !u.isVip) return false;
+    if (currentUserFilter === 'regular' && (u.isAdmin || u.isVip)) return false;
+    if (currentUserFilter === 'reset' && !u.isResetDue) return false;
+    if (search) {
+      return u.username.toLowerCase().includes(search) ||
+             (u.email && u.email.toLowerCase().includes(search));
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<p class="text-slate-500 italic text-center py-3">Tidak ada user yang cocok.</p>';
+    return;
+  }
+
+  const now = Date.now();
+  container.innerHTML = filtered.map(u => {
+    let badgeClass = 'badge-user';
+    let badgeText = '👤 User';
+    let borderColor = 'rgba(148,163,184,0.25)';
+    if (u.isAdmin) {
+      badgeClass = 'badge-admin';
+      badgeText = '👑 Admin';
+      borderColor = 'rgba(245,158,11,0.4)';
+    } else if (u.isVip) {
+      badgeClass = 'badge-vip';
+      badgeText = '⭐ VIP';
+      borderColor = 'rgba(168,85,247,0.45)';
+    }
+
+    let quotaText = '';
+    let quotaColor = '#67e8f9';
+    if (u.isAdmin) {
+      quotaText = '∞ Unlimited';
+      quotaColor = '#fbbf24';
+    } else if (u.isVip) {
+      quotaText = '⭐ Unlimited (VIP)';
+      quotaColor = '#d8b4fe';
+    } else {
+      quotaText = u.usedQuota + '/' + u.totalQuota + ' (+' + u.bonusQuota + ' bonus)';
+      quotaColor = u.usedQuota >= u.totalQuota ? '#fda4af' : '#67e8f9';
+    }
+
+    let resetText = '';
+    if (u.isResetDue) {
+      resetText = '🔄 Reset Tersedia';
+    } else if (u.nextResetTime > now) {
+      const msLeft = u.nextResetTime - now;
+      const hoursLeft = Math.floor(msLeft / 3600000);
+      const minsLeft = Math.floor((msLeft % 3600000) / 60000);
+      resetText = '⏱ ' + hoursLeft + 'j ' + minsLeft + 'm lagi';
+    } else {
+      resetText = '✓ Baru saja direset';
+    }
+
+    let vipText = '';
+    if (u.isVip && u.vipUntil) {
+      vipText = '⭐ VIP s/d ' + new Date(u.vipUntil).toLocaleDateString('id-ID');
+    }
+
+    const safeUser = u.username.replace(/'/g, "\\\\'");
+
+    return '<div class="p-2.5 rounded-lg animate-slide-up" style="background: rgba(7,4,15,0.6); border: 1px solid ' + borderColor + ';">' +
+      '<div class="flex justify-between items-start gap-2 mb-1.5">' +
+        '<div class="flex-1 min-w-0">' +
+          '<div class="flex items-center gap-1.5 flex-wrap">' +
+            '<span class="font-bold text-white mono text-[12px]">' + escapeHtml(u.username) + '</span>' +
+            '<span class="badge ' + badgeClass + '" style="font-size: 0.6rem; padding: 0.15rem 0.5rem;">' + badgeText + '</span>' +
+          '</div>' +
+          '<p class="text-slate-400 text-[10px] truncate mt-0.5">📧 ' + escapeHtml(u.email) + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="grid grid-cols-2 gap-1.5 text-[10px]">' +
+        '<div class="p-1.5 rounded" style="background: rgba(6,182,212,0.06);">' +
+          '<p class="text-slate-500 text-[9px] uppercase font-bold">Kuota</p>' +
+          '<p class="mono font-bold" style="color: ' + quotaColor + ';">' + quotaText + '</p>' +
+        '</div>' +
+        '<div class="p-1.5 rounded" style="background: rgba(168,85,247,0.06);">' +
+          '<p class="text-slate-500 text-[9px] uppercase font-bold">Reset</p>' +
+          '<p class="mono font-bold text-purple-300">' + resetText + '</p>' +
+        '</div>' +
+      '</div>' +
+      (vipText ? '<p class="text-[10px] text-amber-300 mt-1.5 font-semibold">' + vipText + '</p>' : '') +
+      (u.activatedEmails && u.activatedEmails.length > 0 ? 
+        '<details class="mt-1.5">' +
+          '<summary class="text-[10px] text-cyan-300 cursor-pointer hover:text-cyan-200">📨 ' + u.activatedEmails.length + ' email diaktivasi</summary>' +
+          '<div class="mt-1 space-y-0.5 pl-2">' + 
+            u.activatedEmails.slice(0, 10).map(e => '<p class="text-[9px] text-slate-400 mono truncate">• ' + escapeHtml(e) + '</p>').join('') +
+            (u.activatedEmails.length > 10 ? '<p class="text-[9px] text-slate-500 italic">... dan ' + (u.activatedEmails.length - 10) + ' lainnya</p>' : '') +
+          '</div>' +
+        '</details>' : '') +
+      '<div class="flex gap-1.5 mt-2 pt-2 border-t border-slate-800">' +
+        '<button onclick="quickSetVip(\\'' + safeUser + '\\')" class="flex-1 py-1 rounded text-[10px] font-bold transition" style="background: rgba(168,85,247,0.15); color: #d8b4fe; border: 1px solid rgba(168,85,247,0.3);">⭐ Set VIP</button>' +
+        '<button onclick="copyUsername(\\'' + safeUser + '\\')" class="flex-1 py-1 rounded text-[10px] font-bold transition" style="background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.3);">📋 Copy</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function quickSetVip(username) {
+  document.getElementById('vip-target-user').value = username;
+  document.getElementById('vip-duration-days').focus();
+  showToast('Username "' + username + '" siap di-set VIP', 'info');
+  document.getElementById('vip-target-user').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function copyUsername(username) {
+  navigator.clipboard.writeText(username).then(() => {
+    showToast('Username "' + username + '" tersalin!', 'success');
+  });
+}
+
+// ============ ANNOUNCEMENTS ============
+async function loadUserAnnouncements() {
+  try {
+    const res = await fetch('/api/announcements');
+    const data = await res.json();
+    const container = document.getElementById('user-announcement-container');
+    if (data.success && Object.keys(data.announcements).length > 0) {
+      const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
+      container.innerHTML = entries.map(([id, val]) => 
+        '<div class="p-3 rounded-xl animate-slide-up" style="background: rgba(168,85,247,0.06); border: 1px solid rgba(168,85,247,0.18);">' +
+          '<div class="flex justify-between items-start mb-1.5">' +
+            '<span class="text-cyan-300 font-bold text-xs">' + escapeHtml(val.title) + '</span>' +
+            '<span class="text-[9px] text-slate-500 mono">' + new Date(val.timestamp).toLocaleDateString('id-ID') + '</span>' +
+          '</div>' +
+          '<p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">' + escapeHtml(val.content) + '</p>' +
+        '</div>'
+      ).join('');
+    } else {
+      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada informasi</p>';
+    }
+  } catch(e) {}
+}
+
+async function loadAdminAnnouncements() {
+  if (!isAdminUser) return;
+  try {
+    const res = await fetch('/api/announcements');
+    const data = await res.json();
+    const container = document.getElementById('admin-info-list');
+    if (data.success && Object.keys(data.announcements).length > 0) {
+      const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
+      container.innerHTML = entries.map(([id, val]) => 
+        '<div class="flex justify-between items-center p-2 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(245,158,11,0.2);">' +
+          '<div class="truncate mr-2 flex-1"><span class="text-amber-300 font-bold block truncate">' + escapeHtml(val.title) + '</span></div>' +
+          '<div class="flex gap-1 shrink-0">' +
+            '<button onclick="editAnnouncement(\\'' + id + '\\', \\'' + encodeURIComponent(val.title) + '\\', \\'' + encodeURIComponent(val.content) + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(6,182,212,0.2); color: #67e8f9;">Edit</button>' +
+            '<button onclick="deleteAnnouncement(\\'' + id + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(244,63,94,0.2); color: #fda4af;">×</button>' +
+          '</div>' +
+        '</div>'
+      ).join('');
+    } else {
+      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada info</p>';
+    }
+  } catch(e) {}
+}
+
+async function handleSaveAnnouncement() {
+  if (!isAdminUser) return;
+  const id = document.getElementById('info-edit-id').value;
+  const title = document.getElementById('info-title').value.trim();
+  const content = document.getElementById('info-content').value.trim();
+  if (!title || !content) return showToast('Lengkapi judul & isi!', 'error');
+  const endpoint = id ? '/api/admin/update-announcement' : '/api/admin/create-announcement';
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername, id, title, content })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success');
+      resetInfoForm();
+      loadAdminAnnouncements();
+      loadUserAnnouncements();
+    } else showToast(data.message, 'error');
+  } catch(e) { showToast('Gagal simpan', 'error'); }
+}
+
+function editAnnouncement(id, encTitle, encContent) {
+  document.getElementById('info-edit-id').value = id;
+  document.getElementById('info-title').value = decodeURIComponent(encTitle);
+  document.getElementById('info-content').value = decodeURIComponent(encContent);
+  document.getElementById('info-submit-btn').innerText = 'Perbarui Info';
+  document.getElementById('info-cancel-btn').classList.remove('hidden');
+}
+
+function resetInfoForm() {
+  document.getElementById('info-edit-id').value = '';
+  document.getElementById('info-title').value = '';
+  document.getElementById('info-content').value = '';
+  document.getElementById('info-submit-btn').innerText = 'Publikasikan';
+  document.getElementById('info-cancel-btn').classList.add('hidden');
+}
+
+async function deleteAnnouncement(id) {
+  if (!confirm('Hapus informasi ini?')) return;
+  try {
+    const res = await fetch('/api/admin/delete-announcement', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername, id })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Info dihapus', 'success');
+      loadAdminAnnouncements();
+      loadUserAnnouncements();
+    }
+  } catch(e) {}
+}
+
+// ============ REDEEM ============
+async function handleCreateRedeem() {
+  if (!isAdminUser) return;
+  const code = document.getElementById('gen-code').value.trim().toUpperCase();
+  const totalQuota = parseInt(document.getElementById('gen-total-quota').value);
+  const maxClaims = parseInt(document.getElementById('gen-max-claims').value);
+  if (!code || isNaN(totalQuota) || isNaN(maxClaims)) return showToast('Lengkapi semua field!', 'error');
+  try {
+    const res = await fetch('/api/admin/create-redeem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername, code, totalQuota, maxClaims })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success');
+      document.getElementById('gen-code').value = '';
+      document.getElementById('gen-total-quota').value = '';
+      document.getElementById('gen-max-claims').value = '';
+      loadAdminRedeems();
+    } else showToast(data.message, 'error');
+  } catch(e) {}
+}
+
+async function loadAdminRedeems() {
+  if (!isAdminUser) return;
+  try {
+    const res = await fetch('/api/admin/get-redeems?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+    const container = document.getElementById('admin-redeem-list');
+    if (data.success && Object.keys(data.redeems).length > 0) {
+      container.innerHTML = Object.entries(data.redeems).map(([code, val]) => 
+        '<div class="flex justify-between items-center p-2 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(245,158,11,0.2);">' +
+          '<div><span class="text-amber-300 font-bold mono">' + code + '</span>' +
+          '<span class="text-slate-500 block text-[9px]">Kuota: ' + val.totalQuota + ' | Klaim: ' + val.claimedCount + '/' + val.maxClaims + '</span></div>' +
+          '<button onclick="handleDeleteRedeem(\\'' + code + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(244,63,94,0.2); color: #fda4af;">×</button>' +
+        '</div>'
+      ).join('');
+    } else {
+      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada kode</p>';
+    }
+  } catch(e) {}
+}
+
+async function handleDeleteRedeem(code) {
+  if (!confirm('Hapus kode ' + code + '?')) return;
+  try {
+    const res = await fetch('/api/admin/delete-redeem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername, code })
+    });
+    const data = await res.json();
+    if (data.success) { showToast('Kode dihapus', 'success'); loadAdminRedeems(); }
+  } catch(e) {}
+}
+
+async function handleRedeemCode() {
+  const code = document.getElementById('redeem-code-input').value.trim().toUpperCase();
+  if (!code) return showToast('Masukkan kode!', 'error');
+  try {
+    const res = await fetch('/api/redeem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername, code })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success');
+      document.getElementById('redeem-code-input').value = '';
+      updateQuotaDisplay(data);
+    } else showToast(data.message, 'error');
+  } catch(e) { showToast('Gagal redeem', 'error'); }
+}
+
+// ============ GENERATOR ACTIONS ============
+async function handleSendEmail() {
+  const email = document.getElementById('target-email').value.trim();
+  if (!email) return showToast('Masukkan email target!', 'error');
+  const btn = document.getElementById('btn-send');
+  const sendText = document.getElementById('send-text');
+  btn.disabled = true;
+  sendText.innerText = 'Mengirim...';
+  const resultBox = document.getElementById('result-box');
+  const resultText = document.getElementById('result-text');
+  resultBox.classList.remove('hidden');
+  resultText.innerText = '⏳ Memproses...';
+  try {
+    const res = await fetch('/api/magiclink', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername, email })
+    });
+    const data = await res.json();
+    if (data.success) {
+      sendText.innerText = 'Kirim Magic Link';
+      currentResultText = JSON.stringify(data.result, null, 2);
+      resultText.innerText = currentResultText;
+      showToast('Magic link terkirim!', 'success');
+      if (!isAdminUser && data.quotaInfo) updateQuotaDisplay(data.quotaInfo);
+    } else {
+      sendText.innerText = 'Kirim Magic Link';
+      currentResultText = 'Error: ' + data.message;
+      resultText.innerText = currentResultText;
+      showToast(data.message, 'error');
+    }
+  } catch (err) {
+    sendText.innerText = 'Kirim Magic Link';
+    currentResultText = 'Error: ' + err.message;
+    resultText.innerText = currentResultText;
+    showToast('Gagal kirim', 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function handleActivate() {
+  const email = document.getElementById('target-email').value;
+  const magicUrl = document.getElementById('magic-url').value;
+  if (!email || !magicUrl) return showToast('Email dan URL wajib diisi!', 'error');
+  const resultBox = document.getElementById('result-box');
+  const resultText = document.getElementById('result-text');
+  resultBox.classList.remove('hidden');
+  resultText.innerText = '⏳ Memverifikasi...';
+  try {
+    const res = await fetch('/api/verif', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, url: magicUrl, username: loggedInUsername })
+    });
+    const data = await res.json();
+    currentResultText = JSON.stringify(data, null, 2);
+    resultText.innerText = currentResultText;
+    if (data.success || !data.error) showToast('Verifikasi selesai!', 'success');
+    else showToast(data.error || 'Verifikasi gagal', 'error');
+  } catch (err) {
+    currentResultText = 'Error: ' + err.message;
+    resultText.innerText = currentResultText;
+    showToast('Gagal verifikasi', 'error');
+  }
+}
+
+function copyResult() {
+  if (!currentResultText) return;
+  navigator.clipboard.writeText(currentResultText).then(() => showToast('Tersalin ke clipboard!', 'success'));
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text || '';
+  return div.innerHTML;
+}
+
+function handleLogout() {
+  localStorage.removeItem('authToken');
+  localStorage.removeItem('savedUsername');
+  sessionStorage.clear();
+  location.reload();
+}
+
+initFileDrop();
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const drawer = document.getElementById('nav-drawer');
+    if (drawer.classList.contains('open')) toggleMenu();
+  }
+});
+</script>
 </body>
-</html>
-`;
+</html>`;
 
 // ==========================================
-// SERVER HTTP LOCALHOST
+// SERVER
 // ==========================================
 const PORT = 3001;
 
+function jsonResponse(res, code, data) {
+  res.writeHead(code, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(data));
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    let size = 0;
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > 50 * 1024 * 1024) {
+        reject(new Error('Payload too large'));
+        req.destroy();
+      }
+      body += chunk;
+    });
+    req.on('end', () => resolve(body));
+    req.on('error', reject);
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
-  const queryUsername = parsedUrl.searchParams.get('username');
 
-  let isRequesterAdmin = false;
-  if (queryUsername) {
-    const userDoc = await getUserFromDb(queryUsername.toLowerCase());
-    if (userDoc && userDoc.isAdmin) isRequesterAdmin = true;
-  }
-
-  // Mengambil status server secara dinamis dari database untuk setiap request
   let currentServerStatus = await getServerStatusFromDb();
 
-  if (parsedUrl.pathname === '/' && req.method === 'GET') {
-    res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(htmlTemplate);
-  } else if (parsedUrl.pathname === '/api/status') {
-    res.setHeader('Content-Type', 'application/json');
-    res.writeHead(200);
-    res.end(JSON.stringify({ status: currentServerStatus }));
-  } else if (parsedUrl.pathname === '/api/video') {
-    res.setHeader('Content-Type', 'application/json');
-    const videoUrl = await getVideoFromDb();
-    res.writeHead(200);
-    res.end(JSON.stringify({ success: true, videoUrl }));
-  } else if (parsedUrl.pathname === '/api/announcements') {
-    res.setHeader('Content-Type', 'application/json');
-    const announcements = await getAllAnnouncementsFromDb();
-    res.writeHead(200);
-    res.end(JSON.stringify({ success: true, announcements }));
-  } else if (parsedUrl.pathname === '/api/user/username' && req.method === 'PUT') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { currentUsername, newUsername } = JSON.parse(body);
-        if (!currentUsername || !newUsername) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Username lama dan baru diperlukan.' }));
-          return;
-        }
+  try {
+    if (parsedUrl.pathname === '/' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(htmlTemplate);
 
-        const cleanOld = currentUsername.toLowerCase();
-        const cleanNew = newUsername.trim().toLowerCase();
+    } else if (parsedUrl.pathname === '/api/status') {
+      jsonResponse(res, 200, { status: currentServerStatus });
 
-        const existingUser = await getUserFromDb(cleanNew);
-        if (existingUser) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Username sudah digunakan oleh akun lain.' }));
-          return;
-        }
+    } else if (parsedUrl.pathname === '/api/video') {
+      const videoUrl = await getVideoFromDb();
+      jsonResponse(res, 200, { success: true, videoUrl });
 
-        const userData = await getUserFromDb(cleanOld);
-        if (!userData) {
-          res.writeHead(404);
-          res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
-          return;
-        }
+    } else if (parsedUrl.pathname === '/api/announcements') {
+      const announcements = await getAllAnnouncementsFromDb();
+      jsonResponse(res, 200, { success: true, announcements });
 
-        await saveUserToDb(cleanNew, userData);
-        await set(ref(db, `users/${cleanOld}`), null);
+    // ===== CHUNKED UPLOAD ENDPOINTS =====
+    } else if (parsedUrl.pathname === '/api/admin/upload-init' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, uploadId, filename, totalChunks, fileSize, fileType } = JSON.parse(body);
+      const userObj = await getUserFromDb(username.toLowerCase());
+      if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak' });
 
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, newUsername: cleanNew }));
-      } catch (e) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: 'Terjadi kesalahan pada server.' }));
+      const uploadSessionDir = path.join(UPLOAD_DIR, uploadId);
+      if (!fs.existsSync(uploadSessionDir)) fs.mkdirSync(uploadSessionDir, { recursive: true });
+      fs.writeFileSync(path.join(uploadSessionDir, 'meta.json'), JSON.stringify({
+        filename, totalChunks, fileSize, fileType, createdAt: Date.now()
+      }));
+
+      jsonResponse(res, 200, { success: true, uploadId });
+
+    } else if (parsedUrl.pathname === '/api/admin/upload-chunk' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, uploadId, chunkIndex, chunkData } = JSON.parse(body);
+      const userObj = await getUserFromDb(username.toLowerCase());
+      if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak' });
+
+      const uploadSessionDir = path.join(UPLOAD_DIR, uploadId);
+      if (!fs.existsSync(uploadSessionDir)) return jsonResponse(res, 404, { success: false, message: 'Sesi tidak ditemukan' });
+
+      const base64 = chunkData.split(',')[1];
+      const buffer = Buffer.from(base64, 'base64');
+      fs.writeFileSync(path.join(uploadSessionDir, 'chunk_' + String(chunkIndex).padStart(6, '0')), buffer);
+
+      jsonResponse(res, 200, { success: true, chunkIndex });
+
+    } else if (parsedUrl.pathname === '/api/admin/upload-finalize' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, uploadId } = JSON.parse(body);
+      const userObj = await getUserFromDb(username.toLowerCase());
+      if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak' });
+
+      const uploadSessionDir = path.join(UPLOAD_DIR, uploadId);
+      if (!fs.existsSync(uploadSessionDir)) return jsonResponse(res, 404, { success: false, message: 'Sesi tidak ditemukan' });
+
+      const meta = JSON.parse(fs.readFileSync(path.join(uploadSessionDir, 'meta.json'), 'utf8'));
+      const chunks = fs.readdirSync(uploadSessionDir).filter(f => f.startsWith('chunk_')).sort();
+      
+      if (chunks.length !== meta.totalChunks) {
+        return jsonResponse(res, 400, { success: false, message: 'Chunk tidak lengkap: ' + chunks.length + '/' + meta.totalChunks });
       }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/set-status' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { status, username } = JSON.parse(body);
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!userObj || !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-        await saveServerStatusToDb(status);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, status }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/set-video' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, videoUrl } = JSON.parse(body);
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!userObj || !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Akses ditolak! Hanya admin.' }));
-          return;
-        }
-        if (!videoUrl) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Data video kosong.' }));
-          return;
-        }
 
-        await saveVideoToDb(videoUrl);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Video berhasil diperbarui.' }));
-      } catch (e) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false, message: 'Kesalahan server saat menyimpan video.' }));
+      const buffers = chunks.map(c => fs.readFileSync(path.join(uploadSessionDir, c)));
+      const fullBuffer = Buffer.concat(buffers);
+
+      const base64 = fullBuffer.toString('base64');
+      const dataUrl = 'data:' + (meta.fileType || 'video/mp4') + ';base64,' + base64;
+
+      await saveVideoToDb(dataUrl);
+
+      chunks.forEach(c => { try { fs.unlinkSync(path.join(uploadSessionDir, c)); } catch(e){} });
+      try { fs.unlinkSync(path.join(uploadSessionDir, 'meta.json')); } catch(e){}
+      try { fs.rmdirSync(uploadSessionDir); } catch(e){}
+
+      jsonResponse(res, 200, { success: true, message: 'Video tersimpan', size: fullBuffer.length });
+
+    // ===== NEW: GET ALL USERS (ADMIN ONLY) =====
+    } else if (parsedUrl.pathname === '/api/admin/get-all-users') {
+      const username = parsedUrl.searchParams.get('username');
+      const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+      if (!adminObj || !adminObj.isAdmin) {
+        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
       }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/set-vip' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, targetUser, days } = JSON.parse(body);
-        const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!adminObj || !adminObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Akses ditolak.' }));
-          return;
-        }
 
-        const cleanTarget = targetUser.toLowerCase();
-        const targetObj = await getUserFromDb(cleanTarget);
-        if (!targetObj) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'User target tidak ditemukan!' }));
-          return;
-        }
+      const allUsers = await getAllUsersFromDb();
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
 
-        const vipExpiry = Date.now() + (days * 24 * 60 * 60 * 1000);
-        targetObj.vipUntil = vipExpiry;
-        await saveUserToDb(cleanTarget, targetObj);
+      const userList = Object.entries(allUsers).map(([uname, udata]) => {
+        const isVip = udata.vipUntil && udata.vipUntil > now;
+        const usedQuota = udata.activatedEmails ? udata.activatedEmails.length : 0;
+        const bonusQuota = udata.bonusQuota || 0;
+        const lastReset = udata.lastResetTime || 0;
+        const nextReset = lastReset + twentyFourHours;
+        const isResetDue = now - lastReset >= twentyFourHours;
 
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: `Sukses memberikan VIP ke ${cleanTarget} selama ${days} hari!` }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/get-vip-list') {
-    res.setHeader('Content-Type', 'application/json');
-    const username = parsedUrl.searchParams.get('username');
-    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-    if (!userObj || !userObj.isAdmin) {
-      res.writeHead(403);
-      res.end(JSON.stringify({ success: false }));
-      return;
-    }
-
-    const allUsers = await getAllUsersFromDb();
-    const vipUsers = {};
-    const now = Date.now();
-
-    for (let [uname, udata] of Object.entries(allUsers)) {
-      if (udata.vipUntil && udata.vipUntil > now) {
-        vipUsers[uname] = { vipUntil: udata.vipUntil };
-      }
-    }
-
-    res.writeHead(200);
-    res.end(JSON.stringify({ success: true, vipUsers }));
-  } else if (parsedUrl.pathname === '/api/admin/remove-vip' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, targetUser } = JSON.parse(body);
-        const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!adminObj || !adminObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-
-        const cleanTarget = targetUser.toLowerCase();
-        const targetObj = await getUserFromDb(cleanTarget);
-        if (targetObj) {
-          targetObj.vipUntil = 0;
-          await saveUserToDb(cleanTarget, targetObj);
-        }
-
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/create-announcement' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, title, content } = JSON.parse(body);
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!userObj || !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-
-        const id = 'info_' + Date.now();
-        await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
-
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Informasi berhasil dipublikasikan!' }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/update-announcement' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, id, title, content } = JSON.parse(body);
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!userObj || !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-
-        await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
-
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Informasi diperbarui!' }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/delete-announcement' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, id } = JSON.parse(body);
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!userObj || !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-        await removeAnnouncementFromDb(id);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/create-redeem' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, code, totalQuota, maxClaims } = JSON.parse(body);
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!userObj || !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-
-        const existingCode = await getRedeemFromDb(code);
-        if (existingCode) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Kode redeem sudah ada!' }));
-          return;
-        }
-
-        const redeemData = {
-          totalQuota: totalQuota,
-          maxClaims: maxClaims,
-          claimedCount: 0,
-          claimedUsers: []
+        return {
+          username: uname,
+          email: udata.email || '-',
+          isAdmin: !!udata.isAdmin,
+          isVip: !!isVip,
+          vipUntil: udata.vipUntil || 0,
+          usedQuota: usedQuota,
+          bonusQuota: bonusQuota,
+          totalQuota: 1 + bonusQuota,
+          lastResetTime: lastReset,
+          nextResetTime: nextReset,
+          isResetDue: isResetDue,
+          activatedEmails: udata.activatedEmails || []
         };
-        await saveRedeemToDb(code, redeemData);
+      });
 
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: `Kode ${code} berhasil dibuat!` }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/admin/get-redeems') {
-    res.setHeader('Content-Type', 'application/json');
-    const username = parsedUrl.searchParams.get('username');
-    const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-    if (!userObj || !userObj.isAdmin) {
-      res.writeHead(403);
-      res.end(JSON.stringify({ success: false }));
-      return;
-    }
-    const redeems = await getAllRedeemsFromDb();
-    res.writeHead(200);
-    res.end(JSON.stringify({ success: true, redeems }));
-  } else if (parsedUrl.pathname === '/api/admin/delete-redeem' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, code } = JSON.parse(body);
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (!userObj || !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-        await removeRedeemFromDb(code);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/redeem' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const parsedBody = JSON.parse(body);
-        const { username } = parsedBody;
-        const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+      userList.sort((a, b) => {
+        if (a.isAdmin !== b.isAdmin) return a.isAdmin ? -1 : 1;
+        if (a.isVip !== b.isVip) return a.isVip ? -1 : 1;
+        return a.username.localeCompare(b.username);
+      });
 
-        if (currentServerStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Pembuatan gagal: Server sedang offline. Fitur dinonaktifkan.' }));
-          return;
-        }
+      const stats = {
+        total: userList.length,
+        admins: userList.filter(u => u.isAdmin).length,
+        vips: userList.filter(u => u.isVip).length,
+        regulars: userList.filter(u => !u.isAdmin && !u.isVip).length,
+        resetDue: userList.filter(u => u.isResetDue).length
+      };
 
-        const { code } = parsedBody;
-        const cleanUser = username.toLowerCase();
-        const redeemObj = await getRedeemFromDb(code);
+      jsonResponse(res, 200, { success: true, users: userList, stats });
 
-        if (!userObj || !redeemObj) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'User atau Kode Redeem tidak valid!' }));
-          return;
-        }
+    // ===== OTHER ADMIN ENDPOINTS =====
+    } else if (parsedUrl.pathname === '/api/user/username' && req.method === 'PUT') {
+      const body = await readBody(req);
+      const { currentUsername, newUsername } = JSON.parse(body);
+      if (!currentUsername || !newUsername) return jsonResponse(res, 400, { success: false, message: 'Username lama dan baru diperlukan.' });
 
-        if (redeemObj.claimedUsers && redeemObj.claimedUsers.includes(cleanUser)) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Anda sudah pernah klaim kode ini!' }));
-          return;
-        }
+      const cleanOld = currentUsername.toLowerCase();
+      const cleanNew = newUsername.trim().toLowerCase();
 
-        if (redeemObj.claimedCount >= redeemObj.maxClaims) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'Kuota kode redeem sudah habis terpakai!' }));
-          return;
-        }
+      const existingUser = await getUserFromDb(cleanNew);
+      if (existingUser) return jsonResponse(res, 400, { success: false, message: 'Username sudah digunakan.' });
 
-        const remainingClaims = redeemObj.maxClaims - redeemObj.claimedCount;
-        const remainingTotalQuota = redeemObj.totalQuota - (redeemObj.distributedQuota || 0);
-        let rewardQuota = Math.round(remainingTotalQuota / remainingClaims);
-        if (rewardQuota < 1) rewardQuota = 1;
+      const userData = await getUserFromDb(cleanOld);
+      if (!userData) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan.' });
 
-        if (!userObj.bonusQuota) userObj.bonusQuota = 0;
-        userObj.bonusQuota += rewardQuota;
+      await saveUserToDb(cleanNew, userData);
+      await set(ref(db, `users/${cleanOld}`), null);
+      jsonResponse(res, 200, { success: true, newUsername: cleanNew });
 
-        redeemObj.claimedCount += 1;
-        if (!redeemObj.distributedQuota) redeemObj.distributedQuota = 0;
-        redeemObj.distributedQuota += rewardQuota;
-        if (!redeemObj.claimedUsers) redeemObj.claimedUsers = [];
-        redeemObj.claimedUsers.push(cleanUser);
+    } else if (parsedUrl.pathname === '/api/admin/set-status' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { status, username } = JSON.parse(body);
+      const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+      if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false });
+      await saveServerStatusToDb(status);
+      jsonResponse(res, 200, { success: true, status });
 
-        await saveUserToDb(cleanUser, userObj);
-        await saveRedeemToDb(code, redeemObj);
+    } else if (parsedUrl.pathname === '/api/admin/set-vip' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, targetUser, days } = JSON.parse(body);
+      const adminObj = await getUserFromDb(username.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak.' });
 
-        res.writeHead(200);
-        res.end(JSON.stringify({ 
-          success: true, 
-          message: `Berhasil klaim! Anda mendapatkan bonus ${rewardQuota} kuota.`,
-          usedQuota: userObj.activatedEmails ? userObj.activatedEmails.length : 0,
-          bonusQuota: userObj.bonusQuota
-        }));
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/auth/session' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, token } = JSON.parse(body);
-        if (!username || !token) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
-        const cleanUser = username.toLowerCase();
-        const existingUser = await getUserFromDb(cleanUser);
-        if (!existingUser) {
-          res.writeHead(404);
-          res.end(JSON.stringify({ success: false }));
-          return;
-        }
+      const cleanTarget = targetUser.toLowerCase();
+      const targetObj = await getUserFromDb(cleanTarget);
+      if (!targetObj) return jsonResponse(res, 400, { success: false, message: 'User target tidak ditemukan!' });
 
-        const now = Date.now();
-        const twentyFourHours = 24 * 60 * 60 * 1000;
-        if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
+      targetObj.vipUntil = Date.now() + (days * 24 * 60 * 60 * 1000);
+      await saveUserToDb(cleanTarget, targetObj);
+      jsonResponse(res, 200, { success: true, message: 'VIP ' + cleanTarget + ' aktif ' + days + ' hari!' });
 
-        if (now - existingUser.lastResetTime >= twentyFourHours) {
-          existingUser.activatedEmails = [];
-          existingUser.lastResetTime = now;
-          await saveUserToDb(cleanUser, existingUser);
-        }
+    } else if (parsedUrl.pathname === '/api/admin/get-vip-list') {
+      const username = parsedUrl.searchParams.get('username');
+      const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+      if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false });
 
-        const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
-        const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
-
-        res.writeHead(200);
-        res.end(JSON.stringify({ 
-          success: true, 
-          username: cleanUser, 
-          isAdmin: existingUser.isAdmin, 
-          usedQuota: usedCount,
-          bonusQuota: existingUser.bonusQuota || 0,
-          isVip: isVipActive,
-          vipUntil: existingUser.vipUntil || 0,
-          serverStatus: currentServerStatus
-        }));
-      } catch (e) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ success: false }));
+      const allUsers = await getAllUsersFromDb();
+      const vipUsers = {};
+      const now = Date.now();
+      for (let [uname, udata] of Object.entries(allUsers)) {
+        if (udata.vipUntil && udata.vipUntil > now) vipUsers[uname] = { vipUntil: udata.vipUntil };
       }
-    });
-  } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { mode, username, password, email, deviceToken } = JSON.parse(body);
-        const cleanUser = username.trim().toLowerCase();
-        let existingUser = await getUserFromDb(cleanUser);
+      jsonResponse(res, 200, { success: true, vipUsers });
 
-        if (mode === 'register') {
-          if (cleanUser === 'adminbagus' || existingUser) {
-            res.writeHead(400);
-            res.end(JSON.stringify({ success: false, message: 'Username tidak tersedia atau sudah terdaftar!' }));
-            return;
+    } else if (parsedUrl.pathname === '/api/admin/remove-vip' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, targetUser } = JSON.parse(body);
+      const adminObj = await getUserFromDb(username.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false });
+
+      const cleanTarget = targetUser.toLowerCase();
+      const targetObj = await getUserFromDb(cleanTarget);
+      if (targetObj) {
+        targetObj.vipUntil = 0;
+        await saveUserToDb(cleanTarget, targetObj);
+      }
+      jsonResponse(res, 200, { success: true });
+
+    } else if (parsedUrl.pathname === '/api/admin/create-announcement' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, title, content } = JSON.parse(body);
+      const userObj = await getUserFromDb(username.toLowerCase());
+      if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false });
+
+      const id = 'info_' + Date.now();
+      await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
+      jsonResponse(res, 200, { success: true, message: 'Informasi dipublikasikan!' });
+
+    } else if (parsedUrl.pathname === '/api/admin/update-announcement' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, id, title, content } = JSON.parse(body);
+      const userObj = await getUserFromDb(username.toLowerCase());
+      if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false });
+
+      await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
+      jsonResponse(res, 200, { success: true, message: 'Informasi diperbarui!' });
+
+    } else if (parsedUrl.pathname === '/api/admin/delete-announcement' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, id } = JSON.parse(body);
+      const userObj = await getUserFromDb(username.toLowerCase());
+      if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false });
+      await removeAnnouncementFromDb(id);
+      jsonResponse(res, 200, { success: true });
+
+    } else if (parsedUrl.pathname === '/api/admin/create-redeem' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, code, totalQuota, maxClaims } = JSON.parse(body);
+      const userObj = await getUserFromDb(username.toLowerCase());
+      if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false });
+
+      const existingCode = await getRedeemFromDb(code);
+      if (existingCode) return jsonResponse(res, 400, { success: false, message: 'Kode redeem sudah ada!' });
+
+      await saveRedeemToDb(code, { totalQuota, maxClaims, claimedCount: 0, claimedUsers: [] });
+      jsonResponse(res, 200, { success: true, message: 'Kode ' + code + ' dibuat!' });
+
+    } else if (parsedUrl.pathname === '/api/admin/get-redeems') {
+      const username = parsedUrl.searchParams.get('username');
+      const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+      if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false });
+      const redeems = await getAllRedeemsFromDb();
+      jsonResponse(res, 200, { success: true, redeems });
+
+    } else if (parsedUrl.pathname === '/api/admin/delete-redeem' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, code } = JSON.parse(body);
+      const userObj = await getUserFromDb(username.toLowerCase());
+      if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false });
+      await removeRedeemFromDb(code);
+      jsonResponse(res, 200, { success: true });
+
+    } else if (parsedUrl.pathname === '/api/redeem' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, code } = JSON.parse(body);
+      const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+
+      if (currentServerStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
+        return jsonResponse(res, 403, { success: false, message: 'Server offline.' });
+      }
+
+      const cleanUser = username.toLowerCase();
+      const redeemObj = await getRedeemFromDb(code);
+
+      if (!userObj || !redeemObj) return jsonResponse(res, 400, { success: false, message: 'User atau kode tidak valid!' });
+
+      if (redeemObj.claimedUsers && redeemObj.claimedUsers.includes(cleanUser)) {
+        return jsonResponse(res, 400, { success: false, message: 'Anda sudah pernah klaim kode ini!' });
+      }
+      if (redeemObj.claimedCount >= redeemObj.maxClaims) {
+        return jsonResponse(res, 400, { success: false, message: 'Kuota kode habis!' });
+      }
+
+      const remainingClaims = redeemObj.maxClaims - redeemObj.claimedCount;
+      const remainingTotalQuota = redeemObj.totalQuota - (redeemObj.distributedQuota || 0);
+      let rewardQuota = Math.round(remainingTotalQuota / remainingClaims);
+      if (rewardQuota < 1) rewardQuota = 1;
+
+      if (!userObj.bonusQuota) userObj.bonusQuota = 0;
+      userObj.bonusQuota += rewardQuota;
+
+      redeemObj.claimedCount += 1;
+      if (!redeemObj.distributedQuota) redeemObj.distributedQuota = 0;
+      redeemObj.distributedQuota += rewardQuota;
+      if (!redeemObj.claimedUsers) redeemObj.claimedUsers = [];
+      redeemObj.claimedUsers.push(cleanUser);
+
+      await saveUserToDb(cleanUser, userObj);
+      await saveRedeemToDb(code, redeemObj);
+
+      jsonResponse(res, 200, {
+        success: true,
+        message: 'Berhasil klaim! Anda dapat ' + rewardQuota + ' kuota bonus.',
+        usedQuota: userObj.activatedEmails ? userObj.activatedEmails.length : 0,
+        bonusQuota: userObj.bonusQuota,
+        isVip: userObj.vipUntil && userObj.vipUntil > Date.now(),
+        isAdmin: userObj.isAdmin
+      });
+
+    } else if (parsedUrl.pathname === '/api/auth/session' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, token } = JSON.parse(body);
+      if (!username || !token) return jsonResponse(res, 400, { success: false });
+
+      const cleanUser = username.toLowerCase();
+      const existingUser = await getUserFromDb(cleanUser);
+      if (!existingUser) return jsonResponse(res, 404, { success: false });
+
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
+      if (now - existingUser.lastResetTime >= twentyFourHours) {
+        existingUser.activatedEmails = [];
+        existingUser.lastResetTime = now;
+        await saveUserToDb(cleanUser, existingUser);
+      }
+
+      const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
+      const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
+
+      jsonResponse(res, 200, {
+        success: true, username: cleanUser, isAdmin: existingUser.isAdmin,
+        usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0,
+        isVip: isVipActive, vipUntil: existingUser.vipUntil || 0,
+        serverStatus: currentServerStatus
+      });
+
+    } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { mode, username, password, email, deviceToken } = JSON.parse(body);
+      const cleanUser = username.trim().toLowerCase();
+      let existingUser = await getUserFromDb(cleanUser);
+
+      if (mode === 'register') {
+        if (cleanUser === 'adminbagus' || existingUser) {
+          return jsonResponse(res, 400, { success: false, message: 'Username tidak tersedia!' });
+        }
+        const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
+        await saveUserToDb(cleanUser, {
+          password, email, isAdmin: false,
+          activatedEmails: [], bonusQuota: 0,
+          lastResetTime: Date.now(), vipUntil: 0,
+          deviceToken: newDeviceToken
+        });
+        const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
+        return jsonResponse(res, 200, {
+          success: true, message: 'Registrasi berhasil!',
+          username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0,
+          isVip: false, serverStatus: currentServerStatus,
+          deviceToken: newDeviceToken, token: fakeAuthToken
+        });
+      } else {
+        if (existingUser && existingUser.password === password) {
+          const now = Date.now();
+          const twentyFourHours = 24 * 60 * 60 * 1000;
+          if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
+          if (now - existingUser.lastResetTime >= twentyFourHours) {
+            existingUser.activatedEmails = [];
+            existingUser.lastResetTime = now;
+            await saveUserToDb(cleanUser, existingUser);
           }
-
-          const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
-          const newUserData = { 
-            password, 
-            email, 
-            isAdmin: false, 
-            activatedEmails: [], 
-            bonusQuota: 0, 
-            lastResetTime: Date.now(),
-            vipUntil: 0,
-            deviceToken: newDeviceToken
-          };
-          await saveUserToDb(cleanUser, newUserData);
-          
+          const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
+          const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
           const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
-
-          res.writeHead(200);
-          res.end(JSON.stringify({ 
-            success: true, 
-            message: 'Registrasi berhasil!', 
-            username: cleanUser, 
-            isAdmin: false, 
-            usedQuota: 0, 
-            bonusQuota: 0,
-            isVip: false,
-            serverStatus: currentServerStatus,
-            deviceToken: newDeviceToken,
-            token: fakeAuthToken
-          }));
-        } else {
-          if (existingUser && existingUser.password === password) {
-            const now = Date.now();
-            const twentyFourHours = 24 * 60 * 60 * 1000;
-            if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
-
-            if (now - existingUser.lastResetTime >= twentyFourHours) {
-              existingUser.activatedEmails = [];
-              existingUser.lastResetTime = now;
-              await saveUserToDb(cleanUser, existingUser);
-            }
-
-            const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
-            const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
-            const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
-
-            res.writeHead(200);
-            res.end(JSON.stringify({ 
-              success: true, 
-              message: 'Login berhasil!', 
-              username: cleanUser, 
-              isAdmin: existingUser.isAdmin, 
-              usedQuota: usedCount,
-              bonusQuota: existingUser.bonusQuota || 0,
-              isVip: isVipActive,
-              vipUntil: existingUser.vipUntil || 0,
-              serverStatus: currentServerStatus,
-              token: fakeAuthToken
-            }));
-          } else {
-            res.writeHead(401);
-            res.end(JSON.stringify({ success: false, message: 'Username atau password salah!' }));
-          }
+          return jsonResponse(res, 200, {
+            success: true, message: 'Login berhasil!',
+            username: cleanUser, isAdmin: existingUser.isAdmin,
+            usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0,
+            isVip: isVipActive, vipUntil: existingUser.vipUntil || 0,
+            serverStatus: currentServerStatus, token: fakeAuthToken
+          });
         }
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false })); }
-    });
-  } else if (parsedUrl.pathname === '/api/magiclink' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { username, email } = JSON.parse(body);
-        const cleanUser = username ? username.toLowerCase() : '';
-        const userObj = await getUserFromDb(cleanUser);
-
-        if (!userObj) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ success: false, message: 'User tidak ditemukan.' }));
-          return;
-        }
-
-        if (currentServerStatus !== 'online' && !userObj.isAdmin) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ success: false, message: 'Pembuatan gagal: Server sedang offline.' }));
-          return;
-        }
-
-        const now = Date.now();
-        const twentyFourHours = 24 * 60 * 60 * 1000;
-        if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
-          userObj.activatedEmails = [];
-          userObj.lastResetTime = now;
-        }
-
-        if (!userObj.activatedEmails) userObj.activatedEmails = [];
-        if (!userObj.bonusQuota) userObj.bonusQuota = 0;
-
-        const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
-        const maxAllowed = 1 + userObj.bonusQuota;
-
-        if (!userObj.isAdmin && !isVipActive) {
-          if (!userObj.activatedEmails.includes(email) && userObj.activatedEmails.length >= maxAllowed) {
-            res.writeHead(403);
-            res.end(JSON.stringify({ success: false, message: 'Kuota aktivasi Anda habis!' }));
-            return;
-          }
-        }
-
-        const result = await am.magiclink(email);
-
-        if (!userObj.isAdmin && !isVipActive && !userObj.activatedEmails.includes(email)) {
-          userObj.activatedEmails.push(email);
-          await saveUserToDb(cleanUser, userObj);
-        }
-
-        res.writeHead(200);
-        res.end(JSON.stringify({ 
-          success: true, 
-          result, 
-          quotaInfo: { usedQuota: userObj.activatedEmails.length, bonusQuota: userObj.bonusQuota } 
-        }));
-      } catch (error) {
-        res.writeHead(400);
-        res.end(JSON.stringify({ success: false, message: error.message }));
+        return jsonResponse(res, 401, { success: false, message: 'Username atau password salah!' });
       }
-    });
-  } else if (parsedUrl.pathname === '/api/verif' && req.method === 'POST') {
-    res.setHeader('Content-Type', 'application/json');
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { email, url: verifyUrl, username } = JSON.parse(body);
 
-        let userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-        if (currentServerStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
-          res.writeHead(403);
-          res.end(JSON.stringify({ error: 'Pembuatan gagal: Server sedang offline.' }));
-          return;
-        }
+    } else if (parsedUrl.pathname === '/api/magiclink' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, email } = JSON.parse(body);
+      const cleanUser = username ? username.toLowerCase() : '';
+      const userObj = await getUserFromDb(cleanUser);
 
-        if (!email || !verifyUrl) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ error: 'Parameter email dan url diperlukan.' }));
-          return;
-        }
-
-        const result = await am.verif(email, verifyUrl);
-        res.writeHead(200);
-        res.end(JSON.stringify(result));
-      } catch (error) {
-        res.writeHead(400);
-        res.end(JSON.stringify({ error: error.message }));
+      if (!userObj) return jsonResponse(res, 400, { success: false, message: 'User tidak ditemukan.' });
+      if (currentServerStatus !== 'online' && !userObj.isAdmin) {
+        return jsonResponse(res, 403, { success: false, message: 'Server sedang offline.' });
       }
-    });
-  } else {
-    res.writeHead(404, { 'Content-Type': 'text/plain' });
-    res.end('Endpoint tidak ditemukan.');
+
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
+        userObj.activatedEmails = [];
+        userObj.lastResetTime = now;
+      }
+      if (!userObj.activatedEmails) userObj.activatedEmails = [];
+      if (!userObj.bonusQuota) userObj.bonusQuota = 0;
+
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+      const maxAllowed = 1 + userObj.bonusQuota;
+
+      if (!userObj.isAdmin && !isVipActive) {
+        if (!userObj.activatedEmails.includes(email) && userObj.activatedEmails.length >= maxAllowed) {
+          return jsonResponse(res, 403, { success: false, message: 'Kuota aktivasi Anda habis!' });
+        }
+      }
+
+      const result = await am.magiclink(email);
+
+      if (!userObj.isAdmin && !isVipActive && !userObj.activatedEmails.includes(email)) {
+        userObj.activatedEmails.push(email);
+        await saveUserToDb(cleanUser, userObj);
+      }
+
+      jsonResponse(res, 200, {
+        success: true, result,
+        quotaInfo: { usedQuota: userObj.activatedEmails.length, bonusQuota: userObj.bonusQuota }
+      });
+
+    } else if (parsedUrl.pathname === '/api/verif' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { email, url: verifyUrl, username } = JSON.parse(body);
+      let userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+      if (currentServerStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
+        return jsonResponse(res, 403, { error: 'Server sedang offline.' });
+      }
+      if (!email || !verifyUrl) return jsonResponse(res, 400, { error: 'Parameter email dan url diperlukan.' });
+
+      const result = await am.verif(email, verifyUrl);
+      jsonResponse(res, 200, result);
+
+    } else {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Endpoint tidak ditemukan.');
+    }
+  } catch (err) {
+    console.error('Server error:', err);
+    if (!res.headersSent) {
+      jsonResponse(res, 500, { success: false, message: err.message || 'Internal server error' });
+    }
   }
 });
 
 server.listen(PORT, () => {
-  console.log(`Server web AM Premium berjalan di: http://localhost:${PORT}`);
+  console.log('\\n╔══════════════════════════════════════════╗');
+  console.log('║  🚀 AM Premium Banggus v2.1              ║');
+  console.log('║  📡 http://localhost:' + PORT + '                  ║');
+  console.log('║  📦 Chunked Upload Ready (>200MB)        ║');
+  console.log('║  👥 User List Viewer Ready (Admin Only)  ║');
+  console.log('╚══════════════════════════════════════════╝\\n');
 });
