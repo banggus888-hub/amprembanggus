@@ -300,7 +300,12 @@ const htmlTemplate = `<!DOCTYPE html>
     0% { background-position: -200% 0; }
     100% { background-position: 200% 0; }
   }
+  @keyframes pulse-ring {
+    0% { transform: scale(0.95); opacity: 1; }
+    100% { transform: scale(1.3); opacity: 0; }
+  }
   .animate-slide-up { animation: slide-up 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+  .pulse-ring { animation: pulse-ring 1.5s ease-out infinite; }
   
   .toast {
     position: fixed; top: 1.25rem; left: 50%; transform: translateX(-50%) translateY(-120%);
@@ -401,6 +406,25 @@ const htmlTemplate = `<!DOCTYPE html>
     color: white;
     transform: translateY(-2px);
     box-shadow: 0 8px 20px -5px rgba(168,85,247,0.4);
+  }
+
+  .countdown-box {
+    background: rgba(7,4,15,0.6);
+    border: 1px solid rgba(244,63,94,0.25);
+    border-radius: 0.75rem;
+    padding: 0.5rem;
+    text-align: center;
+  }
+  .countdown-num {
+    font-size: 1.15rem; font-weight: 800;
+    color: white; font-family: 'JetBrains Mono', monospace;
+    line-height: 1;
+  }
+  .countdown-label {
+    font-size: 0.6rem; color: #94a3b8;
+    text-transform: uppercase; font-weight: 700;
+    margin-top: 0.25rem;
+    letter-spacing: 0.05em;
   }
 
   ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -591,6 +615,33 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
+      <!-- Reset Countdown Banner (muncul jika kuota habis) -->
+      <div id="reset-banner-main" class="p-3.5 rounded-2xl hidden animate-slide-up" style="background: linear-gradient(135deg, rgba(244,63,94,0.15), rgba(168,85,247,0.1)); border: 1px solid rgba(244,63,94,0.4);">
+        <div class="flex items-center gap-2.5 mb-2.5">
+          <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style="background: rgba(244,63,94,0.2);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fda4af" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-xs font-extrabold text-rose-300">KUOTA HABIS</p>
+            <p class="text-[10px] text-slate-300">Reset otomatis dalam:</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-2">
+          <div class="countdown-box">
+            <p id="cd-hours-main" class="countdown-num">00</p>
+            <p class="countdown-label">Jam</p>
+          </div>
+          <div class="countdown-box">
+            <p id="cd-minutes-main" class="countdown-num">00</p>
+            <p class="countdown-label">Menit</p>
+          </div>
+          <div class="countdown-box">
+            <p id="cd-seconds-main" class="countdown-num">00</p>
+            <p class="countdown-label">Detik</p>
+          </div>
+        </div>
+      </div>
+
       <div class="grid grid-cols-2 gap-2.5">
         <div class="stat-card">
           <div>
@@ -604,7 +655,7 @@ const htmlTemplate = `<!DOCTYPE html>
         <div class="stat-card">
           <div>
             <p class="text-[10px] font-bold uppercase tracking-wider text-cyan-300">Reset</p>
-            <p class="text-sm font-extrabold text-white mono mt-0.5">24 Jam</p>
+            <p id="reset-timer-display" class="text-sm font-extrabold text-white mono mt-0.5">24 Jam</p>
           </div>
           <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(6,182,212,0.15);">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#67e8f9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -713,6 +764,83 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
+      <!-- NEW: RIWAYAT GMAIL TERVERIFIKASI -->
+      <div class="pt-3 border-t border-cyan-500/20">
+        <div class="flex justify-between items-center mb-2">
+          <div class="section-title" style="color: #67e8f9; margin: 0;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            Riwayat Gmail Terverifikasi
+          </div>
+          <button onclick="loadVerifiedEmails()" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.68rem;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Refresh
+          </button>
+        </div>
+
+        <!-- Kuota Status Card -->
+        <div id="quota-status-card" class="p-3 rounded-xl mb-2.5" style="background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.25);">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-300">Status Kuota</span>
+            <span id="quota-status-badge" class="badge badge-online" style="font-size: 0.6rem; padding: 0.15rem 0.5rem;">Tersedia</span>
+          </div>
+          <div class="flex items-center justify-between text-xs">
+            <div>
+              <p class="text-slate-400 text-[10px]">Terpakai</p>
+              <p class="mono font-extrabold text-white" id="quota-used-display">0</p>
+            </div>
+            <div class="text-right">
+              <p class="text-slate-400 text-[10px]">Tersisa</p>
+              <p class="mono font-extrabold text-cyan-300" id="quota-remain-display">1</p>
+            </div>
+            <div class="text-right">
+              <p class="text-slate-400 text-[10px]">Total</p>
+              <p class="mono font-extrabold text-purple-300" id="quota-total-display">1</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Countdown Reset (hanya muncul jika kuota habis) -->
+        <div id="reset-countdown-card" class="p-3.5 rounded-xl mb-2.5 hidden" style="background: linear-gradient(135deg, rgba(244,63,94,0.12), rgba(168,85,247,0.08)); border: 1px solid rgba(244,63,94,0.35);">
+          <div class="flex items-center gap-2.5 mb-2.5">
+            <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style="background: rgba(244,63,94,0.2);">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fda4af" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <div>
+              <p class="text-xs font-extrabold text-rose-300">KUOTA HABIS</p>
+              <p class="text-[10px] text-slate-300">Kuota akan direset otomatis dalam:</p>
+            </div>
+          </div>
+          
+          <div class="grid grid-cols-3 gap-2 text-center">
+            <div class="countdown-box">
+              <p id="countdown-hours" class="countdown-num">00</p>
+              <p class="countdown-label">Jam</p>
+            </div>
+            <div class="countdown-box">
+              <p id="countdown-minutes" class="countdown-num">00</p>
+              <p class="countdown-label">Menit</p>
+            </div>
+            <div class="countdown-box">
+              <p id="countdown-seconds" class="countdown-num">00</p>
+              <p class="countdown-label">Detik</p>
+            </div>
+          </div>
+
+          <p class="text-[10px] text-center text-slate-400 mt-2.5">
+            Reset berikutnya: <span id="next-reset-time" class="text-rose-300 font-bold mono">-</span>
+          </p>
+
+          <div class="progress-bar mt-2.5" style="height: 6px;">
+            <div id="reset-progress-fill" class="progress-fill" style="background: linear-gradient(90deg, #f43f5e, #a855f7, #f43f5e);"></div>
+          </div>
+        </div>
+
+        <!-- List Gmail Terverifikasi -->
+        <div id="verified-emails-list" class="space-y-1.5 max-h-64 overflow-y-auto">
+          <p class="text-slate-500 italic text-center py-2 text-xs">Memuat riwayat...</p>
+        </div>
+      </div>
+
       <!-- ADMIN PANEL -->
       <div id="admin-control-panel" class="hidden space-y-4 pt-3 border-t border-amber-500/20">
         <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(168,85,247,0.08)); border: 1px solid rgba(245,158,11,0.3);">
@@ -779,7 +907,6 @@ const htmlTemplate = `<!DOCTYPE html>
           </div>
         </div>
 
-        <!-- NEW: DAFTAR USER TERDAFTAR -->
         <div>
           <div class="flex justify-between items-center mb-2">
             <p class="section-title" style="color: #fbbf24; margin: 0;">
@@ -908,7 +1035,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <p class="text-center text-[10px] text-slate-600 tracking-wider py-2">AM PREMIUM • BY BANGGUS • v2.1</p>
+    <p class="text-center text-[10px] text-slate-600 tracking-wider py-2">AM PREMIUM • BY BANGGUS • v2.2</p>
   </div>
 </div>
 
@@ -921,6 +1048,9 @@ let selectedVideoFile = null;
 let currentResultText = '';
 let cachedUserList = [];
 let currentUserFilter = 'all';
+let quotaCountdownInterval = null;
+let globalCountdownInterval = null;
+let userQuotaData = { usedQuota: 0, bonusQuota: 0, totalQuota: 1, nextResetTime: 0, lastResetTime: 0 };
 
 // ============ TOAST ============
 function showToast(message, type = 'info', duration = 3000) {
@@ -956,7 +1086,10 @@ function switchView(viewName) {
     document.getElementById(id).classList.add('hidden');
   });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hidden');
-  else if (viewName === 'profile') document.getElementById('section-profile').classList.remove('hidden');
+  else if (viewName === 'profile') {
+    document.getElementById('section-profile').classList.remove('hidden');
+    loadVerifiedEmails();
+  }
   else if (viewName === 'guide') document.getElementById('section-guide').classList.remove('hidden');
   else if (viewName === 'announcement') {
     document.getElementById('section-announcement').classList.remove('hidden');
@@ -1095,6 +1228,7 @@ function applySession(data) {
   updateQuotaDisplay(data);
   checkVipStatus(data);
   loadUserAnnouncements();
+  loadVerifiedEmails();
   updateStatusUI(data.serverStatus);
   fetchFeaturedVideo();
 
@@ -1160,10 +1294,254 @@ async function triggerUpdateUsername() {
   }
 }
 
+// ============ RIWAYAT GMAIL & COUNTDOWN RESET ============
+async function loadVerifiedEmails() {
+  if (!loggedInUsername) return;
+  const container = document.getElementById('verified-emails-list');
+  if (!container) return;
+  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 text-xs animate-pulse">⏳ Memuat riwayat...</p>';
+
+  try {
+    const res = await fetch('/api/user/my-emails?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+
+    if (!data.success) {
+      container.innerHTML = '<p class="text-rose-400 italic text-center py-2 text-xs">Gagal memuat riwayat</p>';
+      return;
+    }
+
+    updateQuotaStatusCard(data);
+    handleCountdown(data);
+
+    const emails = data.activatedEmails || [];
+    if (emails.length === 0) {
+      container.innerHTML = 
+        '<div class="p-3 rounded-xl text-center" style="background: rgba(148,163,184,0.05); border: 1px dashed rgba(148,163,184,0.2);">' +
+          '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.5" style="margin: 0 auto 0.5rem; display: block;">' +
+            '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>' +
+          '</svg>' +
+          '<p class="text-xs text-slate-400 font-semibold">Belum ada Gmail terverifikasi</p>' +
+          '<p class="text-[10px] text-slate-500 mt-0.5">Gmail yang berhasil diverifikasi akan muncul di sini</p>' +
+        '</div>';
+      return;
+    }
+
+    container.innerHTML = emails.map((email, idx) => {
+      const isLatest = idx === emails.length - 1;
+      const safeEmail = email.replace(/'/g, "\\\\'");
+      return '<div class="p-2.5 rounded-xl animate-slide-up flex items-center justify-between gap-2" ' +
+        'style="background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.22);">' +
+        '<div class="flex items-center gap-2.5 min-w-0 flex-1">' +
+          '<div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background: rgba(6,182,212,0.15);">' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#67e8f9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+              '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>' +
+            '</svg>' +
+          '</div>' +
+          '<div class="min-w-0 flex-1">' +
+            '<p class="text-xs font-bold text-white truncate mono">' + escapeHtml(email) + '</p>' +
+            '<div class="flex items-center gap-1.5 mt-0.5">' +
+              '<span class="text-[9px] text-emerald-400 font-bold flex items-center gap-1">' +
+                '<span class="w-1 h-1 rounded-full bg-emerald-400"></span> Terverifikasi' +
+              '</span>' +
+              (isLatest ? '<span class="text-[9px] text-amber-300 font-bold">• Terbaru</span>' : '') +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<button onclick="copyEmail(\\'' + safeEmail + '\\')" class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" ' +
+        'style="background: rgba(168,85,247,0.15); border: 1px solid rgba(168,85,247,0.25);" title="Copy email">' +
+          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="2.5">' +
+            '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>' +
+          '</svg>' +
+        '</button>' +
+      '</div>';
+    }).join('');
+
+  } catch (e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-center py-2 text-xs">Kesalahan koneksi</p>';
+  }
+}
+
+function updateQuotaStatusCard(data) {
+  const total = data.totalQuota || 1;
+  const used = data.usedQuota || 0;
+  const remain = Math.max(0, total - used);
+
+  document.getElementById('quota-used-display').innerText = used;
+  document.getElementById('quota-remain-display').innerText = data.isAdmin || data.isVip ? '∞' : remain;
+  document.getElementById('quota-total-display').innerText = data.isAdmin || data.isVip ? '∞' : total;
+
+  const card = document.getElementById('quota-status-card');
+  const badge = document.getElementById('quota-status-badge');
+
+  if (data.isAdmin || data.isVip) {
+    card.style.background = 'rgba(168,85,247,0.08)';
+    card.style.borderColor = 'rgba(168,85,247,0.3)';
+    badge.className = 'badge badge-vip';
+    badge.innerText = data.isAdmin ? '👑 Admin' : '⭐ VIP';
+  } else if (remain <= 0) {
+    card.style.background = 'rgba(244,63,94,0.08)';
+    card.style.borderColor = 'rgba(244,63,94,0.3)';
+    badge.className = 'badge badge-offline';
+    badge.innerText = '✗ Habis';
+  } else if (remain <= 1) {
+    card.style.background = 'rgba(245,158,11,0.08)';
+    card.style.borderColor = 'rgba(245,158,11,0.3)';
+    badge.className = 'badge badge-admin';
+    badge.innerText = '⚠ Terbatas';
+  } else {
+    card.style.background = 'rgba(6,182,212,0.06)';
+    card.style.borderColor = 'rgba(6,182,212,0.25)';
+    badge.className = 'badge badge-online';
+    badge.innerText = '✓ Tersedia';
+  }
+}
+
+function handleCountdown(data) {
+  const countdownCard = document.getElementById('reset-countdown-card');
+  const resetBannerMain = document.getElementById('reset-banner-main');
+  const total = data.totalQuota || 1;
+  const used = data.usedQuota || 0;
+  const remain = Math.max(0, total - used);
+
+  // Clear interval lama
+  if (quotaCountdownInterval) { clearInterval(quotaCountdownInterval); quotaCountdownInterval = null; }
+  if (globalCountdownInterval) { clearInterval(globalCountdownInterval); globalCountdownInterval = null; }
+
+  // Sembunyikan dulu
+  if (countdownCard) countdownCard.classList.add('hidden');
+  if (resetBannerMain) resetBannerMain.classList.add('hidden');
+
+  // Update reset timer di stat card
+  updateResetTimerDisplay(data);
+
+  const shouldShow = remain <= 0 && !data.isAdmin && !data.isVip && data.nextResetTime > 0;
+  if (!shouldShow) return;
+
+  if (countdownCard) countdownCard.classList.remove('hidden');
+  if (resetBannerMain) resetBannerMain.classList.remove('hidden');
+
+  userQuotaData = {
+    usedQuota: used,
+    bonusQuota: data.bonusQuota || 0,
+    totalQuota: total,
+    nextResetTime: data.nextResetTime,
+    lastResetTime: data.lastResetTime
+  };
+
+  const nextResetDate = new Date(data.nextResetTime);
+  const timeStr = nextResetDate.toLocaleString('id-ID', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+  const nextResetEl = document.getElementById('next-reset-time');
+  if (nextResetEl) nextResetEl.innerText = timeStr;
+
+  const totalDuration = data.nextResetTime - data.lastResetTime;
+
+  function tick() {
+    const now = Date.now();
+    const msLeft = userQuotaData.nextResetTime - now;
+
+    if (msLeft <= 0) {
+      clearInterval(quotaCountdownInterval);
+      quotaCountdownInterval = null;
+      ['countdown-hours', 'countdown-minutes', 'countdown-seconds', 'cd-hours-main', 'cd-minutes-main', 'cd-seconds-main'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerText = '00';
+      });
+      showToast('🎉 Kuota Anda telah direset! Silakan verifikasi Gmail baru.', 'success', 5000);
+      setTimeout(() => {
+        loadVerifiedEmails();
+        checkSavedSession();
+      }, 2000);
+      return;
+    }
+
+    const hours = Math.floor(msLeft / 3600000);
+    const minutes = Math.floor((msLeft % 3600000) / 60000);
+    const seconds = Math.floor((msLeft % 60000) / 1000);
+
+    const hh = String(hours).padStart(2, '0');
+    const mm = String(minutes).padStart(2, '0');
+    const ss = String(seconds).padStart(2, '0');
+
+    const elH = document.getElementById('countdown-hours');
+    const elM = document.getElementById('countdown-minutes');
+    const elS = document.getElementById('countdown-seconds');
+    if (elH) elH.innerText = hh;
+    if (elM) elM.innerText = mm;
+    if (elS) elS.innerText = ss;
+
+    const elH2 = document.getElementById('cd-hours-main');
+    const elM2 = document.getElementById('cd-minutes-main');
+    const elS2 = document.getElementById('cd-seconds-main');
+    if (elH2) elH2.innerText = hh;
+    if (elM2) elM2.innerText = mm;
+    if (elS2) elS2.innerText = ss;
+
+    const elapsed = totalDuration - msLeft;
+    const percent = Math.min(100, Math.max(0, (elapsed / totalDuration) * 100));
+    const pf = document.getElementById('reset-progress-fill');
+    if (pf) pf.style.width = percent + '%';
+  }
+
+  tick();
+  quotaCountdownInterval = setInterval(tick, 1000);
+}
+
+function updateResetTimerDisplay(data) {
+  const total = data.totalQuota || 1;
+  const used = data.usedQuota || 0;
+  const remain = Math.max(0, total - used);
+  const el = document.getElementById('reset-timer-display');
+  if (!el) return;
+
+  if (data.isAdmin || data.isVip) {
+    el.innerText = '∞';
+    el.style.color = '#d8b4fe';
+    return;
+  }
+
+  if (remain > 0) {
+    el.innerText = '24 Jam';
+    el.style.color = 'white';
+    return;
+  }
+
+  // Update countdown di stat card setiap detik saat kuota habis
+  if (globalCountdownInterval) clearInterval(globalCountdownInterval);
+
+  function updateStatCard() {
+    const now = Date.now();
+    const msLeft = data.nextResetTime - now;
+    if (msLeft <= 0) {
+      clearInterval(globalCountdownInterval);
+      globalCountdownInterval = null;
+      el.innerText = 'Reset!';
+      return;
+    }
+    const h = Math.floor(msLeft / 3600000);
+    const m = Math.floor((msLeft % 3600000) / 60000);
+    el.innerText = h + 'j ' + m + 'm';
+    el.style.color = '#fda4af';
+  }
+  updateStatCard();
+  globalCountdownInterval = setInterval(updateStatCard, 60000);
+}
+
+function copyEmail(email) {
+  navigator.clipboard.writeText(email).then(() => {
+    showToast('Email "' + email + '" tersalin!', 'success');
+  }).catch(() => {
+    showToast('Gagal copy email', 'error');
+  });
+}
+
 // ============ CHUNKED UPLOAD ============
 function initFileDrop() {
   const dropZone = document.getElementById('file-drop-zone');
   const fileInput = document.getElementById('admin-video-file');
+  if (!dropZone || !fileInput) return;
   
   dropZone.addEventListener('click', () => fileInput.click());
   dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
@@ -1324,7 +1702,7 @@ function updateQuotaDisplay(data) {
   if (data.isAdmin || data.isVip) {
     document.getElementById('quota-display').innerText = '∞';
   } else {
-    document.getElementById('quota-display').innerText = data.usedQuota + '/' + (1 + (data.bonusQuota || 0));
+    document.getElementById('quota-display').innerText = (data.usedQuota || 0) + '/' + (1 + (data.bonusQuota || 0));
   }
 }
 function checkVipStatus(data) {
@@ -1754,6 +2132,7 @@ async function handleRedeemCode() {
       showToast(data.message, 'success');
       document.getElementById('redeem-code-input').value = '';
       updateQuotaDisplay(data);
+      loadVerifiedEmails();
     } else showToast(data.message, 'error');
   } catch(e) { showToast('Gagal redeem', 'error'); }
 }
@@ -1783,11 +2162,13 @@ async function handleSendEmail() {
       resultText.innerText = currentResultText;
       showToast('Magic link terkirim!', 'success');
       if (!isAdminUser && data.quotaInfo) updateQuotaDisplay(data.quotaInfo);
+      loadVerifiedEmails();
     } else {
       sendText.innerText = 'Kirim Magic Link';
       currentResultText = 'Error: ' + data.message;
       resultText.innerText = currentResultText;
       showToast(data.message, 'error');
+      loadVerifiedEmails();
     }
   } catch (err) {
     sendText.innerText = 'Kirim Magic Link';
@@ -1837,6 +2218,8 @@ function escapeHtml(text) {
 }
 
 function handleLogout() {
+  if (quotaCountdownInterval) clearInterval(quotaCountdownInterval);
+  if (globalCountdownInterval) clearInterval(globalCountdownInterval);
   localStorage.removeItem('authToken');
   localStorage.removeItem('savedUsername');
   sessionStorage.clear();
@@ -1903,6 +2286,53 @@ const server = http.createServer(async (req, res) => {
       const announcements = await getAllAnnouncementsFromDb();
       jsonResponse(res, 200, { success: true, announcements });
 
+    // ===== NEW: USER EMAILS + RESET TIME =====
+    } else if (parsedUrl.pathname === '/api/user/my-emails') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+
+      const cleanUser = username.toLowerCase();
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
+
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      const lastReset = userObj.lastResetTime || now;
+      const nextReset = lastReset + twentyFourHours;
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+
+      // Auto-reset jika sudah lewat 24 jam
+      if (now - lastReset >= twentyFourHours) {
+        userObj.activatedEmails = [];
+        userObj.lastResetTime = now;
+        await saveUserToDb(cleanUser, userObj);
+        return jsonResponse(res, 200, {
+          success: true,
+          activatedEmails: [],
+          usedQuota: 0,
+          bonusQuota: userObj.bonusQuota || 0,
+          totalQuota: 1 + (userObj.bonusQuota || 0),
+          lastResetTime: now,
+          nextResetTime: now + twentyFourHours,
+          isVip: isVipActive,
+          isAdmin: !!userObj.isAdmin,
+          resetJustNow: true
+        });
+      }
+
+      jsonResponse(res, 200, {
+        success: true,
+        activatedEmails: userObj.activatedEmails || [],
+        usedQuota: userObj.activatedEmails ? userObj.activatedEmails.length : 0,
+        bonusQuota: userObj.bonusQuota || 0,
+        totalQuota: 1 + (userObj.bonusQuota || 0),
+        lastResetTime: lastReset,
+        nextResetTime: nextReset,
+        isVip: isVipActive,
+        isAdmin: !!userObj.isAdmin,
+        resetJustNow: false
+      });
+
     // ===== CHUNKED UPLOAD ENDPOINTS =====
     } else if (parsedUrl.pathname === '/api/admin/upload-init' && req.method === 'POST') {
       const body = await readBody(req);
@@ -1963,7 +2393,7 @@ const server = http.createServer(async (req, res) => {
 
       jsonResponse(res, 200, { success: true, message: 'Video tersimpan', size: fullBuffer.length });
 
-    // ===== NEW: GET ALL USERS (ADMIN ONLY) =====
+    // ===== GET ALL USERS (ADMIN ONLY) =====
     } else if (parsedUrl.pathname === '/api/admin/get-all-users') {
       const username = parsedUrl.searchParams.get('username');
       const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
@@ -2327,9 +2757,10 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\\n╔══════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v2.1              ║');
+  console.log('║  🚀 AM Premium Banggus v2.2              ║');
   console.log('║  📡 http://localhost:' + PORT + '                  ║');
   console.log('║  📦 Chunked Upload Ready (>200MB)        ║');
   console.log('║  👥 User List Viewer Ready (Admin Only)  ║');
+  console.log('║  📧 Gmail History + Reset Countdown      ║');
   console.log('╚══════════════════════════════════════════╝\\n');
 });
