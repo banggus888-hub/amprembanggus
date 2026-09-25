@@ -65,6 +65,9 @@ async function getUserFromDb(username) {
 async function saveUserToDb(username, userData) {
   await set(ref(db, `users/${username}`), userData);
 }
+async function deleteUserFromDb(username) {
+  await set(ref(db, `users/${username}`), null);
+}
 async function getRedeemFromDb(code) {
   const snapshot = await get(child(ref(db), `redeems/${code}`));
   return snapshot.exists() ? snapshot.val() : null;
@@ -99,6 +102,30 @@ async function getVideoFromDb() {
 }
 async function saveVideoToDb(videoUrl) {
   await set(ref(db, `settings/featuredVideo`), videoUrl);
+}
+
+// ====== GLOBAL CHAT HELPERS ======
+async function getGlobalChatFromDb() {
+  const snapshot = await get(child(ref(db), `globalChat`));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+async function saveGlobalChatMessageToDb(id, data) {
+  await set(ref(db, `globalChat/${id}`), data);
+}
+async function deleteGlobalChatMessageFromDb(id) {
+  await set(ref(db, `globalChat/${id}`), null);
+}
+
+// ====== VIP ACCOUNTS HELPERS ======
+async function getVipAccountsFromDb() {
+  const snapshot = await get(child(ref(db), `vipAccounts`));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+async function saveVipAccountToDb(id, data) {
+  await set(ref(db, `vipAccounts/${id}`), data);
+}
+async function removeVipAccountFromDb(id) {
+  await set(ref(db, `vipAccounts/${id}`), null);
 }
 
 async function initAdmin() {
@@ -140,7 +167,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>AM Premium • Banggus</title>
+<title>AM Premium • Banggus v3.0</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
@@ -248,6 +275,17 @@ const htmlTemplate = `<!DOCTYPE html>
   }
   .btn-success:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(16,185,129,0.7); }
 
+  .btn-danger {
+    background: linear-gradient(135deg, #f43f5e 0%, #dc2626 100%);
+    box-shadow: 0 12px 30px -10px rgba(244,63,94,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
+    border-radius: 1rem; padding: 0.95rem 1rem;
+    font-weight: 700; color: white; width: 100%; border: none;
+    cursor: pointer; font-size: 0.92rem;
+    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+    transition: all 0.25s ease;
+  }
+  .btn-danger:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(244,63,94,0.7); }
+
   .btn-secondary {
     background: rgba(168,85,247,0.1);
     border: 1px solid rgba(168,85,247,0.25);
@@ -267,6 +305,7 @@ const htmlTemplate = `<!DOCTYPE html>
     background: linear-gradient(180deg, rgba(15,10,30,0.98), rgba(7,4,15,0.99));
     backdrop-filter: blur(30px);
     border-left: 1px solid rgba(168,85,247,0.2);
+    overflow-y: auto;
   }
   #nav-drawer.open { transform: translateX(0); }
 
@@ -422,6 +461,120 @@ const htmlTemplate = `<!DOCTYPE html>
     letter-spacing: 0.05em;
   }
 
+  /* CHAT STYLES */
+  .chat-container {
+    display: flex; flex-direction: column;
+    height: 420px;
+    background: rgba(7,4,15,0.5);
+    border-radius: 1rem;
+    border: 1px solid rgba(168,85,247,0.15);
+    overflow: hidden;
+  }
+  .chat-messages {
+    flex: 1; overflow-y: auto;
+    padding: 0.85rem;
+    display: flex; flex-direction: column;
+    gap: 0.6rem;
+  }
+  .chat-bubble {
+    max-width: 85%;
+    padding: 0.6rem 0.85rem;
+    border-radius: 1rem;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    word-wrap: break-word;
+    animation: slide-up 0.3s ease;
+  }
+  .chat-bubble-other {
+    align-self: flex-start;
+    background: rgba(30,20,55,0.9);
+    border: 1px solid rgba(168,85,247,0.2);
+    color: #e2e8f0;
+    border-bottom-left-radius: 0.25rem;
+  }
+  .chat-bubble-me {
+    align-self: flex-end;
+    background: linear-gradient(135deg, #a855f7, #7e22ce);
+    color: white;
+    border-bottom-right-radius: 0.25rem;
+    box-shadow: 0 4px 15px -5px rgba(168,85,247,0.5);
+  }
+  .chat-bubble-admin {
+    border: 1px solid rgba(245,158,11,0.5);
+  }
+  .chat-bubble-vip {
+    border: 1px solid rgba(168,85,247,0.5);
+  }
+  .chat-meta {
+    font-size: 0.65rem;
+    opacity: 0.7;
+    margin-bottom: 0.25rem;
+    display: flex; align-items: center; gap: 0.35rem;
+    font-weight: 700;
+  }
+  .chat-input-row {
+    display: flex; gap: 0.5rem;
+    padding: 0.65rem;
+    border-top: 1px solid rgba(168,85,247,0.15);
+    background: rgba(7,4,15,0.7);
+  }
+  .chat-input-row input {
+    flex: 1;
+    background: rgba(30,20,55,0.6);
+    border: 1px solid rgba(168,85,247,0.2);
+    border-radius: 0.75rem;
+    padding: 0.6rem 0.85rem;
+    font-size: 0.85rem;
+    color: #e2e8f0;
+    outline: none;
+  }
+  .chat-input-row input:focus {
+    border-color: rgba(168,85,247,0.6);
+  }
+  .chat-input-row button {
+    background: linear-gradient(135deg, #a855f7, #7e22ce);
+    border: none;
+    border-radius: 0.75rem;
+    padding: 0.6rem 1rem;
+    color: white;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+  }
+  .chat-input-row button:hover { transform: translateY(-1px); box-shadow: 0 8px 20px -5px rgba(168,85,247,0.5); }
+
+  .chat-timestamp {
+    font-size: 0.6rem;
+    opacity: 0.55;
+    margin-top: 0.2rem;
+  }
+
+  /* VIP ACCOUNT CARD */
+  .vip-account-card {
+    background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(168,85,247,0.06));
+    border: 1px solid rgba(245,158,11,0.3);
+    border-radius: 1rem;
+    padding: 0.85rem;
+    animation: slide-up 0.3s ease;
+  }
+
+  .delete-btn {
+    background: rgba(244,63,94,0.15);
+    border: 1px solid rgba(244,63,94,0.3);
+    color: #fda4af;
+    border-radius: 0.6rem;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .delete-btn:hover {
+    background: rgba(244,63,94,0.3);
+    border-color: rgba(244,63,94,0.6);
+  }
+
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(168,85,247,0.3); border-radius: 999px; }
@@ -430,6 +583,7 @@ const htmlTemplate = `<!DOCTYPE html>
   @media (max-width: 480px) {
     .phone-wrapper { padding: 0.75rem; }
     .glass-panel { padding: 1.15rem; border-radius: 1.25rem; }
+    .chat-container { height: 380px; }
   }
 </style>
 </head>
@@ -448,7 +602,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
       <div>
         <p class="text-[10px] font-bold uppercase tracking-widest text-purple-400">Premium Access</p>
-        <p class="text-sm font-extrabold text-white">AM BANGGUS</p>
+        <p class="text-sm font-extrabold text-white">AM BANGGUS v3.0</p>
       </div>
     </div>
     <button id="header-menu-btn" onclick="toggleMenu()" class="icon-btn hidden">
@@ -480,6 +634,11 @@ const htmlTemplate = `<!DOCTYPE html>
         <button onclick="switchView('generator')" data-nav="generator" class="nav-item active">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
           Generator Utama
+        </button>
+        <button onclick="switchView('chat')" data-nav="chat" class="nav-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Chat Global
+          <span id="chat-unread-badge" class="ml-auto hidden text-[9px] px-1.5 py-0.5 rounded-full" style="background: #f43f5e; color: white;">0</span>
         </button>
         <button onclick="switchView('profile')" data-nav="profile" class="nav-item">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -603,7 +762,6 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- Reset Countdown Banner (muncul jika kuota habis) -->
       <div id="reset-banner-main" class="p-3.5 rounded-2xl hidden animate-slide-up" style="background: linear-gradient(135deg, rgba(244,63,94,0.15), rgba(168,85,247,0.1)); border: 1px solid rgba(244,63,94,0.4);">
         <div class="flex items-center gap-2.5 mb-2.5">
           <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style="background: rgba(244,63,94,0.2);">
@@ -695,6 +853,34 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- VIEW: CHAT GLOBAL -->
+    <div id="section-chat" class="glass-panel space-y-3 hidden">
+      <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
+        <h2 class="section-title" style="margin: 0;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Chat Global
+        </h2>
+        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+      </div>
+
+      <div class="chat-container">
+        <div id="chat-messages" class="chat-messages">
+          <p class="text-slate-500 italic text-xs text-center py-3">Memuat chat...</p>
+        </div>
+        <div class="chat-input-row">
+          <input type="text" id="chat-input" placeholder="Tulis pesan..." maxlength="500" onkeydown="if(event.key==='Enter')sendChatMessage()">
+          <button onclick="sendChatMessage()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between text-[10px] text-slate-500">
+        <span id="chat-online-count">👥 0 user online</span>
+        <button onclick="loadGlobalChat()" class="text-purple-400 hover:text-purple-300 underline">Refresh</button>
+      </div>
+    </div>
+
     <!-- VIEW: PROFILE -->
     <div id="section-profile" class="glass-panel space-y-4 hidden">
       <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
@@ -741,6 +927,27 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
+      <!-- GANTI PASSWORD (NEW) -->
+      <div>
+        <div class="section-title" style="color: #fda4af;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Ganti Password
+        </div>
+        <div class="space-y-2">
+          <input type="password" id="old-password-input" placeholder="Password lama" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+          <input type="password" id="new-password-input" placeholder="Password baru" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+          <input type="password" id="confirm-password-input" placeholder="Konfirmasi password baru" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+          <button onclick="handleChangePassword()" class="btn-primary" style="width: 100%;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Ubah Password
+          </button>
+        </div>
+        <p class="text-[10px] text-amber-400/80 mt-2 flex items-center gap-1.5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Ganti password segera setelah menerima akun VIP
+        </p>
+      </div>
+
       <div>
         <div class="section-title" style="color: #67e8f9;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 12v10H4V12"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
@@ -765,7 +972,6 @@ const htmlTemplate = `<!DOCTYPE html>
           </button>
         </div>
 
-        <!-- Kuota Status Card -->
         <div id="quota-status-card" class="p-3 rounded-xl mb-2.5" style="background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.25);">
           <div class="flex justify-between items-center mb-2">
             <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-300">Status Kuota</span>
@@ -787,7 +993,6 @@ const htmlTemplate = `<!DOCTYPE html>
           </div>
         </div>
 
-        <!-- Countdown Reset (hanya muncul jika kuota habis) -->
         <div id="reset-countdown-card" class="p-3.5 rounded-xl mb-2.5 hidden" style="background: linear-gradient(135deg, rgba(244,63,94,0.12), rgba(168,85,247,0.08)); border: 1px solid rgba(244,63,94,0.35);">
           <div class="flex items-center gap-2.5 mb-2.5">
             <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style="background: rgba(244,63,94,0.2);">
@@ -823,7 +1028,6 @@ const htmlTemplate = `<!DOCTYPE html>
           </div>
         </div>
 
-        <!-- List Gmail Terverifikasi -->
         <div id="verified-emails-list" class="space-y-1.5 max-h-64 overflow-y-auto">
           <p class="text-slate-500 italic text-center py-2 text-xs">Memuat riwayat...</p>
         </div>
@@ -891,6 +1095,30 @@ const htmlTemplate = `<!DOCTYPE html>
             <button onclick="loadAdminVipList()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
           </div>
           <div id="admin-vip-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px]">
+            <p class="text-slate-500 italic text-center py-2">Memuat...</p>
+          </div>
+        </div>
+
+        <!-- CREATE VIP ACCOUNT (NEW) -->
+        <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(168,85,247,0.1), rgba(6,182,212,0.06)); border: 1px solid rgba(168,85,247,0.35);">
+          <p class="section-title" style="color: #d8b4fe; margin-top: 0;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+            Buat Akun VIP Baru
+          </p>
+          <p class="text-[10px] text-slate-400 mb-2">Admin dapat membuat akun VIP untuk dibagikan ke user</p>
+          <input type="text" id="vip-create-username" placeholder="Username akun VIP" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+          <input type="text" id="vip-create-password" placeholder="Password akun VIP" class="input-glow mb-2 mono" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+          <input type="number" id="vip-create-days" placeholder="Masa aktif VIP (hari)" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+          <button onclick="handleCreateVipAccount()" class="btn-success" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+            Buat Akun VIP
+          </button>
+
+          <div class="flex justify-between items-center mt-3 mb-1">
+            <span class="text-[10px] text-purple-300 font-bold">Daftar Akun VIP Dibuat</span>
+            <button onclick="loadVipAccounts()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+          </div>
+          <div id="vip-accounts-list" class="space-y-1.5 max-h-40 overflow-y-auto text-[11px]">
             <p class="text-slate-500 italic text-center py-2">Memuat...</p>
           </div>
         </div>
@@ -1023,7 +1251,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <p class="text-center text-[10px] text-slate-600 tracking-wider py-2">AM PREMIUM • BY BANGGUS • v2.3</p>
+    <p class="text-center text-[10px] text-slate-600 tracking-wider py-2">AM PREMIUM • BY BANGGUS • v3.0</p>
   </div>
 </div>
 
@@ -1032,12 +1260,17 @@ const htmlTemplate = `<!DOCTYPE html>
 let currentAuthMode = 'login';
 let loggedInUsername = '';
 let isAdminUser = false;
+let isVipUser = false;
 let selectedVideoFile = null;
 let currentResultText = '';
 let cachedUserList = [];
 let currentUserFilter = 'all';
 let quotaCountdownInterval = null;
 let globalCountdownInterval = null;
+let chatRefreshInterval = null;
+let unreadChatCount = 0;
+let lastChatMessageId = null;
+let currentView = 'generator';
 let userQuotaData = { usedQuota: 0, bonusQuota: 0, totalQuota: 1, nextResetTime: 0, lastResetTime: 0 };
 
 // ============ TOAST ============
@@ -1066,11 +1299,12 @@ function toggleMenu() {
 }
 
 function switchView(viewName) {
+  currentView = viewName;
   document.querySelectorAll('[data-nav]').forEach(el => {
     el.classList.toggle('active', el.dataset.nav === viewName);
   });
   toggleMenu();
-  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement'].forEach(id => {
+  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat'].forEach(id => {
     document.getElementById(id).classList.add('hidden');
   });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hidden');
@@ -1082,6 +1316,12 @@ function switchView(viewName) {
   else if (viewName === 'announcement') {
     document.getElementById('section-announcement').classList.remove('hidden');
     loadUserAnnouncements();
+  }
+  else if (viewName === 'chat') {
+    document.getElementById('section-chat').classList.remove('hidden');
+    loadGlobalChat();
+    unreadChatCount = 0;
+    updateChatBadge();
   }
 }
 
@@ -1197,6 +1437,7 @@ async function handleAuthAction() {
 function applySession(data) {
   loggedInUsername = data.username;
   isAdminUser = data.isAdmin;
+  isVipUser = data.isVip || false;
   document.getElementById('auth-view').classList.add('hidden');
   document.getElementById('terminal-view').classList.remove('hidden');
   document.getElementById('header-menu-btn').classList.remove('hidden');
@@ -1217,6 +1458,16 @@ function applySession(data) {
   updateStatusUI(data.serverStatus);
   fetchFeaturedVideo();
 
+  if (chatRefreshInterval) clearInterval(chatRefreshInterval);
+  loadGlobalChat();
+  chatRefreshInterval = setInterval(() => {
+    if (currentView !== 'chat') {
+      checkNewChatMessages();
+    } else {
+      loadGlobalChat();
+    }
+  }, 5000);
+
   const roleBadge = document.getElementById('role-badge');
   if (data.isAdmin) {
     roleBadge.className = 'badge badge-admin';
@@ -1227,6 +1478,7 @@ function applySession(data) {
     loadAdminAnnouncements();
     loadAdminVipList();
     loadAllUsers();
+    loadVipAccounts();
   } else if (data.isVip) {
     roleBadge.className = 'badge badge-vip';
     roleBadge.innerText = 'VIP Member';
@@ -1251,6 +1503,42 @@ async function checkSavedSession() {
   } catch (e) {}
 }
 checkSavedSession();
+
+// ============ GANTI PASSWORD (NEW) ============
+async function handleChangePassword() {
+  const oldPassword = document.getElementById('old-password-input').value;
+  const newPassword = document.getElementById('new-password-input').value;
+  const confirmPassword = document.getElementById('confirm-password-input').value;
+
+  if (!oldPassword || !newPassword || !confirmPassword) {
+    return showToast('Semua field password harus diisi!', 'error');
+  }
+  if (newPassword.length < 4) {
+    return showToast('Password baru minimal 4 karakter!', 'error');
+  }
+  if (newPassword !== confirmPassword) {
+    return showToast('Konfirmasi password tidak cocok!', 'error');
+  }
+
+  try {
+    const res = await fetch('/api/user/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername, oldPassword, newPassword })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Password berhasil diubah!', 'success');
+      document.getElementById('old-password-input').value = '';
+      document.getElementById('new-password-input').value = '';
+      document.getElementById('confirm-password-input').value = '';
+    } else {
+      showToast(data.message || 'Gagal ganti password', 'error');
+    }
+  } catch (e) {
+    showToast('Kesalahan koneksi', 'error');
+  }
+}
 
 // ============ USERNAME UPDATE ============
 async function triggerUpdateUsername() {
@@ -1772,6 +2060,115 @@ async function handleRemoveVip(targetUser) {
   } catch(e) {}
 }
 
+// ============ CREATE VIP ACCOUNT (NEW) ============
+async function handleCreateVipAccount() {
+  if (!isAdminUser) return showToast('Akses ditolak!', 'error');
+  const vipUsername = document.getElementById('vip-create-username').value.trim().toLowerCase();
+  const vipPassword = document.getElementById('vip-create-password').value.trim();
+  const vipDays = parseInt(document.getElementById('vip-create-days').value);
+
+  if (!vipUsername || !vipPassword || isNaN(vipDays)) {
+    return showToast('Lengkapi semua field!', 'error');
+  }
+  if (vipPassword.length < 4) {
+    return showToast('Password minimal 4 karakter!', 'error');
+  }
+  if (vipDays < 1) {
+    return showToast('Masa aktif minimal 1 hari!', 'error');
+  }
+
+  try {
+    const res = await fetch('/api/admin/create-vip-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        adminUsername: loggedInUsername,
+        vipUsername,
+        vipPassword,
+        vipDays
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success');
+      document.getElementById('vip-create-username').value = '';
+      document.getElementById('vip-create-password').value = '';
+      document.getElementById('vip-create-days').value = '';
+      loadVipAccounts();
+      loadAllUsers();
+    } else {
+      showToast(data.message, 'error');
+    }
+  } catch(e) {
+    showToast('Gagal membuat akun VIP', 'error');
+  }
+}
+
+async function loadVipAccounts() {
+  if (!isAdminUser) return;
+  try {
+    const res = await fetch('/api/admin/get-vip-accounts?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+    const container = document.getElementById('vip-accounts-list');
+    if (data.success && Object.keys(data.vipAccounts).length > 0) {
+      const now = Date.now();
+      container.innerHTML = Object.entries(data.vipAccounts).map(([uname, val]) => {
+        const isActive = val.vipUntil > now;
+        const statusBadge = isActive 
+          ? '<span class="text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(16,185,129,0.15); color: #6ee7b7;">AKTIF</span>'
+          : '<span class="text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(244,63,94,0.15); color: #fda4af;">EXPIRED</span>';
+        
+        return '<div class="vip-account-card">' +
+          '<div class="flex justify-between items-start mb-1.5">' +
+            '<div class="flex-1 min-w-0">' +
+              '<p class="text-xs font-bold text-white mono truncate">' + escapeHtml(uname) + '</p>' +
+              '<p class="text-[10px] text-slate-400 mono">Pwd: ' + escapeHtml(val.password) + '</p>' +
+            '</div>' +
+            statusBadge +
+          '</div>' +
+          '<div class="flex items-center justify-between text-[10px]">' +
+            '<span class="text-amber-300">⭐ s/d ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span>' +
+            '<div class="flex gap-1">' +
+              '<button onclick="copyVipCredentials(\\'' + escapeHtml(uname) + '\\', \\'' + escapeHtml(val.password) + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.3);">📋 Copy</button>' +
+              '<button onclick="deleteVipAccount(\\'' + escapeHtml(uname) + '\\')" class="delete-btn">🗑 Hapus</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    } else {
+      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada akun VIP</p>';
+    }
+  } catch(e) {}
+}
+
+function copyVipCredentials(username, password) {
+  const text = 'Username: ' + username + '\\nPassword: ' + password;
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('Kredensial VIP tersalin!', 'success');
+  });
+}
+
+async function deleteVipAccount(vipUsername) {
+  if (!confirm('Hapus akun VIP ' + vipUsername + '? User yang login dengan akun ini akan kehilangan akses.')) return;
+  try {
+    const res = await fetch('/api/admin/delete-vip-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: loggedInUsername, vipUsername })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Akun VIP dihapus', 'success');
+      loadVipAccounts();
+      loadAllUsers();
+    } else {
+      showToast(data.message, 'error');
+    }
+  } catch(e) {
+    showToast('Gagal hapus akun VIP', 'error');
+  }
+}
+
 // ============ CEK USER TERDAFTAR (ADMIN ONLY) ============
 async function loadAllUsers() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
@@ -1922,9 +2319,46 @@ function renderUserList() {
       '<div class="flex gap-1.5 mt-2 pt-2 border-t border-slate-800">' +
         '<button onclick="quickSetVip(\\'' + safeUser + '\\')" class="flex-1 py-1 rounded text-[10px] font-bold transition" style="background: rgba(168,85,247,0.15); color: #d8b4fe; border: 1px solid rgba(168,85,247,0.3);">⭐ Set VIP</button>' +
         '<button onclick="copyUsername(\\'' + safeUser + '\\')" class="flex-1 py-1 rounded text-[10px] font-bold transition" style="background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.3);">📋 Copy</button>' +
+        (u.isAdmin && u.username === loggedInUsername ? '' : 
+          '<button onclick="deleteUserAccount(\\'' + safeUser + '\\', ' + (u.isAdmin ? 'true' : 'false') + ')" class="flex-1 py-1 rounded text-[10px] font-bold transition" style="background: rgba(244,63,94,0.15); color: #fda4af; border: 1px solid rgba(244,63,94,0.3);">🗑 Hapus</button>') +
       '</div>' +
     '</div>';
   }).join('');
+}
+
+// ============ HAPUS AKUN (NEW) ============
+async function deleteUserAccount(targetUsername, isTargetAdmin) {
+  const confirmText = isTargetAdmin 
+    ? '⚠️ HAPUS AKUN ADMIN "' + targetUsername + '"?\\n\\nAkun ini akan dihapus permanen!'
+    : 'Hapus akun "' + targetUsername + '"?';
+  
+  if (!confirm(confirmText)) return;
+  
+  // Extra confirmation for admin accounts
+  if (isTargetAdmin) {
+    const secondConfirm = prompt('Ketik "HAPUS" untuk konfirmasi hapus akun admin:');
+    if (secondConfirm !== 'HAPUS') {
+      showToast('Penghapusan dibatalkan', 'info');
+      return;
+    }
+  }
+
+  try {
+    const res = await fetch('/api/admin/delete-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: loggedInUsername, targetUsername })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Akun "' + targetUsername + '" berhasil dihapus!', 'success');
+      loadAllUsers();
+    } else {
+      showToast(data.message || 'Gagal menghapus akun', 'error');
+    }
+  } catch(e) {
+    showToast('Kesalahan koneksi', 'error');
+  }
 }
 
 function quickSetVip(username) {
@@ -1938,6 +2372,152 @@ function copyUsername(username) {
   navigator.clipboard.writeText(username).then(() => {
     showToast('Username "' + username + '" tersalin!', 'success');
   });
+}
+
+// ============ GLOBAL CHAT (NEW) ============
+function updateChatBadge() {
+  const badge = document.getElementById('chat-unread-badge');
+  if (unreadChatCount > 0) {
+    badge.textContent = unreadChatCount > 99 ? '99+' : unreadChatCount;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+async function checkNewChatMessages() {
+  if (!loggedInUsername) return;
+  try {
+    const res = await fetch('/api/chat/messages');
+    const data = await res.json();
+    if (data.success && data.messages) {
+      const entries = Object.entries(data.messages).sort((a,b) => a[1].timestamp - b[1].timestamp);
+      if (entries.length > 0) {
+        const latestId = entries[entries.length - 1][0];
+        if (lastChatMessageId && latestId !== lastChatMessageId && entries[entries.length-1][1].username !== loggedInUsername) {
+          unreadChatCount++;
+          updateChatBadge();
+        }
+        lastChatMessageId = latestId;
+      }
+    }
+  } catch(e) {}
+}
+
+async function loadGlobalChat() {
+  if (!loggedInUsername) return;
+  const container = document.getElementById('chat-messages');
+  
+  try {
+    const res = await fetch('/api/chat/messages');
+    const data = await res.json();
+    
+    if (!data.success || !data.messages) {
+      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada pesan</p>';
+      return;
+    }
+
+    const entries = Object.entries(data.messages).sort((a,b) => a[1].timestamp - b[1].timestamp);
+    
+    if (entries.length === 0) {
+      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada pesan. Jadilah yang pertama!</p>';
+      return;
+    }
+
+    if (entries.length > 0) {
+      lastChatMessageId = entries[entries.length - 1][0];
+    }
+
+    const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 60;
+
+    container.innerHTML = entries.map(([id, msg]) => {
+      const isMe = msg.username === loggedInUsername;
+      const isAdmin = msg.isAdmin;
+      const isVip = msg.isVip;
+      
+      let bubbleClass = isMe ? 'chat-bubble-me' : 'chat-bubble-other';
+      if (isAdmin) bubbleClass += ' chat-bubble-admin';
+      else if (isVip) bubbleClass += ' chat-bubble-vip';
+
+      let roleIcon = '';
+      if (isAdmin) roleIcon = '👑 ';
+      else if (isVip) roleIcon = '⭐ ';
+      else roleIcon = '👤 ';
+
+      const time = new Date(msg.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      const date = new Date(msg.timestamp).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+      const isToday = new Date(msg.timestamp).toDateString() === new Date().toDateString();
+      const timeStr = isToday ? time : date + ' ' + time;
+
+      const deleteBtn = isAdminUser ? 
+        '<button onclick="deleteChatMessage(\\'' + id + '\\')" class="text-[9px] opacity-50 hover:opacity-100 ml-1" title="Hapus">🗑</button>' : '';
+
+      return '<div class="chat-bubble ' + bubbleClass + '">' +
+        '<div class="chat-meta">' +
+          roleIcon + '<span>' + escapeHtml(msg.username) + '</span>' +
+          (isAdmin ? '<span class="text-amber-300">ADMIN</span>' : '') +
+          (isVip && !isAdmin ? '<span class="text-purple-300">VIP</span>' : '') +
+          deleteBtn +
+        '</div>' +
+        '<div>' + escapeHtml(msg.message) + '</div>' +
+        '<div class="chat-timestamp">' + timeStr + '</div>' +
+      '</div>';
+    }).join('');
+
+    if (wasAtBottom || container.scrollTop === 0) {
+      container.scrollTop = container.scrollHeight;
+    }
+
+    const uniqueUsers = new Set(entries.slice(-50).map(e => e[1].username)).size;
+    document.getElementById('chat-online-count').innerText = '👥 ' + uniqueUsers + ' user aktif';
+
+  } catch(e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-3">Gagal memuat chat</p>';
+  }
+}
+
+async function sendChatMessage() {
+  if (!loggedInUsername) return showToast('Harus login dulu!', 'error');
+  const input = document.getElementById('chat-input');
+  const message = input.value.trim();
+  if (!message) return;
+  
+  input.value = '';
+  
+  try {
+    const res = await fetch('/api/chat/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername, message })
+    });
+    const data = await res.json();
+    if (data.success) {
+      await loadGlobalChat();
+    } else {
+      showToast(data.message || 'Gagal kirim pesan', 'error');
+      input.value = message;
+    }
+  } catch(e) {
+    showToast('Kesalahan koneksi', 'error');
+    input.value = message;
+  }
+}
+
+async function deleteChatMessage(messageId) {
+  if (!isAdminUser) return;
+  if (!confirm('Hapus pesan ini?')) return;
+  try {
+    const res = await fetch('/api/chat/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: loggedInUsername, messageId })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Pesan dihapus', 'success');
+      loadGlobalChat();
+    }
+  } catch(e) {}
 }
 
 // ============ ANNOUNCEMENTS ============
@@ -2201,6 +2781,7 @@ function escapeHtml(text) {
 function handleLogout() {
   if (quotaCountdownInterval) clearInterval(quotaCountdownInterval);
   if (globalCountdownInterval) clearInterval(globalCountdownInterval);
+  if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   localStorage.removeItem('authToken');
   localStorage.removeItem('savedUsername');
   sessionStorage.clear();
@@ -2313,6 +2894,246 @@ const server = http.createServer(async (req, res) => {
         resetJustNow: false
       });
 
+    // ===== GANTI PASSWORD (NEW) =====
+    } else if (parsedUrl.pathname === '/api/user/change-password' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, oldPassword, newPassword } = JSON.parse(body);
+      
+      if (!username || !oldPassword || !newPassword) {
+        return jsonResponse(res, 400, { success: false, message: 'Semua field harus diisi!' });
+      }
+      if (newPassword.length < 4) {
+        return jsonResponse(res, 400, { success: false, message: 'Password baru minimal 4 karakter!' });
+      }
+
+      const cleanUser = username.toLowerCase();
+      const userObj = await getUserFromDb(cleanUser);
+      
+      if (!userObj) {
+        return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
+      }
+      if (userObj.password !== oldPassword) {
+        return jsonResponse(res, 401, { success: false, message: 'Password lama salah!' });
+      }
+
+      userObj.password = newPassword;
+      await saveUserToDb(cleanUser, userObj);
+      
+      jsonResponse(res, 200, { success: true, message: 'Password berhasil diubah!' });
+
+    // ===== GLOBAL CHAT ENDPOINTS (NEW) =====
+    } else if (parsedUrl.pathname === '/api/chat/messages' && req.method === 'GET') {
+      const messages = await getGlobalChatFromDb();
+      
+      // Cleanup old messages (older than 3 days) to prevent bloat
+      const now = Date.now();
+      const threeDays = 3 * 24 * 60 * 60 * 1000;
+      let cleaned = false;
+      for (const [id, msg] of Object.entries(messages)) {
+        if (now - msg.timestamp > threeDays) {
+          await deleteGlobalChatMessageFromDb(id);
+          delete messages[id];
+          cleaned = true;
+        }
+      }
+      
+      jsonResponse(res, 200, { success: true, messages });
+
+    } else if (parsedUrl.pathname === '/api/chat/send' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, message } = JSON.parse(body);
+      
+      if (!username || !message) {
+        return jsonResponse(res, 400, { success: false, message: 'Username dan pesan harus diisi!' });
+      }
+      
+      const cleanUser = username.toLowerCase();
+      const userObj = await getUserFromDb(cleanUser);
+      
+      if (!userObj) {
+        return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
+      }
+      
+      const trimmedMsg = message.trim().substring(0, 500);
+      if (!trimmedMsg) {
+        return jsonResponse(res, 400, { success: false, message: 'Pesan tidak boleh kosong!' });
+      }
+
+      const now = Date.now();
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+
+      const msgId = 'msg_' + now + '_' + Math.random().toString(36).substring(2, 8);
+      await saveGlobalChatMessageToDb(msgId, {
+        username: cleanUser,
+        message: trimmedMsg,
+        timestamp: now,
+        isAdmin: !!userObj.isAdmin,
+        isVip: !!isVipActive
+      });
+      
+      jsonResponse(res, 200, { success: true, message: 'Pesan terkirim!' });
+
+    } else if (parsedUrl.pathname === '/api/chat/delete' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { adminUsername, messageId } = JSON.parse(body);
+      
+      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) {
+        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      }
+      
+      await deleteGlobalChatMessageFromDb(messageId);
+      jsonResponse(res, 200, { success: true, message: 'Pesan dihapus' });
+
+    // ===== CREATE VIP ACCOUNT (NEW) =====
+    } else if (parsedUrl.pathname === '/api/admin/create-vip-account' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { adminUsername, vipUsername, vipPassword, vipDays } = JSON.parse(body);
+      
+      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) {
+        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      }
+
+      const cleanVipUser = vipUsername.toLowerCase().trim();
+      
+      if (!cleanVipUser || !vipPassword || !vipDays) {
+        return jsonResponse(res, 400, { success: false, message: 'Lengkapi semua field!' });
+      }
+      if (vipDays < 1 || vipDays > 3650) {
+        return jsonResponse(res, 400, { success: false, message: 'Masa aktif 1-3650 hari!' });
+      }
+
+      const existingUser = await getUserFromDb(cleanVipUser);
+      if (existingUser) {
+        return jsonResponse(res, 400, { success: false, message: 'Username sudah terdaftar!' });
+      }
+
+      const now = Date.now();
+      const vipUntil = now + (vipDays * 24 * 60 * 60 * 1000);
+
+      await saveUserToDb(cleanVipUser, {
+        password: vipPassword,
+        email: 'vip@am-premium.local',
+        isAdmin: false,
+        activatedEmails: [],
+        bonusQuota: 0,
+        lastResetTime: now,
+        vipUntil: vipUntil,
+        isVipAccount: true,
+        createdBy: adminUsername.toLowerCase(),
+        createdAt: now
+      });
+
+      // Save to vipAccounts registry for tracking
+      const vipAccId = 'vip_' + now + '_' + Math.random().toString(36).substring(2, 8);
+      await saveVipAccountToDb(vipAccId, {
+        username: cleanVipUser,
+        password: vipPassword,
+        vipUntil: vipUntil,
+        createdBy: adminUsername.toLowerCase(),
+        createdAt: now
+      });
+
+      jsonResponse(res, 200, { 
+        success: true, 
+        message: 'Akun VIP "' + cleanVipUser + '" berhasil dibuat untuk ' + vipDays + ' hari!',
+        username: cleanVipUser,
+        vipUntil: vipUntil
+      });
+
+    } else if (parsedUrl.pathname === '/api/admin/get-vip-accounts' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+      if (!adminObj || !adminObj.isAdmin) {
+        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      }
+
+      const vipAccounts = await getVipAccountsFromDb();
+      
+      // Enrich with current status
+      const enriched = {};
+      const now = Date.now();
+      for (const [id, acc] of Object.entries(vipAccounts)) {
+        const userData = await getUserFromDb(acc.username);
+        enriched[id] = {
+          ...acc,
+          isActive: userData && userData.vipUntil > now,
+          currentVipUntil: userData ? (userData.vipUntil || 0) : 0,
+          exists: !!userData
+        };
+      }
+
+      jsonResponse(res, 200, { success: true, vipAccounts: enriched });
+
+    } else if (parsedUrl.pathname === '/api/admin/delete-vip-account' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { adminUsername, vipUsername } = JSON.parse(body);
+      
+      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) {
+        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      }
+
+      const cleanVipUser = vipUsername.toLowerCase();
+
+      // Delete user account
+      await deleteUserFromDb(cleanVipUser);
+
+      // Delete from vipAccounts registry
+      const vipAccounts = await getVipAccountsFromDb();
+      for (const [id, acc] of Object.entries(vipAccounts)) {
+        if (acc.username === cleanVipUser) {
+          await removeVipAccountFromDb(id);
+        }
+      }
+
+      jsonResponse(res, 200, { success: true, message: 'Akun VIP dihapus!' });
+
+    // ===== DELETE USER ACCOUNT (NEW) =====
+    } else if (parsedUrl.pathname === '/api/admin/delete-user' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { adminUsername, targetUsername } = JSON.parse(body);
+      
+      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) {
+        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      }
+
+      const cleanTarget = targetUsername.toLowerCase();
+      
+      // Prevent self-deletion
+      if (cleanTarget === adminUsername.toLowerCase()) {
+        return jsonResponse(res, 400, { success: false, message: 'Tidak dapat menghapus akun sendiri!' });
+      }
+
+      // Prevent deleting the main admin
+      if (cleanTarget === 'adminbaguss') {
+        return jsonResponse(res, 400, { success: false, message: 'Akun admin utama tidak dapat dihapus!' });
+      }
+
+      const targetUser = await getUserFromDb(cleanTarget);
+      if (!targetUser) {
+        return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan!' });
+      }
+
+      // Delete from users
+      await deleteUserFromDb(cleanTarget);
+
+      // Also delete from vipAccounts registry if exists
+      const vipAccounts = await getVipAccountsFromDb();
+      for (const [id, acc] of Object.entries(vipAccounts)) {
+        if (acc.username === cleanTarget) {
+          await removeVipAccountFromDb(id);
+        }
+      }
+
+      jsonResponse(res, 200, { 
+        success: true, 
+        message: 'Akun "' + cleanTarget + '" berhasil dihapus!',
+        deletedUser: cleanTarget
+      });
+
     // ===== CHUNKED UPLOAD ENDPOINTS =====
     } else if (parsedUrl.pathname === '/api/admin/upload-init' && req.method === 'POST') {
       const body = await readBody(req);
@@ -2405,7 +3226,8 @@ const server = http.createServer(async (req, res) => {
           lastResetTime: lastReset,
           nextResetTime: nextReset,
           isResetDue: isResetDue,
-          activatedEmails: udata.activatedEmails || []
+          activatedEmails: udata.activatedEmails || [],
+          isVipAccount: !!udata.isVipAccount
         };
       });
 
@@ -2629,7 +3451,7 @@ const server = http.createServer(async (req, res) => {
       let existingUser = await getUserFromDb(cleanUser);
 
       if (mode === 'register') {
-        if (cleanUser === 'adminbagus' || existingUser) {
+        if (cleanUser === 'adminbaguss' || existingUser) {
           return jsonResponse(res, 400, { success: false, message: 'Username tidak tersedia!' });
         }
         const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
@@ -2736,11 +3558,14 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log('\\n╔══════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v2.3              ║');
-  console.log('║  📡 http://localhost:' + PORT + '                  ║');
-  console.log('║  📦 Chunked Upload Ready (>200MB)        ║');
-  console.log('║  👥 User List Viewer Ready (Admin Only)  ║');
-  console.log('║  📧 Gmail History + Reset Countdown      ║');
-  console.log('╚══════════════════════════════════════════╝\\n');
+  console.log('\\n╔══════════════════════════════════════════════╗');
+  console.log('║  🚀 AM Premium Banggus v3.0                  ║');
+  console.log('║  📡 http://localhost:' + PORT + '                      ║');
+  console.log('║  📦 Chunked Upload Ready (>200MB)            ║');
+  console.log('║  👥 User List Viewer + Delete Account        ║');
+  console.log('║  📧 Gmail History + Reset Countdown          ║');
+  console.log('║  💬 Global Chat (Real-time)                  ║');
+  console.log('║  🔐 Change Password + Create VIP Account     ║');
+  console.log('║  ⭐ VIP Account Generator                     ║');
+  console.log('╚══════════════════════════════════════════════╝\\n');
 });
