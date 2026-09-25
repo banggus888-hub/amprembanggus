@@ -128,6 +128,18 @@ async function removeVipAccountFromDb(id) {
   await set(ref(db, `vipAccounts/${id}`), null);
 }
 
+// ====== FEATURE REQUESTS HELPERS (NEW) ======
+async function getFeatureRequestsFromDb() {
+  const snapshot = await get(child(ref(db), `featureRequests`));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+async function saveFeatureRequestToDb(id, data) {
+  await set(ref(db, `featureRequests/${id}`), data);
+}
+async function removeFeatureRequestFromDb(id) {
+  await set(ref(db, `featureRequests/${id}`), null);
+}
+
 async function initAdmin() {
   const adminData = await getUserFromDb('adminbaguss');
   if (!adminData) {
@@ -167,7 +179,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>AM Premium • Banggus v3.0</title>
+<title>AM Premium • Banggus v3.1</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
@@ -575,6 +587,24 @@ const htmlTemplate = `<!DOCTYPE html>
     border-color: rgba(244,63,94,0.6);
   }
 
+  /* REDEEM CODE CARD (NEW) */
+  .redeem-card {
+    background: linear-gradient(135deg, rgba(6,182,212,0.08), rgba(168,85,247,0.06));
+    border: 1px solid rgba(6,182,212,0.3);
+    border-radius: 1rem;
+    padding: 0.85rem;
+    animation: slide-up 0.3s ease;
+  }
+
+  /* FEATURE REQUEST CARD (NEW) */
+  .feature-request-card {
+    background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(6,182,212,0.06));
+    border: 1px solid rgba(16,185,129,0.3);
+    border-radius: 1rem;
+    padding: 0.85rem;
+    animation: slide-up 0.3s ease;
+  }
+
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(168,85,247,0.3); border-radius: 999px; }
@@ -602,7 +632,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
       <div>
         <p class="text-[10px] font-bold uppercase tracking-widest text-purple-400">Premium Access</p>
-        <p class="text-sm font-extrabold text-white">AM BANGGUS</p>
+        <p class="text-sm font-extrabold text-white">AM BANGGUS v3.1</p>
       </div>
     </div>
     <button id="header-menu-btn" onclick="toggleMenu()" class="icon-btn hidden">
@@ -651,6 +681,14 @@ const htmlTemplate = `<!DOCTYPE html>
         <button onclick="switchView('announcement')" data-nav="announcement" class="nav-item">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
           Pengumuman
+        </button>
+        <button onclick="switchView('request')" data-nav="request" class="nav-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          Request Fitur
+        </button>
+        <button id="nav-admin-btn" onclick="switchView('admin')" data-nav="admin" class="nav-item hidden">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Panel Admin
         </button>
       </nav>
     </div>
@@ -722,7 +760,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </button>
     </div>
 
-    <!-- VIEW: TERMINAL -->
+    <!-- VIEW: TERMINAL (GENERATOR UTAMA) -->
     <div id="terminal-view" class="space-y-3 hidden">
 
       <div class="video-container">
@@ -839,6 +877,29 @@ const htmlTemplate = `<!DOCTYPE html>
         </button>
       </div>
 
+      <!-- KLAIM KODE REDEEM (PINDAH KE GENERATOR) -->
+      <div class="glass-panel space-y-3">
+        <div class="section-title" style="color: #67e8f9;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 12v10H4V12"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+          Klaim Kode Redeem
+        </div>
+        <div class="flex gap-2">
+          <input type="text" id="redeem-code-input-main" placeholder="KODE-REDEEM" class="input-glow mono uppercase" style="flex: 1; padding: 0.7rem 1rem; font-size: 0.85rem; font-weight: 700;">
+          <button onclick="handleRedeemCodeMain()" class="btn-primary" style="width: auto; padding: 0.7rem 1rem; font-size: 0.8rem;">Klaim</button>
+        </div>
+
+        <!-- DAFTAR KODE REDEEM AKTIF -->
+        <div class="pt-2 border-t border-cyan-500/20">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-300">Kode Redeem Aktif</span>
+            <button onclick="loadActiveRedeems()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+          </div>
+          <div id="active-redeem-list" class="space-y-2 max-h-48 overflow-y-auto">
+            <p class="text-slate-500 italic text-xs text-center py-2">Memuat kode aktif...</p>
+          </div>
+        </div>
+      </div>
+
       <div id="result-box" class="hidden">
         <div class="glass-panel" style="padding: 1rem;">
           <div class="flex items-center justify-between mb-2">
@@ -881,7 +942,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- VIEW: PROFILE -->
+    <!-- VIEW: PROFILE (HANYA USER PROFILE, ADMIN DIPINDAH KE PANEL ADMIN) -->
     <div id="section-profile" class="glass-panel space-y-4 hidden">
       <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
         <h2 class="section-title" style="margin: 0;">Akun & Profil</h2>
@@ -927,7 +988,6 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- GANTI PASSWORD (NEW) -->
       <div>
         <div class="section-title" style="color: #fda4af;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -946,17 +1006,6 @@ const htmlTemplate = `<!DOCTYPE html>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           Ganti password segera setelah menerima akun VIP
         </p>
-      </div>
-
-      <div>
-        <div class="section-title" style="color: #67e8f9;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 12v10H4V12"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
-          Klaim Kode Redeem
-        </div>
-        <div class="flex gap-2">
-          <input type="text" id="redeem-code-input" placeholder="KODE-REDEEM" class="input-glow mono uppercase" style="flex: 1; padding: 0.7rem 1rem; font-size: 0.85rem; font-weight: 700;">
-          <button onclick="handleRedeemCode()" class="btn-primary" style="width: auto; padding: 0.7rem 1rem; font-size: 0.8rem;">Klaim</button>
-        </div>
       </div>
 
       <!-- RIWAYAT GMAIL TERVERIFIKASI -->
@@ -1032,171 +1081,212 @@ const htmlTemplate = `<!DOCTYPE html>
           <p class="text-slate-500 italic text-center py-2 text-xs">Memuat riwayat...</p>
         </div>
       </div>
+    </div>
 
-      <!-- ADMIN PANEL -->
-      <div id="admin-control-panel" class="hidden space-y-4 pt-3 border-t border-amber-500/20">
-        <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(168,85,247,0.08)); border: 1px solid rgba(245,158,11,0.3);">
-          <p class="text-xs font-extrabold text-amber-300 flex items-center gap-2">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
-            ADMIN MASTER CONTROL
-          </p>
+    <!-- VIEW: PANEL ADMIN (SEMUA FITUR ADMIN DIPINDAH KE SINI) -->
+    <div id="section-admin" class="glass-panel space-y-4 hidden">
+      <div class="flex items-center justify-between pb-3 border-b border-amber-500/20">
+        <h2 class="section-title" style="margin: 0; color: #fbbf24;">Panel Admin Master</h2>
+        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+      </div>
+
+      <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(168,85,247,0.08)); border: 1px solid rgba(245,158,11,0.3);">
+        <p class="text-xs font-extrabold text-amber-300 flex items-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
+          ADMIN MASTER CONTROL PANEL
+        </p>
+      </div>
+
+      <!-- Status Server -->
+      <div>
+        <p class="section-title" style="color: #fbbf24;">Status Server</p>
+        <div class="grid grid-cols-2 gap-2">
+          <button onclick="changeServerState('online')" class="btn-secondary" style="background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.35); color: #6ee7b7;">
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Online
+          </button>
+          <button onclick="changeServerState('offline')" class="btn-secondary" style="background: rgba(244,63,94,0.12); border-color: rgba(244,63,94,0.35); color: #fda4af;">
+            <span class="w-2 h-2 rounded-full bg-rose-500"></span> Offline
+          </button>
         </div>
+      </div>
 
-        <div>
-          <p class="section-title" style="color: #fbbf24;">Status Server</p>
-          <div class="grid grid-cols-2 gap-2">
-            <button onclick="changeServerState('online')" class="btn-secondary" style="background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.35); color: #6ee7b7;">
-              <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Online
-            </button>
-            <button onclick="changeServerState('offline')" class="btn-secondary" style="background: rgba(244,63,94,0.12); border-color: rgba(244,63,94,0.35); color: #fda4af;">
-              <span class="w-2 h-2 rounded-full bg-rose-500"></span> Offline
-            </button>
+      <!-- Upload Video -->
+      <div>
+        <p class="section-title" style="color: #fbbf24;">Upload Video (>5MB Support)</p>
+        <div id="file-drop-zone" class="file-drop">
+          <input type="file" id="admin-video-file" accept="video/*" class="hidden">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.5" style="margin: 0 auto 0.5rem; display: block;">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <p class="text-xs font-bold text-slate-300">Klik atau drop video di sini</p>
+          <p class="text-[10px] text-slate-500 mt-1">Support MP4, WebM, MOV • Max 200MB</p>
+          <p id="file-info" class="text-[10px] text-purple-300 mono mt-2 hidden"></p>
+        </div>
+        
+        <div id="upload-progress-container" class="hidden mt-3">
+          <div class="flex justify-between text-[10px] text-slate-400 mb-1.5">
+            <span id="upload-status-text">Mengunggah...</span>
+            <span id="upload-percent" class="mono font-bold text-purple-300">0%</span>
           </div>
+          <div class="progress-bar">
+            <div id="upload-progress-fill" class="progress-fill"></div>
+          </div>
+          <p id="upload-speed" class="text-[10px] text-slate-500 mono mt-1.5 text-center"></p>
         </div>
 
-        <div>
-          <p class="section-title" style="color: #fbbf24;">Upload Video (>5MB Support)</p>
-          <div id="file-drop-zone" class="file-drop">
-            <input type="file" id="admin-video-file" accept="video/*" class="hidden">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.5" style="margin: 0 auto 0.5rem; display: block;">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        <button onclick="handleUploadVideo()" id="btn-upload-video" class="btn-primary mt-3" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span id="btn-upload-text">Upload & Perbarui Video</span>
+        </button>
+      </div>
+
+      <!-- Kelola VIP User -->
+      <div>
+        <p class="section-title" style="color: #fbbf24;">Kelola VIP User</p>
+        <input type="text" id="vip-target-user" placeholder="Username target" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+        <div class="flex gap-2">
+          <input type="number" id="vip-duration-days" placeholder="Jumlah hari" class="input-glow" style="flex: 1; padding: 0.7rem 1rem; font-size: 0.85rem;">
+          <button onclick="handleSetVip()" class="btn-primary" style="width: auto; padding: 0.7rem 1rem; font-size: 0.8rem;">Set VIP</button>
+        </div>
+        <div class="flex justify-between items-center mt-2 mb-1">
+          <span class="text-[10px] text-amber-300 font-bold">Daftar VIP Aktif</span>
+          <button onclick="loadAdminVipList()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+        </div>
+        <div id="admin-vip-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px]">
+          <p class="text-slate-500 italic text-center py-2">Memuat...</p>
+        </div>
+      </div>
+
+      <!-- Buat Akun VIP Baru -->
+      <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(168,85,247,0.1), rgba(6,182,212,0.06)); border: 1px solid rgba(168,85,247,0.35);">
+        <p class="section-title" style="color: #d8b4fe; margin-top: 0;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+          Buat Akun VIP Baru
+        </p>
+        <p class="text-[10px] text-slate-400 mb-2">Admin dapat membuat akun VIP untuk dibagikan ke user</p>
+        <input type="text" id="vip-create-username" placeholder="Username akun VIP" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+        <input type="text" id="vip-create-password" placeholder="Password akun VIP" class="input-glow mb-2 mono" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+        <input type="number" id="vip-create-days" placeholder="Masa aktif VIP (hari)" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+        <button onclick="handleCreateVipAccount()" class="btn-success" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+          Buat Akun VIP
+        </button>
+
+        <div class="flex justify-between items-center mt-3 mb-1">
+          <span class="text-[10px] text-purple-300 font-bold">Daftar Akun VIP Dibuat</span>
+          <button onclick="loadVipAccounts()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+        </div>
+        <div id="vip-accounts-list" class="space-y-1.5 max-h-40 overflow-y-auto text-[11px]">
+          <p class="text-slate-500 italic text-center py-2">Memuat...</p>
+        </div>
+      </div>
+
+      <!-- Daftar User Terdaftar -->
+      <div>
+        <div class="flex justify-between items-center mb-2">
+          <p class="section-title" style="color: #fbbf24; margin: 0;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Daftar User Terdaftar
+          </p>
+          <button onclick="loadAllUsers()" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.68rem;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Refresh
+          </button>
+        </div>
+
+        <div class="space-y-2 mb-2.5">
+          <div class="relative">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 0.85rem; top: 50%; transform: translateY(-50%); pointer-events: none;">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
-            <p class="text-xs font-bold text-slate-300">Klik atau drop video di sini</p>
-            <p class="text-[10px] text-slate-500 mt-1">Support MP4, WebM, MOV • Max 200MB</p>
-            <p id="file-info" class="text-[10px] text-purple-300 mono mt-2 hidden"></p>
-          </div>
-          
-          <div id="upload-progress-container" class="hidden mt-3">
-            <div class="flex justify-between text-[10px] text-slate-400 mb-1.5">
-              <span id="upload-status-text">Mengunggah...</span>
-              <span id="upload-percent" class="mono font-bold text-purple-300">0%</span>
-            </div>
-            <div class="progress-bar">
-              <div id="upload-progress-fill" class="progress-fill"></div>
-            </div>
-            <p id="upload-speed" class="text-[10px] text-slate-500 mono mt-1.5 text-center"></p>
+            <input type="text" id="user-search-input" oninput="filterUserList()" placeholder="Cari username atau email..." class="input-glow" style="padding: 0.6rem 0.85rem 0.6rem 2.4rem; font-size: 0.82rem;">
           </div>
 
-          <button onclick="handleUploadVideo()" id="btn-upload-video" class="btn-primary mt-3" disabled>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <span id="btn-upload-text">Upload & Perbarui Video</span>
-          </button>
-        </div>
-
-        <div>
-          <p class="section-title" style="color: #fbbf24;">Kelola VIP User</p>
-          <input type="text" id="vip-target-user" placeholder="Username target" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-          <div class="flex gap-2">
-            <input type="number" id="vip-duration-days" placeholder="Jumlah hari" class="input-glow" style="flex: 1; padding: 0.7rem 1rem; font-size: 0.85rem;">
-            <button onclick="handleSetVip()" class="btn-primary" style="width: auto; padding: 0.7rem 1rem; font-size: 0.8rem;">Set VIP</button>
-          </div>
-          <div class="flex justify-between items-center mt-2 mb-1">
-            <span class="text-[10px] text-amber-300 font-bold">Daftar VIP Aktif</span>
-            <button onclick="loadAdminVipList()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
-          </div>
-          <div id="admin-vip-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px]">
-            <p class="text-slate-500 italic text-center py-2">Memuat...</p>
+          <div class="flex flex-wrap gap-1.5">
+            <button onclick="setUserFilter('all')" data-filter="all" class="user-filter-btn btn-secondary active-filter" style="padding: 0.3rem 0.7rem; font-size: 0.68rem; background: rgba(168,85,247,0.25); border-color: rgba(168,85,247,0.6); color: white;">Semua</button>
+            <button onclick="setUserFilter('admin')" data-filter="admin" class="user-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">👑 Admin</button>
+            <button onclick="setUserFilter('vip')" data-filter="vip" class="user-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">⭐ VIP</button>
+            <button onclick="setUserFilter('regular')" data-filter="regular" class="user-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">👤 Reguler</button>
+            <button onclick="setUserFilter('reset')" data-filter="reset" class="user-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">🔄 Reset Due</button>
           </div>
         </div>
 
-        <!-- CREATE VIP ACCOUNT (NEW) -->
-        <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(168,85,247,0.1), rgba(6,182,212,0.06)); border: 1px solid rgba(168,85,247,0.35);">
-          <p class="section-title" style="color: #d8b4fe; margin-top: 0;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-            Buat Akun VIP Baru
+        <div id="user-stats-bar" class="grid grid-cols-4 gap-1.5 mb-2.5 text-center">
+          <div class="p-1.5 rounded-lg" style="background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.2);">
+            <p class="text-[9px] text-purple-300 font-bold uppercase">Total</p>
+            <p id="stat-total" class="text-xs font-extrabold text-white mono">-</p>
+          </div>
+          <div class="p-1.5 rounded-lg" style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2);">
+            <p class="text-[9px] text-amber-300 font-bold uppercase">Admin</p>
+            <p id="stat-admins" class="text-xs font-extrabold text-amber-300 mono">-</p>
+          </div>
+          <div class="p-1.5 rounded-lg" style="background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.2);">
+            <p class="text-[9px] text-purple-300 font-bold uppercase">VIP</p>
+            <p id="stat-vips" class="text-xs font-extrabold text-purple-300 mono">-</p>
+          </div>
+          <div class="p-1.5 rounded-lg" style="background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.2);">
+            <p class="text-[9px] text-cyan-300 font-bold uppercase">Reset</p>
+            <p id="stat-reset" class="text-xs font-extrabold text-cyan-300 mono">-</p>
+          </div>
+        </div>
+
+        <div id="all-users-list" class="space-y-1.5 max-h-64 overflow-y-auto text-[11px]">
+          <p class="text-slate-500 italic text-center py-2">Klik Refresh untuk memuat daftar user...</p>
+        </div>
+      </div>
+
+      <!-- Generate Redeem Code -->
+      <div>
+        <p class="section-title" style="color: #fbbf24;">Generate Redeem Code</p>
+        <input type="text" id="gen-code" placeholder="NAMA-KODE" class="input-glow uppercase mono mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem; font-weight: 700;">
+        <div class="grid grid-cols-2 gap-2 mb-2">
+          <input type="number" id="gen-total-quota" placeholder="Total kuota" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+          <input type="number" id="gen-max-claims" placeholder="Maks orang" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+        </div>
+        <button onclick="handleCreateRedeem()" class="btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Generate Kode Redeem
+        </button>
+      </div>
+
+      <!-- Daftar Kode Aktif -->
+      <div>
+        <div class="flex justify-between items-center mb-1.5">
+          <span class="text-[10px] text-amber-300 font-bold">Daftar Kode Aktif</span>
+          <button onclick="loadAdminRedeems()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+        </div>
+        <div id="admin-redeem-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px]">
+          <p class="text-slate-500 italic text-center py-2">Memuat...</p>
+        </div>
+      </div>
+
+      <!-- Kelola Pengumuman -->
+      <div class="space-y-3 pt-3 border-t border-amber-500/20">
+        <p class="section-title" style="color: #fbbf24; margin: 0;">Panel Kelola Pengumuman</p>
+        <input type="hidden" id="info-edit-id" value="">
+        <input type="text" id="info-title" placeholder="Judul informasi" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+        <textarea id="info-content" placeholder="Isi pesan informasi..." class="input-glow" style="height: 90px; resize: none; padding: 0.7rem 1rem; font-size: 0.85rem;"></textarea>
+        <div class="flex gap-2">
+          <button id="info-submit-btn" onclick="handleSaveAnnouncement()" class="btn-primary" style="flex: 1;">Publikasikan</button>
+          <button id="info-cancel-btn" onclick="resetInfoForm()" class="btn-secondary hidden">Batal</button>
+        </div>
+        <div id="admin-info-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px] pt-1"></div>
+      </div>
+
+      <!-- REQUEST FITUR USER (ADMIN VIEW) -->
+      <div class="space-y-3 pt-3 border-t border-emerald-500/20">
+        <div class="flex justify-between items-center">
+          <p class="section-title" style="color: #6ee7b7; margin: 0;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            Request Fitur dari User
           </p>
-          <p class="text-[10px] text-slate-400 mb-2">Admin dapat membuat akun VIP untuk dibagikan ke user</p>
-          <input type="text" id="vip-create-username" placeholder="Username akun VIP" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-          <input type="text" id="vip-create-password" placeholder="Password akun VIP" class="input-glow mb-2 mono" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-          <input type="number" id="vip-create-days" placeholder="Masa aktif VIP (hari)" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-          <button onclick="handleCreateVipAccount()" class="btn-success" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-            Buat Akun VIP
-          </button>
-
-          <div class="flex justify-between items-center mt-3 mb-1">
-            <span class="text-[10px] text-purple-300 font-bold">Daftar Akun VIP Dibuat</span>
-            <button onclick="loadVipAccounts()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
-          </div>
-          <div id="vip-accounts-list" class="space-y-1.5 max-h-40 overflow-y-auto text-[11px]">
-            <p class="text-slate-500 italic text-center py-2">Memuat...</p>
-          </div>
-        </div>
-
-        <div>
-          <div class="flex justify-between items-center mb-2">
-            <p class="section-title" style="color: #fbbf24; margin: 0;">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              Daftar User Terdaftar
-            </p>
-            <button onclick="loadAllUsers()" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.68rem;">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-              Refresh
-            </button>
-          </div>
-
-          <div class="space-y-2 mb-2.5">
-            <div class="relative">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 0.85rem; top: 50%; transform: translateY(-50%); pointer-events: none;">
-                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-              </svg>
-              <input type="text" id="user-search-input" oninput="filterUserList()" placeholder="Cari username atau email..." class="input-glow" style="padding: 0.6rem 0.85rem 0.6rem 2.4rem; font-size: 0.82rem;">
-            </div>
-
-            <div class="flex flex-wrap gap-1.5">
-              <button onclick="setUserFilter('all')" data-filter="all" class="user-filter-btn btn-secondary active-filter" style="padding: 0.3rem 0.7rem; font-size: 0.68rem; background: rgba(168,85,247,0.25); border-color: rgba(168,85,247,0.6); color: white;">Semua</button>
-              <button onclick="setUserFilter('admin')" data-filter="admin" class="user-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">👑 Admin</button>
-              <button onclick="setUserFilter('vip')" data-filter="vip" class="user-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">⭐ VIP</button>
-              <button onclick="setUserFilter('regular')" data-filter="regular" class="user-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">👤 Reguler</button>
-              <button onclick="setUserFilter('reset')" data-filter="reset" class="user-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">🔄 Reset Due</button>
-            </div>
-          </div>
-
-          <div id="user-stats-bar" class="grid grid-cols-4 gap-1.5 mb-2.5 text-center">
-            <div class="p-1.5 rounded-lg" style="background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.2);">
-              <p class="text-[9px] text-purple-300 font-bold uppercase">Total</p>
-              <p id="stat-total" class="text-xs font-extrabold text-white mono">-</p>
-            </div>
-            <div class="p-1.5 rounded-lg" style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2);">
-              <p class="text-[9px] text-amber-300 font-bold uppercase">Admin</p>
-              <p id="stat-admins" class="text-xs font-extrabold text-amber-300 mono">-</p>
-            </div>
-            <div class="p-1.5 rounded-lg" style="background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.2);">
-              <p class="text-[9px] text-purple-300 font-bold uppercase">VIP</p>
-              <p id="stat-vips" class="text-xs font-extrabold text-purple-300 mono">-</p>
-            </div>
-            <div class="p-1.5 rounded-lg" style="background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.2);">
-              <p class="text-[9px] text-cyan-300 font-bold uppercase">Reset</p>
-              <p id="stat-reset" class="text-xs font-extrabold text-cyan-300 mono">-</p>
-            </div>
-          </div>
-
-          <div id="all-users-list" class="space-y-1.5 max-h-64 overflow-y-auto text-[11px]">
-            <p class="text-slate-500 italic text-center py-2">Klik Refresh untuk memuat daftar user...</p>
-          </div>
-        </div>
-
-        <div>
-          <p class="section-title" style="color: #fbbf24;">Generate Redeem Code</p>
-          <input type="text" id="gen-code" placeholder="NAMA-KODE" class="input-glow uppercase mono mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem; font-weight: 700;">
-          <div class="grid grid-cols-2 gap-2 mb-2">
-            <input type="number" id="gen-total-quota" placeholder="Total kuota" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-            <input type="number" id="gen-max-claims" placeholder="Maks orang" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-          </div>
-          <button onclick="handleCreateRedeem()" class="btn-primary">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Generate Kode Redeem
+          <button onclick="loadAdminFeatureRequests()" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.68rem;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Refresh
           </button>
         </div>
-
-        <div>
-          <div class="flex justify-between items-center mb-1.5">
-            <span class="text-[10px] text-amber-300 font-bold">Daftar Kode Aktif</span>
-            <button onclick="loadAdminRedeems()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
-          </div>
-          <div id="admin-redeem-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px]">
-            <p class="text-slate-500 italic text-center py-2">Memuat...</p>
-          </div>
+        <div id="admin-feature-requests-list" class="space-y-2 max-h-64 overflow-y-auto text-[11px]">
+          <p class="text-slate-500 italic text-center py-2">Memuat request fitur...</p>
         </div>
       </div>
     </div>
@@ -1209,14 +1299,15 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
 
       <div class="space-y-2.5">
-        ${[1,2,3,4,5,6].map((n, i) => {
+        ${[1,2,3,4,5,6,7].map((n, i) => {
           const steps = [
             'Pastikan Anda sudah login ke sistem dengan akun Anda.',
             'Beralih ke menu Generator Utama untuk mulai memproses.',
             'Masukkan email target Google/Gmail pada kolom yang tersedia.',
             'Klik tombol Kirim Magic Link untuk memicu token verifikasi.',
             'Salin tautan Magic Link dari email, paste di kolom URL.',
-            'Klik Verifikasi Sekarang — proses selesai!'
+            'Klik Verifikasi Sekarang — proses selesai!',
+            'Klaim kode redeem di Generator Utama untuk dapat kuota bonus.'
           ];
           return `
           <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
@@ -1237,21 +1328,41 @@ const htmlTemplate = `<!DOCTYPE html>
       <div id="user-announcement-container" class="space-y-2.5 max-h-80 overflow-y-auto pr-1">
         <p class="text-slate-500 italic text-xs text-center py-3">Memuat informasi...</p>
       </div>
+    </div>
 
-      <div id="admin-announcement-panel" class="space-y-3 pt-3 border-t border-purple-500/20 hidden">
-        <p class="section-title" style="color: #fbbf24; margin: 0;">Panel Kelola Pengumuman</p>
-        <input type="hidden" id="info-edit-id" value="">
-        <input type="text" id="info-title" placeholder="Judul informasi" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-        <textarea id="info-content" placeholder="Isi pesan informasi..." class="input-glow" style="height: 90px; resize: none; padding: 0.7rem 1rem; font-size: 0.85rem;"></textarea>
-        <div class="flex gap-2">
-          <button id="info-submit-btn" onclick="handleSaveAnnouncement()" class="btn-primary" style="flex: 1;">Publikasikan</button>
-          <button id="info-cancel-btn" onclick="resetInfoForm()" class="btn-secondary hidden">Batal</button>
+    <!-- VIEW: REQUEST FITUR (USER) -->
+    <div id="section-request" class="glass-panel space-y-4 hidden">
+      <div class="flex items-center justify-between pb-3 border-b border-emerald-500/20">
+        <h2 class="section-title" style="margin: 0; color: #6ee7b7;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          Request Fitur Baru
+        </h2>
+        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+      </div>
+
+      <p class="text-xs text-slate-400">Punya ide fitur baru? Kirim saran Anda ke admin!</p>
+
+      <div class="space-y-3">
+        <input type="text" id="feature-request-title" placeholder="Nama fitur yang diinginkan" class="input-glow" style="padding: 0.85rem 1.15rem;">
+        <textarea id="feature-request-desc" placeholder="Jelaskan fitur yang Anda inginkan..." class="input-glow" style="height: 100px; resize: none; padding: 0.85rem 1.15rem;"></textarea>
+        <button onclick="handleSubmitFeatureRequest()" class="btn-success">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          Kirim Request Fitur
+        </button>
+      </div>
+
+      <div class="pt-3 border-t border-emerald-500/20">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-300">Request Fitur Anda</span>
+          <button onclick="loadUserFeatureRequests()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
         </div>
-        <div id="admin-info-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px] pt-1"></div>
+        <div id="user-feature-requests-list" class="space-y-2 max-h-60 overflow-y-auto">
+          <p class="text-slate-500 italic text-xs text-center py-2">Memuat...</p>
+        </div>
       </div>
     </div>
 
-    <p class="text-center text-[10px] text-slate-600 tracking-wider py-2">AM PREMIUM • BY BANGGUS • v3.0</p>
+    <p class="text-center text-[10px] text-slate-600 tracking-wider py-2">AM PREMIUM • BY BANGGUS • v3.1</p>
   </div>
 </div>
 
@@ -1304,7 +1415,7 @@ function switchView(viewName) {
     el.classList.toggle('active', el.dataset.nav === viewName);
   });
   toggleMenu();
-  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat'].forEach(id => {
+  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request'].forEach(id => {
     document.getElementById(id).classList.add('hidden');
   });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hidden');
@@ -1317,11 +1428,25 @@ function switchView(viewName) {
     document.getElementById('section-announcement').classList.remove('hidden');
     loadUserAnnouncements();
   }
+  else if (viewName === 'request') {
+    document.getElementById('section-request').classList.remove('hidden');
+    loadUserFeatureRequests();
+  }
   else if (viewName === 'chat') {
     document.getElementById('section-chat').classList.remove('hidden');
     loadGlobalChat();
     unreadChatCount = 0;
     updateChatBadge();
+  }
+  else if (viewName === 'admin') {
+    if (!isAdminUser) return showToast('Akses ditolak!', 'error');
+    document.getElementById('section-admin').classList.remove('hidden');
+    loadAdminRedeems();
+    loadAdminAnnouncements();
+    loadAdminVipList();
+    loadAllUsers();
+    loadVipAccounts();
+    loadAdminFeatureRequests();
   }
 }
 
@@ -1455,6 +1580,7 @@ function applySession(data) {
   checkVipStatus(data);
   loadUserAnnouncements();
   loadVerifiedEmails();
+  loadActiveRedeems();
   updateStatusUI(data.serverStatus);
   fetchFeaturedVideo();
 
@@ -1472,13 +1598,7 @@ function applySession(data) {
   if (data.isAdmin) {
     roleBadge.className = 'badge badge-admin';
     roleBadge.innerText = '👑 Admin';
-    document.getElementById('admin-control-panel').classList.remove('hidden');
-    document.getElementById('admin-announcement-panel').classList.remove('hidden');
-    loadAdminRedeems();
-    loadAdminAnnouncements();
-    loadAdminVipList();
-    loadAllUsers();
-    loadVipAccounts();
+    document.getElementById('nav-admin-btn').classList.remove('hidden');
   } else if (data.isVip) {
     roleBadge.className = 'badge badge-vip';
     roleBadge.innerText = 'VIP Member';
@@ -1504,7 +1624,214 @@ async function checkSavedSession() {
 }
 checkSavedSession();
 
-// ============ GANTI PASSWORD (NEW) ============
+// ============ KLAIM REDEEM (DI GENERATOR) ============
+async function handleRedeemCodeMain() {
+  const code = document.getElementById('redeem-code-input-main').value.trim().toUpperCase();
+  if (!code) return showToast('Masukkan kode!', 'error');
+  try {
+    const res = await fetch('/api/redeem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername, code })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success');
+      document.getElementById('redeem-code-input-main').value = '';
+      updateQuotaDisplay(data);
+      loadVerifiedEmails();
+      loadActiveRedeems();
+    } else showToast(data.message, 'error');
+  } catch(e) { showToast('Gagal redeem', 'error'); }
+}
+
+async function loadActiveRedeems() {
+  try {
+    const res = await fetch('/api/redeems/active');
+    const data = await res.json();
+    const container = document.getElementById('active-redeem-list');
+    if (!container) return;
+
+    if (data.success && Object.keys(data.redeems).length > 0) {
+      const now = Date.now();
+      container.innerHTML = Object.entries(data.redeems).map(([code, val]) => {
+        const remainingClaims = val.maxClaims - val.claimedCount;
+        const remainingQuota = val.totalQuota - (val.distributedQuota || 0);
+        if (remainingClaims <= 0 || remainingQuota <= 0) return '';
+        
+        return '<div class="redeem-card">' +
+          '<div class="flex justify-between items-start mb-1.5">' +
+            '<div class="flex-1 min-w-0">' +
+              '<p class="text-xs font-bold text-cyan-300 mono">' + escapeHtml(code) + '</p>' +
+              '<p class="text-[10px] text-slate-400">Sisa kuota: ' + remainingQuota + ' | Sisa klaim: ' + remainingClaims + '</p>' +
+            '</div>' +
+            '<button onclick="quickClaimRedeem(\\'' + escapeHtml(code) + '\\')" class="px-2 py-1 rounded text-[10px] font-bold" style="background: rgba(6,182,212,0.2); color: #67e8f9; border: 1px solid rgba(6,182,212,0.4);">Klaim</button>' +
+          '</div>' +
+          '<div class="progress-bar" style="height: 4px;">' +
+            '<div class="progress-fill" style="width: ' + Math.round((val.claimedCount / val.maxClaims) * 100) + '%; background: linear-gradient(90deg, #06b6d4, #a855f7);"></div>' +
+          '</div>' +
+        '</div>';
+      }).filter(Boolean).join('') || '<p class="text-slate-500 italic text-xs text-center py-2">Tidak ada kode aktif</p>';
+    } else {
+      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Tidak ada kode redeem aktif</p>';
+    }
+  } catch(e) {
+    console.error('Failed to load redeems:', e);
+  }
+}
+
+function quickClaimRedeem(code) {
+  document.getElementById('redeem-code-input-main').value = code;
+  showToast('Kode "' + code + '" siap diklaim', 'info');
+  document.getElementById('redeem-code-input-main').focus();
+}
+
+// ============ REQUEST FITUR (USER) ============
+async function handleSubmitFeatureRequest() {
+  const title = document.getElementById('feature-request-title').value.trim();
+  const description = document.getElementById('feature-request-desc').value.trim();
+
+  if (!title || !description) return showToast('Lengkapi judul dan deskripsi fitur!', 'error');
+  if (title.length < 3) return showToast('Judul minimal 3 karakter!', 'error');
+  if (description.length < 10) return showToast('Deskripsi minimal 10 karakter!', 'error');
+
+  try {
+    const res = await fetch('/api/feature-request/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername, title, description })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Request fitur berhasil dikirim!', 'success');
+      document.getElementById('feature-request-title').value = '';
+      document.getElementById('feature-request-desc').value = '';
+      loadUserFeatureRequests();
+    } else {
+      showToast(data.message || 'Gagal mengirim request', 'error');
+    }
+  } catch(e) {
+    showToast('Kesalahan koneksi', 'error');
+  }
+}
+
+async function loadUserFeatureRequests() {
+  if (!loggedInUsername) return;
+  const container = document.getElementById('user-feature-requests-list');
+  if (!container) return;
+  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2 animate-pulse">Memuat...</p>';
+
+  try {
+    const res = await fetch('/api/feature-request/my?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+    if (data.success && data.requests && data.requests.length > 0) {
+      container.innerHTML = data.requests.map(req => {
+        const statusBadge = req.status === 'approved' 
+          ? '<span class="text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(16,185,129,0.15); color: #6ee7b7;">✓ Disetujui</span>'
+          : req.status === 'rejected'
+          ? '<span class="text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(244,63,94,0.15); color: #fda4af;">✗ Ditolak</span>'
+          : '<span class="text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(245,158,11,0.15); color: #fbbf24;">⏳ Menunggu</span>';
+
+        return '<div class="feature-request-card">' +
+          '<div class="flex justify-between items-start mb-1">' +
+            '<p class="text-xs font-bold text-emerald-300">' + escapeHtml(req.title) + '</p>' +
+            statusBadge +
+          '</div>' +
+          '<p class="text-[11px] text-slate-300 leading-relaxed">' + escapeHtml(req.description) + '</p>' +
+          '<p class="text-[9px] text-slate-500 mt-1.5">' + new Date(req.timestamp).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + '</p>' +
+          (req.adminNote ? '<p class="text-[10px] text-amber-300 mt-1.5 p-1.5 rounded" style="background: rgba(245,158,11,0.1);">💬 Admin: ' + escapeHtml(req.adminNote) + '</p>' : '') +
+        '</div>';
+      }).join('');
+    } else {
+      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada request fitur</p>';
+    }
+  } catch(e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-2">Gagal memuat</p>';
+  }
+}
+
+// ============ ADMIN: FEATURE REQUESTS ============
+async function loadAdminFeatureRequests() {
+  if (!isAdminUser) return;
+  const container = document.getElementById('admin-feature-requests-list');
+  if (!container) return;
+  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 animate-pulse">Memuat request fitur...</p>';
+
+  try {
+    const res = await fetch('/api/admin/feature-requests?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+    if (data.success && data.requests && data.requests.length > 0) {
+      const pending = data.requests.filter(r => r.status === 'pending');
+      const others = data.requests.filter(r => r.status !== 'pending');
+      const sorted = [...pending, ...others];
+
+      container.innerHTML = sorted.map(req => {
+        const statusColor = req.status === 'approved' ? '#6ee7b7' : req.status === 'rejected' ? '#fda4af' : '#fbbf24';
+        const statusText = req.status === 'approved' ? 'Disetujui' : req.status === 'rejected' ? 'Ditolak' : 'Menunggu';
+        return '<div class="p-2.5 rounded-lg animate-slide-up" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(16,185,129,0.2);">' +
+          '<div class="flex justify-between items-start mb-1">' +
+            '<div class="flex-1 min-w-0">' +
+              '<p class="text-xs font-bold text-emerald-300">' + escapeHtml(req.title) + '</p>' +
+              '<p class="text-[9px] text-slate-500">Dari: ' + escapeHtml(req.username) + '</p>' +
+            '</div>' +
+            '<span class="text-[9px] px-1.5 py-0.5 rounded-full shrink-0" style="background: rgba(' + (req.status === 'approved' ? '16,185,129' : req.status === 'rejected' ? '244,63,94' : '245,158,11') + ',0.15); color: ' + statusColor + ';">' + statusText + '</span>' +
+          '</div>' +
+          '<p class="text-[10px] text-slate-300 mb-1.5">' + escapeHtml(req.description) + '</p>' +
+          (req.adminNote ? '<p class="text-[9px] text-amber-300 mb-1.5">Catatan: ' + escapeHtml(req.adminNote) + '</p>' : '') +
+          '<div class="flex gap-1.5 mt-2 pt-1.5 border-t border-slate-800">' +
+            '<input type="text" id="admin-note-' + req.id + '" placeholder="Catatan admin..." class="input-glow" style="flex: 1; padding: 0.4rem 0.6rem; font-size: 0.7rem;">' +
+            '<button onclick="updateFeatureRequestStatus(\\'' + req.id + '\\', \\'approved\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);">✓</button>' +
+            '<button onclick="updateFeatureRequestStatus(\\'' + req.id + '\\', \\'rejected\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(244,63,94,0.2); color: #fda4af; border: 1px solid rgba(244,63,94,0.4);">✗</button>' +
+            '<button onclick="deleteFeatureRequest(\\'' + req.id + '\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(148,163,184,0.2); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.4);">🗑</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    } else {
+      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada request fitur</p>';
+    }
+  } catch(e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-center py-2">Gagal memuat</p>';
+  }
+}
+
+async function updateFeatureRequestStatus(reqId, status) {
+  const noteInput = document.getElementById('admin-note-' + reqId);
+  const adminNote = noteInput ? noteInput.value.trim() : '';
+  try {
+    const res = await fetch('/api/admin/feature-request/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: loggedInUsername, requestId: reqId, status, adminNote })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Request ' + (status === 'approved' ? 'disetujui' : 'ditolak'), 'success');
+      loadAdminFeatureRequests();
+    } else {
+      showToast(data.message, 'error');
+    }
+  } catch(e) {
+    showToast('Gagal update', 'error');
+  }
+}
+
+async function deleteFeatureRequest(reqId) {
+  if (!confirm('Hapus request ini?')) return;
+  try {
+    const res = await fetch('/api/admin/feature-request/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: loggedInUsername, requestId: reqId })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Request dihapus', 'success');
+      loadAdminFeatureRequests();
+    }
+  } catch(e) {}
+}
+
+// ============ GANTI PASSWORD ============
 async function handleChangePassword() {
   const oldPassword = document.getElementById('old-password-input').value;
   const newPassword = document.getElementById('new-password-input').value;
@@ -2060,7 +2387,7 @@ async function handleRemoveVip(targetUser) {
   } catch(e) {}
 }
 
-// ============ CREATE VIP ACCOUNT (NEW) ============
+// ============ CREATE VIP ACCOUNT ============
 async function handleCreateVipAccount() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
   const vipUsername = document.getElementById('vip-create-username').value.trim().toLowerCase();
@@ -2326,7 +2653,7 @@ function renderUserList() {
   }).join('');
 }
 
-// ============ HAPUS AKUN (NEW) ============
+// ============ HAPUS AKUN ============
 async function deleteUserAccount(targetUsername, isTargetAdmin) {
   const confirmText = isTargetAdmin 
     ? '⚠️ HAPUS AKUN ADMIN "' + targetUsername + '"?\\n\\nAkun ini akan dihapus permanen!'
@@ -2334,7 +2661,6 @@ async function deleteUserAccount(targetUsername, isTargetAdmin) {
   
   if (!confirm(confirmText)) return;
   
-  // Extra confirmation for admin accounts
   if (isTargetAdmin) {
     const secondConfirm = prompt('Ketik "HAPUS" untuk konfirmasi hapus akun admin:');
     if (secondConfirm !== 'HAPUS') {
@@ -2374,7 +2700,7 @@ function copyUsername(username) {
   });
 }
 
-// ============ GLOBAL CHAT (NEW) ============
+// ============ GLOBAL CHAT ============
 function updateChatBadge() {
   const badge = document.getElementById('chat-unread-badge');
   if (unreadChatCount > 0) {
@@ -2622,7 +2948,7 @@ async function deleteAnnouncement(id) {
   } catch(e) {}
 }
 
-// ============ REDEEM ============
+// ============ REDEEM (ADMIN) ============
 async function handleCreateRedeem() {
   if (!isAdminUser) return;
   const code = document.getElementById('gen-code').value.trim().toUpperCase();
@@ -2642,6 +2968,7 @@ async function handleCreateRedeem() {
       document.getElementById('gen-total-quota').value = '';
       document.getElementById('gen-max-claims').value = '';
       loadAdminRedeems();
+      loadActiveRedeems();
     } else showToast(data.message, 'error');
   } catch(e) {}
 }
@@ -2675,27 +3002,8 @@ async function handleDeleteRedeem(code) {
       body: JSON.stringify({ username: loggedInUsername, code })
     });
     const data = await res.json();
-    if (data.success) { showToast('Kode dihapus', 'success'); loadAdminRedeems(); }
+    if (data.success) { showToast('Kode dihapus', 'success'); loadAdminRedeems(); loadActiveRedeems(); }
   } catch(e) {}
-}
-
-async function handleRedeemCode() {
-  const code = document.getElementById('redeem-code-input').value.trim().toUpperCase();
-  if (!code) return showToast('Masukkan kode!', 'error');
-  try {
-    const res = await fetch('/api/redeem', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, code })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast(data.message, 'success');
-      document.getElementById('redeem-code-input').value = '';
-      updateQuotaDisplay(data);
-      loadVerifiedEmails();
-    } else showToast(data.message, 'error');
-  } catch(e) { showToast('Gagal redeem', 'error'); }
 }
 
 // ============ GENERATOR ACTIONS ============
@@ -2848,6 +3156,118 @@ const server = http.createServer(async (req, res) => {
       const announcements = await getAllAnnouncementsFromDb();
       jsonResponse(res, 200, { success: true, announcements });
 
+    // ===== ACTIVE REDEEMS (NEW - UNTUK USER LIHAT KODE AKTIF) =====
+    } else if (parsedUrl.pathname === '/api/redeems/active' && req.method === 'GET') {
+      const allRedeems = await getAllRedeemsFromDb();
+      const now = Date.now();
+      const activeRedeems = {};
+      
+      for (const [code, val] of Object.entries(allRedeems)) {
+        const remainingClaims = val.maxClaims - val.claimedCount;
+        const remainingQuota = val.totalQuota - (val.distributedQuota || 0);
+        if (remainingClaims > 0 && remainingQuota > 0) {
+          activeRedeems[code] = {
+            totalQuota: val.totalQuota,
+            maxClaims: val.maxClaims,
+            claimedCount: val.claimedCount,
+            distributedQuota: val.distributedQuota || 0
+          };
+        }
+      }
+      
+      jsonResponse(res, 200, { success: true, redeems: activeRedeems });
+
+    // ===== FEATURE REQUESTS (NEW) =====
+    } else if (parsedUrl.pathname === '/api/feature-request/submit' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, title, description } = JSON.parse(body);
+      
+      const cleanUser = username ? username.toLowerCase() : '';
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
+
+      if (!title || !description) {
+        return jsonResponse(res, 400, { success: false, message: 'Judul dan deskripsi harus diisi!' });
+      }
+      if (title.length < 3 || title.length > 100) {
+        return jsonResponse(res, 400, { success: false, message: 'Judul 3-100 karakter!' });
+      }
+      if (description.length < 10 || description.length > 1000) {
+        return jsonResponse(res, 400, { success: false, message: 'Deskripsi 10-1000 karakter!' });
+      }
+
+      const reqId = 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+      await saveFeatureRequestToDb(reqId, {
+        id: reqId,
+        username: cleanUser,
+        title: title.trim(),
+        description: description.trim(),
+        status: 'pending',
+        timestamp: Date.now(),
+        adminNote: ''
+      });
+
+      jsonResponse(res, 200, { success: true, message: 'Request fitur berhasil dikirim!' });
+
+    } else if (parsedUrl.pathname === '/api/feature-request/my' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+
+      const allRequests = await getFeatureRequestsFromDb();
+      const cleanUser = username.toLowerCase();
+      const myRequests = Object.values(allRequests)
+        .filter(r => r.username === cleanUser)
+        .sort((a, b) => b.timestamp - a.timestamp);
+
+      jsonResponse(res, 200, { success: true, requests: myRequests });
+
+    } else if (parsedUrl.pathname === '/api/admin/feature-requests' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+      if (!adminObj || !adminObj.isAdmin) {
+        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      }
+
+      const allRequests = await getFeatureRequestsFromDb();
+      const requests = Object.values(allRequests).sort((a, b) => b.timestamp - a.timestamp);
+      jsonResponse(res, 200, { success: true, requests });
+
+    } else if (parsedUrl.pathname === '/api/admin/feature-request/update' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { adminUsername, requestId, status, adminNote } = JSON.parse(body);
+      
+      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) {
+        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      }
+
+      if (!['pending', 'approved', 'rejected'].includes(status)) {
+        return jsonResponse(res, 400, { success: false, message: 'Status tidak valid!' });
+      }
+
+      const allRequests = await getFeatureRequestsFromDb();
+      const reqObj = allRequests[requestId];
+      if (!reqObj) return jsonResponse(res, 404, { success: false, message: 'Request tidak ditemukan!' });
+
+      reqObj.status = status;
+      reqObj.adminNote = adminNote || '';
+      reqObj.updatedAt = Date.now();
+      await saveFeatureRequestToDb(requestId, reqObj);
+
+      jsonResponse(res, 200, { success: true, message: 'Request diupdate!' });
+
+    } else if (parsedUrl.pathname === '/api/admin/feature-request/delete' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { adminUsername, requestId } = JSON.parse(body);
+      
+      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) {
+        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      }
+
+      await removeFeatureRequestFromDb(requestId);
+      jsonResponse(res, 200, { success: true, message: 'Request dihapus!' });
+
     // ===== USER EMAILS + RESET TIME =====
     } else if (parsedUrl.pathname === '/api/user/my-emails') {
       const username = parsedUrl.searchParams.get('username');
@@ -2894,7 +3314,7 @@ const server = http.createServer(async (req, res) => {
         resetJustNow: false
       });
 
-    // ===== GANTI PASSWORD (NEW) =====
+    // ===== GANTI PASSWORD =====
     } else if (parsedUrl.pathname === '/api/user/change-password' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, oldPassword, newPassword } = JSON.parse(body);
@@ -2921,19 +3341,16 @@ const server = http.createServer(async (req, res) => {
       
       jsonResponse(res, 200, { success: true, message: 'Password berhasil diubah!' });
 
-    // ===== GLOBAL CHAT ENDPOINTS (NEW) =====
+    // ===== GLOBAL CHAT ENDPOINTS =====
     } else if (parsedUrl.pathname === '/api/chat/messages' && req.method === 'GET') {
       const messages = await getGlobalChatFromDb();
       
-      // Cleanup old messages (older than 3 days) to prevent bloat
       const now = Date.now();
       const threeDays = 3 * 24 * 60 * 60 * 1000;
-      let cleaned = false;
       for (const [id, msg] of Object.entries(messages)) {
         if (now - msg.timestamp > threeDays) {
           await deleteGlobalChatMessageFromDb(id);
           delete messages[id];
-          cleaned = true;
         }
       }
       
@@ -2985,7 +3402,7 @@ const server = http.createServer(async (req, res) => {
       await deleteGlobalChatMessageFromDb(messageId);
       jsonResponse(res, 200, { success: true, message: 'Pesan dihapus' });
 
-    // ===== CREATE VIP ACCOUNT (NEW) =====
+    // ===== CREATE VIP ACCOUNT =====
     } else if (parsedUrl.pathname === '/api/admin/create-vip-account' && req.method === 'POST') {
       const body = await readBody(req);
       const { adminUsername, vipUsername, vipPassword, vipDays } = JSON.parse(body);
@@ -3025,7 +3442,6 @@ const server = http.createServer(async (req, res) => {
         createdAt: now
       });
 
-      // Save to vipAccounts registry for tracking
       const vipAccId = 'vip_' + now + '_' + Math.random().toString(36).substring(2, 8);
       await saveVipAccountToDb(vipAccId, {
         username: cleanVipUser,
@@ -3051,7 +3467,6 @@ const server = http.createServer(async (req, res) => {
 
       const vipAccounts = await getVipAccountsFromDb();
       
-      // Enrich with current status
       const enriched = {};
       const now = Date.now();
       for (const [id, acc] of Object.entries(vipAccounts)) {
@@ -3077,10 +3492,8 @@ const server = http.createServer(async (req, res) => {
 
       const cleanVipUser = vipUsername.toLowerCase();
 
-      // Delete user account
       await deleteUserFromDb(cleanVipUser);
 
-      // Delete from vipAccounts registry
       const vipAccounts = await getVipAccountsFromDb();
       for (const [id, acc] of Object.entries(vipAccounts)) {
         if (acc.username === cleanVipUser) {
@@ -3090,7 +3503,7 @@ const server = http.createServer(async (req, res) => {
 
       jsonResponse(res, 200, { success: true, message: 'Akun VIP dihapus!' });
 
-    // ===== DELETE USER ACCOUNT (NEW) =====
+    // ===== DELETE USER ACCOUNT =====
     } else if (parsedUrl.pathname === '/api/admin/delete-user' && req.method === 'POST') {
       const body = await readBody(req);
       const { adminUsername, targetUsername } = JSON.parse(body);
@@ -3102,12 +3515,10 @@ const server = http.createServer(async (req, res) => {
 
       const cleanTarget = targetUsername.toLowerCase();
       
-      // Prevent self-deletion
       if (cleanTarget === adminUsername.toLowerCase()) {
         return jsonResponse(res, 400, { success: false, message: 'Tidak dapat menghapus akun sendiri!' });
       }
 
-      // Prevent deleting the main admin
       if (cleanTarget === 'adminbaguss') {
         return jsonResponse(res, 400, { success: false, message: 'Akun admin utama tidak dapat dihapus!' });
       }
@@ -3117,10 +3528,8 @@ const server = http.createServer(async (req, res) => {
         return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan!' });
       }
 
-      // Delete from users
       await deleteUserFromDb(cleanTarget);
 
-      // Also delete from vipAccounts registry if exists
       const vipAccounts = await getVipAccountsFromDb();
       for (const [id, acc] of Object.entries(vipAccounts)) {
         if (acc.username === cleanTarget) {
@@ -3351,7 +3760,7 @@ const server = http.createServer(async (req, res) => {
       const existingCode = await getRedeemFromDb(code);
       if (existingCode) return jsonResponse(res, 400, { success: false, message: 'Kode redeem sudah ada!' });
 
-      await saveRedeemToDb(code, { totalQuota, maxClaims, claimedCount: 0, claimedUsers: [] });
+      await saveRedeemToDb(code, { totalQuota, maxClaims, claimedCount: 0, claimedUsers: [], distributedQuota: 0 });
       jsonResponse(res, 200, { success: true, message: 'Kode ' + code + ' dibuat!' });
 
     } else if (parsedUrl.pathname === '/api/admin/get-redeems') {
@@ -3558,14 +3967,17 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log('\\n╔══════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v3.0                  ║');
-  console.log('║  📡 http://localhost:' + PORT + '                      ║');
-  console.log('║  📦 Chunked Upload Ready (>200MB)            ║');
-  console.log('║  👥 User List Viewer + Delete Account        ║');
-  console.log('║  📧 Gmail History + Reset Countdown          ║');
-  console.log('║  💬 Global Chat (Real-time)                  ║');
-  console.log('║  🔐 Change Password + Create VIP Account     ║');
-  console.log('║  ⭐ VIP Account Generator                     ║');
-  console.log('╚══════════════════════════════════════════════╝\\n');
+  console.log('\\n╔══════════════════════════════════════════════════════════╗');
+  console.log('║  🚀 AM Premium Banggus v3.1                              ║');
+  console.log('║  📡 http://localhost:' + PORT + '                                  ║');
+  console.log('║  📦 Chunked Upload Ready (>200MB)                        ║');
+  console.log('║  👥 User List Viewer + Delete Account                    ║');
+  console.log('║  📧 Gmail History + Reset Countdown                      ║');
+  console.log('║  💬 Global Chat (Real-time)                              ║');
+  console.log('║  🔐 Change Password + Create VIP Account                 ║');
+  console.log('║  ⭐ VIP Account Generator                                ║');
+  console.log('║  🎁 Redeem Code di Generator + Cek Kode Aktif            ║');
+  console.log('║  💡 Request Fitur Baru (User → Admin)                    ║');
+  console.log('║  🛡️ Panel Admin Terpisah dari Profil                    ║');
+  console.log('╚══════════════════════════════════════════════════════════╝\\n');
 });
