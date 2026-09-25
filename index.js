@@ -1235,13 +1235,13 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- Generate Redeem Code -->
+      <!-- Generate Redeem Code (UPDATED) -->
       <div>
         <p class="section-title" style="color: #fbbf24;">Generate Redeem Code</p>
         <input type="text" id="gen-code" placeholder="NAMA-KODE" class="input-glow uppercase mono mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem; font-weight: 700;">
         <div class="grid grid-cols-2 gap-2 mb-2">
-          <input type="number" id="gen-total-quota" placeholder="Total kuota" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-          <input type="number" id="gen-max-claims" placeholder="Maks orang" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+          <input type="number" id="gen-quota-per-user" placeholder="Kuota per user" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;" min="1">
+          <input type="number" id="gen-max-claims" placeholder="Maks orang klaim" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;" min="1">
         </div>
         <button onclick="handleCreateRedeem()" class="btn-primary">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -1383,6 +1383,7 @@ let unreadChatCount = 0;
 let lastChatMessageId = null;
 let currentView = 'generator';
 let userQuotaData = { usedQuota: 0, bonusQuota: 0, totalQuota: 1, nextResetTime: 0, lastResetTime: 0 };
+let claimedRedeemCodes = {}; // NEW: Track kode yang sudah diklaim user
 
 // ============ TOAST ============
 function showToast(message, type = 'info', duration = 3000) {
@@ -1624,7 +1625,7 @@ async function checkSavedSession() {
 }
 checkSavedSession();
 
-// ============ KLAIM REDEEM (DI GENERATOR) ============
+// ============ KLAIM REDEEM (DI GENERATOR) - UPDATED ============
 async function handleRedeemCodeMain() {
   const code = document.getElementById('redeem-code-input-main').value.trim().toUpperCase();
   if (!code) return showToast('Masukkan kode!', 'error');
@@ -1647,25 +1648,41 @@ async function handleRedeemCodeMain() {
 
 async function loadActiveRedeems() {
   try {
-    const res = await fetch('/api/redeems/active');
-    const data = await res.json();
+    // Fetch kode aktif dan juga kode yang sudah diklaim user
+    const [resActive, resClaimed] = await Promise.all([
+      fetch('/api/redeems/active'),
+      loggedInUsername ? fetch('/api/redeems/claimed?username=' + encodeURIComponent(loggedInUsername)) : Promise.resolve({ json: () => ({ claimedCodes: [] }) })
+    ]);
+    
+    const dataActive = await resActive.json();
+    const dataClaimed = await resClaimed.json();
+    claimedRedeemCodes = dataClaimed.claimedCodes || {};
+
     const container = document.getElementById('active-redeem-list');
     if (!container) return;
 
-    if (data.success && Object.keys(data.redeems).length > 0) {
-      const now = Date.now();
-      container.innerHTML = Object.entries(data.redeems).map(([code, val]) => {
+    if (dataActive.success && Object.keys(dataActive.redeems).length > 0) {
+      container.innerHTML = Object.entries(dataActive.redeems).map(([code, val]) => {
         const remainingClaims = val.maxClaims - val.claimedCount;
-        const remainingQuota = val.totalQuota - (val.distributedQuota || 0);
-        if (remainingClaims <= 0 || remainingQuota <= 0) return '';
+        const quotaPerUser = val.quotaPerUser || 1;
+        const hasClaimed = claimedRedeemCodes[code] === true;
+        
+        if (remainingClaims <= 0) return '';
+        
+        // Tombol klaim atau centang jika sudah pernah klaim
+        const buttonHtml = hasClaimed 
+          ? '<span class="px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1" style="background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);">' +
+              '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' +
+              'Sudah</span>'
+          : '<button onclick="quickClaimRedeem(\\'' + escapeHtml(code) + '\\')" class="px-2 py-1 rounded text-[10px] font-bold" style="background: rgba(6,182,212,0.2); color: #67e8f9; border: 1px solid rgba(6,182,212,0.4);">Klaim</button>';
         
         return '<div class="redeem-card">' +
           '<div class="flex justify-between items-start mb-1.5">' +
             '<div class="flex-1 min-w-0">' +
               '<p class="text-xs font-bold text-cyan-300 mono">' + escapeHtml(code) + '</p>' +
-              '<p class="text-[10px] text-slate-400">Sisa kuota: ' + remainingQuota + ' | Sisa klaim: ' + remainingClaims + '</p>' +
+              '<p class="text-[10px] text-slate-400">Kuota: ' + quotaPerUser + ' per user | Sisa klaim: ' + remainingClaims + '/' + val.maxClaims + '</p>' +
             '</div>' +
-            '<button onclick="quickClaimRedeem(\\'' + escapeHtml(code) + '\\')" class="px-2 py-1 rounded text-[10px] font-bold" style="background: rgba(6,182,212,0.2); color: #67e8f9; border: 1px solid rgba(6,182,212,0.4);">Klaim</button>' +
+            buttonHtml +
           '</div>' +
           '<div class="progress-bar" style="height: 4px;">' +
             '<div class="progress-fill" style="width: ' + Math.round((val.claimedCount / val.maxClaims) * 100) + '%; background: linear-gradient(90deg, #06b6d4, #a855f7);"></div>' +
@@ -2948,24 +2965,34 @@ async function deleteAnnouncement(id) {
   } catch(e) {}
 }
 
-// ============ REDEEM (ADMIN) ============
+// ============ REDEEM (ADMIN) - UPDATED ============
 async function handleCreateRedeem() {
   if (!isAdminUser) return;
   const code = document.getElementById('gen-code').value.trim().toUpperCase();
-  const totalQuota = parseInt(document.getElementById('gen-total-quota').value);
+  const quotaPerUser = parseInt(document.getElementById('gen-quota-per-user').value);
   const maxClaims = parseInt(document.getElementById('gen-max-claims').value);
-  if (!code || isNaN(totalQuota) || isNaN(maxClaims)) return showToast('Lengkapi semua field!', 'error');
+  
+  if (!code || isNaN(quotaPerUser) || isNaN(maxClaims)) {
+    return showToast('Lengkapi semua field!', 'error');
+  }
+  if (quotaPerUser < 1) {
+    return showToast('Kuota per user minimal 1!', 'error');
+  }
+  if (maxClaims < 1) {
+    return showToast('Maksimal klaim minimal 1!', 'error');
+  }
+  
   try {
     const res = await fetch('/api/admin/create-redeem', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, code, totalQuota, maxClaims })
+      body: JSON.stringify({ username: loggedInUsername, code, quotaPerUser, maxClaims })
     });
     const data = await res.json();
     if (data.success) {
       showToast(data.message, 'success');
       document.getElementById('gen-code').value = '';
-      document.getElementById('gen-total-quota').value = '';
+      document.getElementById('gen-quota-per-user').value = '';
       document.getElementById('gen-max-claims').value = '';
       loadAdminRedeems();
       loadActiveRedeems();
@@ -2983,7 +3010,7 @@ async function loadAdminRedeems() {
       container.innerHTML = Object.entries(data.redeems).map(([code, val]) => 
         '<div class="flex justify-between items-center p-2 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(245,158,11,0.2);">' +
           '<div><span class="text-amber-300 font-bold mono">' + code + '</span>' +
-          '<span class="text-slate-500 block text-[9px]">Kuota: ' + val.totalQuota + ' | Klaim: ' + val.claimedCount + '/' + val.maxClaims + '</span></div>' +
+          '<span class="text-slate-500 block text-[9px]">Kuota: ' + (val.quotaPerUser || 1) + '/user | Klaim: ' + val.claimedCount + '/' + val.maxClaims + '</span></div>' +
           '<button onclick="handleDeleteRedeem(\\'' + code + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(244,63,94,0.2); color: #fda4af;">×</button>' +
         '</div>'
       ).join('');
@@ -3156,26 +3183,40 @@ const server = http.createServer(async (req, res) => {
       const announcements = await getAllAnnouncementsFromDb();
       jsonResponse(res, 200, { success: true, announcements });
 
-    // ===== ACTIVE REDEEMS (NEW - UNTUK USER LIHAT KODE AKTIF) =====
+    // ===== ACTIVE REDEEMS (UPDATED - QUOTA PER USER) =====
     } else if (parsedUrl.pathname === '/api/redeems/active' && req.method === 'GET') {
       const allRedeems = await getAllRedeemsFromDb();
-      const now = Date.now();
       const activeRedeems = {};
       
       for (const [code, val] of Object.entries(allRedeems)) {
         const remainingClaims = val.maxClaims - val.claimedCount;
-        const remainingQuota = val.totalQuota - (val.distributedQuota || 0);
-        if (remainingClaims > 0 && remainingQuota > 0) {
+        if (remainingClaims > 0) {
           activeRedeems[code] = {
-            totalQuota: val.totalQuota,
+            quotaPerUser: val.quotaPerUser || 1,
             maxClaims: val.maxClaims,
-            claimedCount: val.claimedCount,
-            distributedQuota: val.distributedQuota || 0
+            claimedCount: val.claimedCount
           };
         }
       }
       
       jsonResponse(res, 200, { success: true, redeems: activeRedeems });
+
+    // ===== CLAIMED CODES CHECK (NEW) =====
+    } else if (parsedUrl.pathname === '/api/redeems/claimed' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 200, { success: true, claimedCodes: {} });
+      
+      const cleanUser = username.toLowerCase();
+      const allRedeems = await getAllRedeemsFromDb();
+      const claimedCodes = {};
+      
+      for (const [code, val] of Object.entries(allRedeems)) {
+        if (val.claimedUsers && val.claimedUsers.includes(cleanUser)) {
+          claimedCodes[code] = true;
+        }
+      }
+      
+      jsonResponse(res, 200, { success: true, claimedCodes });
 
     // ===== FEATURE REQUESTS (NEW) =====
     } else if (parsedUrl.pathname === '/api/feature-request/submit' && req.method === 'POST') {
@@ -3751,17 +3792,34 @@ const server = http.createServer(async (req, res) => {
       await removeAnnouncementFromDb(id);
       jsonResponse(res, 200, { success: true });
 
+    // ===== CREATE REDEEM (UPDATED) =====
     } else if (parsedUrl.pathname === '/api/admin/create-redeem' && req.method === 'POST') {
       const body = await readBody(req);
-      const { username, code, totalQuota, maxClaims } = JSON.parse(body);
+      const { username, code, quotaPerUser, maxClaims } = JSON.parse(body);
       const userObj = await getUserFromDb(username.toLowerCase());
       if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false });
+
+      if (!code || !quotaPerUser || !maxClaims) {
+        return jsonResponse(res, 400, { success: false, message: 'Lengkapi semua field!' });
+      }
+      if (quotaPerUser < 1 || maxClaims < 1) {
+        return jsonResponse(res, 400, { success: false, message: 'Kuota dan maks klaim minimal 1!' });
+      }
 
       const existingCode = await getRedeemFromDb(code);
       if (existingCode) return jsonResponse(res, 400, { success: false, message: 'Kode redeem sudah ada!' });
 
-      await saveRedeemToDb(code, { totalQuota, maxClaims, claimedCount: 0, claimedUsers: [], distributedQuota: 0 });
-      jsonResponse(res, 200, { success: true, message: 'Kode ' + code + ' dibuat!' });
+      await saveRedeemToDb(code, { 
+        quotaPerUser: parseInt(quotaPerUser), 
+        maxClaims: parseInt(maxClaims), 
+        claimedCount: 0, 
+        claimedUsers: [] 
+      });
+      
+      jsonResponse(res, 200, { 
+        success: true, 
+        message: 'Kode ' + code + ' dibuat! (' + quotaPerUser + ' kuota/user, maks ' + maxClaims + ' orang)' 
+      });
 
     } else if (parsedUrl.pathname === '/api/admin/get-redeems') {
       const username = parsedUrl.searchParams.get('username');
@@ -3778,6 +3836,7 @@ const server = http.createServer(async (req, res) => {
       await removeRedeemFromDb(code);
       jsonResponse(res, 200, { success: true });
 
+    // ===== REDEEM CLAIM (UPDATED) =====
     } else if (parsedUrl.pathname === '/api/redeem' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, code } = JSON.parse(body);
@@ -3796,20 +3855,15 @@ const server = http.createServer(async (req, res) => {
         return jsonResponse(res, 400, { success: false, message: 'Anda sudah pernah klaim kode ini!' });
       }
       if (redeemObj.claimedCount >= redeemObj.maxClaims) {
-        return jsonResponse(res, 400, { success: false, message: 'Kuota kode habis!' });
+        return jsonResponse(res, 400, { success: false, message: 'Kuota klaim kode habis!' });
       }
 
-      const remainingClaims = redeemObj.maxClaims - redeemObj.claimedCount;
-      const remainingTotalQuota = redeemObj.totalQuota - (redeemObj.distributedQuota || 0);
-      let rewardQuota = Math.round(remainingTotalQuota / remainingClaims);
-      if (rewardQuota < 1) rewardQuota = 1;
+      const rewardQuota = redeemObj.quotaPerUser || 1;
 
       if (!userObj.bonusQuota) userObj.bonusQuota = 0;
       userObj.bonusQuota += rewardQuota;
 
       redeemObj.claimedCount += 1;
-      if (!redeemObj.distributedQuota) redeemObj.distributedQuota = 0;
-      redeemObj.distributedQuota += rewardQuota;
       if (!redeemObj.claimedUsers) redeemObj.claimedUsers = [];
       redeemObj.claimedUsers.push(cleanUser);
 
@@ -3976,7 +4030,8 @@ server.listen(PORT, () => {
   console.log('║  💬 Global Chat (Real-time)                              ║');
   console.log('║  🔐 Change Password + Create VIP Account                 ║');
   console.log('║  ⭐ VIP Account Generator                                ║');
-  console.log('║  🎁 Redeem Code di Generator + Cek Kode Aktif            ║');
+  console.log('║  🎁 Redeem Code (Fixed Quota per User)                   ║');
+  console.log('║  ✅ Cek Kode Sudah Diklaim (Centang)                     ║');
   console.log('║  💡 Request Fitur Baru (User → Admin)                    ║');
   console.log('║  🛡️ Panel Admin Terpisah dari Profil                    ║');
   console.log('╚══════════════════════════════════════════════════════════╝\\n');
