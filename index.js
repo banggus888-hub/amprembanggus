@@ -179,7 +179,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>AM Premium • Banggus v3.2</title>
+<title>AM Premium • Banggus v3.3</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
@@ -339,10 +339,6 @@ const htmlTemplate = `<!DOCTYPE html>
     border-color: rgba(168,85,247,0.35);
   }
 
-  @keyframes pulse-glow {
-    0%, 100% { opacity: 0.4; transform: scale(1); }
-    50% { opacity: 0.8; transform: scale(1.05); }
-  }
   @keyframes slide-up {
     from { opacity: 0; transform: translateY(12px); }
     to { opacity: 1; transform: translateY(0); }
@@ -354,6 +350,10 @@ const htmlTemplate = `<!DOCTYPE html>
   @keyframes pulse-ring {
     0% { transform: scale(0.95); opacity: 1; }
     100% { transform: scale(1.3); opacity: 0; }
+  }
+  @keyframes live-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(244,63,94,0.7); }
+    50% { box-shadow: 0 0 0 8px rgba(244,63,94,0); }
   }
   .animate-slide-up { animation: slide-up 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
   .pulse-ring { animation: pulse-ring 1.5s ease-out infinite; }
@@ -432,6 +432,7 @@ const htmlTemplate = `<!DOCTYPE html>
     background: rgba(168,85,247,0.08);
   }
 
+  /* ===== VIDEO CONTAINER DENGAN LIVE INDICATOR ===== */
   .video-container {
     width: 100%; height: 180px; border-radius: 1.25rem;
     overflow: hidden; position: relative;
@@ -439,7 +440,49 @@ const htmlTemplate = `<!DOCTYPE html>
     box-shadow: 0 0 40px rgba(168,85,247,0.15);
     background: black;
   }
-  .video-container video { width: 100%; height: 100%; object-fit: cover; }
+  .video-container video {
+    width: 100%; height: 100%; object-fit: cover;
+    pointer-events: none;
+    user-select: none;
+    display: block;
+  }
+  .video-live-indicator {
+    position: absolute; top: 0.6rem; left: 0.6rem;
+    display: flex; align-items: center; gap: 0.35rem;
+    padding: 0.25rem 0.6rem;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid rgba(244,63,94,0.5);
+    border-radius: 999px;
+    font-size: 0.6rem;
+    font-weight: 800;
+    color: #fda4af;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    backdrop-filter: blur(10px);
+    z-index: 2;
+  }
+  .video-live-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #f43f5e;
+    animation: live-pulse 1.5s infinite;
+  }
+  .video-status-corner {
+    position: absolute; bottom: 0.6rem; right: 0.6rem;
+    padding: 0.2rem 0.5rem;
+    background: rgba(0,0,0,0.5);
+    border-radius: 999px;
+    font-size: 0.55rem;
+    font-weight: 700;
+    color: #6ee7b7;
+    letter-spacing: 0.05em;
+    backdrop-filter: blur(10px);
+    z-index: 2;
+    display: flex; align-items: center; gap: 0.25rem;
+  }
+  .video-status-corner.paused { color: #fda4af; }
+  .video-status-corner .status-dot {
+    width: 5px; height: 5px; border-radius: 50%; background: currentColor;
+  }
 
   .icon-btn {
     width: 2.75rem; height: 2.75rem;
@@ -514,12 +557,8 @@ const htmlTemplate = `<!DOCTYPE html>
     border-bottom-right-radius: 0.25rem;
     box-shadow: 0 4px 15px -5px rgba(168,85,247,0.5);
   }
-  .chat-bubble-admin {
-    border: 1px solid rgba(245,158,11,0.5);
-  }
-  .chat-bubble-vip {
-    border: 1px solid rgba(168,85,247,0.5);
-  }
+  .chat-bubble-admin { border: 1px solid rgba(245,158,11,0.5); }
+  .chat-bubble-vip { border: 1px solid rgba(168,85,247,0.5); }
   .chat-meta {
     font-size: 0.65rem;
     opacity: 0.7;
@@ -543,9 +582,7 @@ const htmlTemplate = `<!DOCTYPE html>
     color: #e2e8f0;
     outline: none;
   }
-  .chat-input-row input:focus {
-    border-color: rgba(168,85,247,0.6);
-  }
+  .chat-input-row input:focus { border-color: rgba(168,85,247,0.6); }
   .chat-input-row button {
     background: linear-gradient(135deg, #a855f7, #7e22ce);
     border: none;
@@ -565,7 +602,6 @@ const htmlTemplate = `<!DOCTYPE html>
     margin-top: 0.2rem;
   }
 
-  /* VIP ACCOUNT CARD */
   .vip-account-card {
     background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(168,85,247,0.06));
     border: 1px solid rgba(245,158,11,0.3);
@@ -590,7 +626,6 @@ const htmlTemplate = `<!DOCTYPE html>
     border-color: rgba(244,63,94,0.6);
   }
 
-  /* REDEEM CARD */
   .redeem-card {
     background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(6,182,212,0.06));
     border: 1px solid rgba(16,185,129,0.3);
@@ -603,7 +638,6 @@ const htmlTemplate = `<!DOCTYPE html>
     filter: grayscale(0.5);
   }
 
-  /* FEATURE REQUEST CARD */
   .feature-req-card {
     background: rgba(7,4,15,0.6);
     border: 1px solid rgba(168,85,247,0.2);
@@ -771,7 +805,25 @@ const htmlTemplate = `<!DOCTYPE html>
     <div id="terminal-view" class="space-y-3 hidden">
 
       <div class="video-container">
-        <video id="main-display-video" src="" autoplay loop muted playsinline></video>
+        <video id="main-display-video"
+               src=""
+               autoplay
+               loop
+               muted
+               playsinline
+               preload="auto"
+               disablepictureinpicture
+               disableremoteplayback
+               controlslist="nodownload nofullscreen noremoteplayback noplaybackrate"
+               oncontextmenu="return false;"></video>
+        <div class="video-live-indicator">
+          <span class="video-live-dot"></span>
+          <span>LIVE</span>
+        </div>
+        <div id="video-status-corner" class="video-status-corner">
+          <span class="status-dot"></span>
+          <span id="video-status-text">Playing</span>
+        </div>
       </div>
 
       <div class="glass-panel py-2.5 px-3.5 flex items-center justify-between">
@@ -1433,7 +1485,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <p class="text-center text-[10px] text-slate-600 tracking-wider py-2">AM PREMIUM • BY BANGGUS • v3.2</p>
+    <p class="text-center text-[10px] text-slate-600 tracking-wider py-2">AM PREMIUM • BY BANGGUS • v3.3</p>
   </div>
 </div>
 
@@ -1459,6 +1511,12 @@ let cachedFeatureRequests = [];
 let currentReqFilter = 'all';
 let cachedRedeemList = [];
 
+// ===== VIDEO AUTO-LOOP KEEP-ALIVE STATE =====
+let videoKeepAliveInterval = null;
+let videoRecoveryTimeout = null;
+let currentVideoUrl = '';
+let videoLoadAttempts = 0;
+
 // ============ TOAST ============
 function showToast(message, type = 'info', duration = 3000) {
   const container = document.getElementById('toast-container');
@@ -1477,6 +1535,239 @@ function showToast(message, type = 'info', duration = 3000) {
     setTimeout(() => toast.remove(), 400);
   }, duration);
 }
+
+// ============================================================
+// ============ VIDEO AUTO-PLAY CONTINUOUS ENGINE =============
+// ============================================================
+function updateVideoStatus(status, isPaused = false) {
+  const corner = document.getElementById('video-status-corner');
+  const text = document.getElementById('video-status-text');
+  if (!corner || !text) return;
+  text.innerText = status;
+  if (isPaused) {
+    corner.classList.add('paused');
+  } else {
+    corner.classList.remove('paused');
+  }
+}
+
+function forceVideoPlay() {
+  const v = document.getElementById('main-display-video');
+  if (!v) return;
+  
+  // Pastikan semua atribut wajib terpasang
+  v.muted = true;
+  v.loop = true;
+  v.autoplay = true;
+  v.playsInline = true;
+  v.setAttribute('muted', '');
+  v.setAttribute('playsinline', '');
+  v.setAttribute('webkit-playsinline', '');
+  
+  // Jika video sudah selesai atau mau selesai → reset ke awal
+  if (v.ended || v.currentTime >= v.duration - 0.05) {
+    try { v.currentTime = 0; } catch(e) {}
+  }
+  
+  // Coba play kembali
+  const playPromise = v.play();
+  if (playPromise && typeof playPromise.then === 'function') {
+    playPromise
+      .then(() => { 
+        updateVideoStatus('Playing', false);
+        videoLoadAttempts = 0; 
+      })
+      .catch((err) => {
+        // Autoplay ditolak browser, coba lagi dengan muted
+        v.muted = true;
+        setTimeout(() => {
+          const p2 = v.play();
+          if (p2 && p2.catch) p2.catch(() => {});
+        }, 250);
+      });
+  }
+}
+
+function startVideoKeepAlive() {
+  stopVideoKeepAlive();
+  
+  const v = document.getElementById('main-display-video');
+  if (!v) return;
+  
+  // Watchdog: cek setiap 800ms apakah video benar-benar jalan
+  videoKeepAliveInterval = setInterval(() => {
+    const vid = document.getElementById('main-display-video');
+    if (!vid || !currentVideoUrl) return;
+    
+    // Jika video paused, ended, atau stuck → paksa play
+    if (vid.paused || vid.ended) {
+      forceVideoPlay();
+    }
+    // Jika currentTime tidak bergerak sama sekali (stuck)
+    else if (vid.duration && vid.currentTime >= vid.duration - 0.1) {
+      try { vid.currentTime = 0; } catch(e) {}
+      forceVideoPlay();
+    }
+  }, 800);
+  
+  // Recovery jika terjadi stall selama >2 detik
+  let lastTime = -1;
+  let stuckCount = 0;
+  videoKeepAliveInterval._stuckChecker = setInterval(() => {
+    const vid = document.getElementById('main-display-video');
+    if (!vid) return;
+    if (vid.currentTime === lastTime && !vid.paused && !vid.ended) {
+      stuckCount++;
+      if (stuckCount >= 3) {
+        // Video stuck! Force reload posisi
+        try { vid.load(); } catch(e) {}
+        forceVideoPlay();
+        stuckCount = 0;
+      }
+    } else {
+      stuckCount = 0;
+    }
+    lastTime = vid.currentTime;
+  }, 1000);
+}
+
+function stopVideoKeepAlive() {
+  if (videoKeepAliveInterval) {
+    clearInterval(videoKeepAliveInterval);
+    if (videoKeepAliveInterval._stuckChecker) {
+      clearInterval(videoKeepAliveInterval._stuckChecker);
+    }
+    videoKeepAliveInterval = null;
+  }
+  if (videoRecoveryTimeout) {
+    clearTimeout(videoRecoveryTimeout);
+    videoRecoveryTimeout = null;
+  }
+}
+
+function attachVideoEvents() {
+  const v = document.getElementById('main-display-video');
+  if (!v) return;
+  
+  // Cegah video di-pause manual (kecuali oleh script)
+  v.addEventListener('pause', () => {
+    updateVideoStatus('Recovering...', true);
+    // Auto-resume setelah 100ms
+    setTimeout(() => {
+      if (!currentVideoUrl) return;
+      forceVideoPlay();
+    }, 100);
+  });
+  
+  // Ketika video selesai → langsung loop ke awal
+  v.addEventListener('ended', () => {
+    try { v.currentTime = 0; } catch(e) {}
+    forceVideoPlay();
+  });
+  
+  // Ketika video stuck (waiting) → coba recover
+  v.addEventListener('waiting', () => {
+    updateVideoStatus('Buffering', false);
+  });
+  
+  v.addEventListener('playing', () => {
+    updateVideoStatus('Playing', false);
+    videoLoadAttempts = 0;
+  });
+  
+  // Recovery jika video error
+  v.addEventListener('error', () => {
+    updateVideoStatus('Error', true);
+    videoLoadAttempts++;
+    if (videoLoadAttempts <= 5 && currentVideoUrl) {
+      // Reload video setelah delay singkat
+      setTimeout(() => {
+        const vid = document.getElementById('main-display-video');
+        if (vid && currentVideoUrl) {
+          vid.src = currentVideoUrl + (currentVideoUrl.includes('?') ? '&' : '?') + '_r=' + Date.now();
+          vid.load();
+          forceVideoPlay();
+        }
+      }, 1500);
+    }
+  });
+  
+  // Pastikan saat metadata loaded langsung play
+  v.addEventListener('loadedmetadata', () => {
+    forceVideoPlay();
+  });
+  
+  v.addEventListener('canplay', () => {
+    forceVideoPlay();
+  });
+  
+  // Cegah klik kanan, drag, dll
+  v.addEventListener('contextmenu', (e) => e.preventDefault());
+  v.addEventListener('dragstart', (e) => e.preventDefault());
+}
+
+function setVideoSource(url) {
+  const v = document.getElementById('main-display-video');
+  if (!v || !url) return;
+  
+  // Kalau URL sama persis, tidak usah reload
+  if (currentVideoUrl === url && v.src) {
+    forceVideoPlay();
+    return;
+  }
+  
+  currentVideoUrl = url;
+  videoLoadAttempts = 0;
+  
+  // Reset state video
+  v.muted = true;
+  v.loop = true;
+  v.autoplay = true;
+  v.playsInline = true;
+  v.setAttribute('muted', '');
+  v.setAttribute('playsinline', '');
+  v.setAttribute('webkit-playsinline', '');
+  v.setAttribute('disablepictureinpicture', '');
+  v.setAttribute('disableremoteplayback', '');
+  
+  // Set source baru
+  v.src = url;
+  v.load();
+  
+  // Paksa play setelah load
+  const playAttempt = () => {
+    forceVideoPlay();
+  };
+  setTimeout(playAttempt, 50);
+  setTimeout(playAttempt, 300);
+  setTimeout(playAttempt, 1000);
+  setTimeout(playAttempt, 2000);
+  
+  // Start watchdog
+  startVideoKeepAlive();
+}
+
+// Resume video saat tab kembali aktif (mobile/tab switch)
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && currentVideoUrl) {
+    setTimeout(forceVideoPlay, 200);
+  }
+});
+window.addEventListener('focus', () => {
+  if (currentVideoUrl) setTimeout(forceVideoPlay, 200);
+});
+window.addEventListener('pageshow', () => {
+  if (currentVideoUrl) setTimeout(forceVideoPlay, 200);
+});
+// Resume saat user sentuh halaman (mobile autoplay policy)
+document.addEventListener('touchstart', function onceTouch() {
+  if (currentVideoUrl) forceVideoPlay();
+  document.removeEventListener('touchstart', onceTouch);
+}, { once: true });
+document.addEventListener('click', function onceClick() {
+  if (currentVideoUrl) forceVideoPlay();
+  document.removeEventListener('click', onceClick);
+}, { once: true });
 
 // ============ DRAWER ============
 function toggleMenu() {
@@ -1517,6 +1808,11 @@ function switchView(viewName) {
   else if (viewName === 'admin' && isAdminUser) {
     document.getElementById('section-admin').classList.remove('hidden');
     loadAdminTabContent();
+  }
+  
+  // Pastikan video tetap berjalan saat kembali ke terminal
+  if (viewName === 'generator' && currentVideoUrl) {
+    setTimeout(forceVideoPlay, 100);
   }
 }
 
@@ -1570,10 +1866,7 @@ async function fetchFeaturedVideo() {
     const res = await fetch('/api/video');
     const data = await res.json();
     if (data.success && data.videoUrl) {
-      const v = document.getElementById('main-display-video');
-      if (v && v.src !== data.videoUrl) {
-        v.src = data.videoUrl;
-      }
+      setVideoSource(data.videoUrl);
     }
   } catch(e) {}
 }
@@ -1596,10 +1889,25 @@ function updateStatusUI(status) {
   }
 }
 
+// ============ INIT VIDEO ENGINE ============
+function initVideoEngine() {
+  attachVideoEvents();
+  fetchFeaturedVideo();
+  // Poll video baru setiap 15 detik
+  setInterval(fetchFeaturedVideo, 15000);
+  // Watchdog global untuk memastikan video selalu main (di luar view)
+  setInterval(() => {
+    if (currentVideoUrl) {
+      const v = document.getElementById('main-display-video');
+      if (v && (v.paused || v.ended)) {
+        forceVideoPlay();
+      }
+    }
+  }, 2000);
+}
+
 fetchServerStatus();
-fetchFeaturedVideo();
 setInterval(fetchServerStatus, 5000);
-setInterval(fetchFeaturedVideo, 15000);
 
 // ============ AUTH ============
 function switchAuthTab(mode) {
@@ -2478,6 +2786,9 @@ async function handleUploadVideo() {
     selectedVideoFile = null;
     document.getElementById('admin-video-file').value = '';
     document.getElementById('file-info').classList.add('hidden');
+    
+    // Refresh video dengan URL baru
+    currentVideoUrl = '';  // reset agar setVideoSource benar-benar replace
     fetchFeaturedVideo();
 
     setTimeout(() => {
@@ -3325,6 +3636,7 @@ function handleLogout() {
   if (quotaCountdownInterval) clearInterval(quotaCountdownInterval);
   if (globalCountdownInterval) clearInterval(globalCountdownInterval);
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
+  stopVideoKeepAlive();
   localStorage.removeItem('authToken');
   localStorage.removeItem('savedUsername');
   sessionStorage.clear();
@@ -3332,6 +3644,13 @@ function handleLogout() {
 }
 
 initFileDrop();
+
+// Init video engine setelah DOM siap
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initVideoEngine);
+} else {
+  initVideoEngine();
+}
 
 // Char counter for feature request
 document.getElementById('feature-req-desc').addEventListener('input', (e) => {
@@ -4227,8 +4546,9 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\\n╔══════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v3.2                  ║');
+  console.log('║  🚀 AM Premium Banggus v3.3                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                      ║');
+  console.log('║  🎬 Video Auto-Loop Engine (Continuous)      ║');
   console.log('║  📦 Chunked Upload Ready (>200MB)            ║');
   console.log('║  👥 User List Viewer + Delete Account        ║');
   console.log('║  📧 Gmail History + Reset Countdown          ║');
