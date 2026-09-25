@@ -128,6 +128,18 @@ async function removeVipAccountFromDb(id) {
   await set(ref(db, `vipAccounts/${id}`), null);
 }
 
+// ====== FEATURE REQUESTS HELPERS (NEW) ======
+async function getAllFeatureRequestsFromDb() {
+  const snapshot = await get(child(ref(db), `featureRequests`));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+async function saveFeatureRequestToDb(id, data) {
+  await set(ref(db, `featureRequests/${id}`), data);
+}
+async function removeFeatureRequestFromDb(id) {
+  await set(ref(db, `featureRequests/${id}`), null);
+}
+
 async function initAdmin() {
   const adminData = await getUserFromDb('adminbaguss');
   if (!adminData) {
@@ -167,7 +179,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>AM Premium • Banggus v3.0</title>
+<title>AM Premium • Banggus v3.1</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
@@ -385,6 +397,9 @@ const htmlTemplate = `<!DOCTYPE html>
   .badge-admin { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.4); color: #fbbf24; }
   .badge-vip { background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.4); color: #d8b4fe; }
   .badge-user { background: rgba(148,163,184,0.1); border-color: rgba(148,163,184,0.3); color: #cbd5e1; }
+  .badge-pending { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.4); color: #fbbf24; }
+  .badge-accepted { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.35); color: #6ee7b7; }
+  .badge-rejected { background: rgba(244,63,94,0.12); border-color: rgba(244,63,94,0.35); color: #fda4af; }
 
   .divider {
     height: 1px;
@@ -575,6 +590,28 @@ const htmlTemplate = `<!DOCTYPE html>
     border-color: rgba(244,63,94,0.6);
   }
 
+  /* REDEEM CARD */
+  .redeem-card {
+    background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(6,182,212,0.06));
+    border: 1px solid rgba(16,185,129,0.3);
+    border-radius: 1rem;
+    padding: 0.85rem;
+    animation: slide-up 0.3s ease;
+  }
+  .redeem-card-claimed {
+    opacity: 0.6;
+    filter: grayscale(0.5);
+  }
+
+  /* FEATURE REQUEST CARD */
+  .feature-req-card {
+    background: rgba(7,4,15,0.6);
+    border: 1px solid rgba(168,85,247,0.2);
+    border-radius: 1rem;
+    padding: 0.85rem;
+    animation: slide-up 0.3s ease;
+  }
+
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(168,85,247,0.3); border-radius: 999px; }
@@ -640,6 +677,10 @@ const htmlTemplate = `<!DOCTYPE html>
           Chat Global
           <span id="chat-unread-badge" class="ml-auto hidden text-[9px] px-1.5 py-0.5 rounded-full" style="background: #f43f5e; color: white;">0</span>
         </button>
+        <button onclick="switchView('request')" data-nav="request" class="nav-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          Request Fitur
+        </button>
         <button onclick="switchView('profile')" data-nav="profile" class="nav-item">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           Akun & Profil
@@ -651,6 +692,10 @@ const htmlTemplate = `<!DOCTYPE html>
         <button onclick="switchView('announcement')" data-nav="announcement" class="nav-item">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
           Pengumuman
+        </button>
+        <button onclick="switchView('admin')" data-nav="admin" id="nav-admin-btn" class="nav-item hidden">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
+          Panel Admin
         </button>
       </nav>
     </div>
@@ -722,7 +767,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </button>
     </div>
 
-    <!-- VIEW: TERMINAL -->
+    <!-- VIEW: TERMINAL (GENERATOR) -->
     <div id="terminal-view" class="space-y-3 hidden">
 
       <div class="video-container">
@@ -809,6 +854,7 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
+      <!-- GENERATOR MAIN FORM -->
       <div class="glass-panel space-y-3.5">
         <div>
           <div class="section-title">
@@ -851,6 +897,39 @@ const htmlTemplate = `<!DOCTYPE html>
           <pre id="result-text" class="mono text-[11px] text-purple-300 whitespace-pre-wrap break-all" style="max-height: 200px; overflow-y: auto;"></pre>
         </div>
       </div>
+
+      <!-- REDEEM SECTION (MOVED TO GENERATOR) -->
+      <div class="glass-panel space-y-3.5" style="border-color: rgba(16,185,129,0.3);">
+        <div class="section-title" style="color: #6ee7b7; margin-bottom: 0;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 12v10H4V12"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+          Klaim Kode Redeem
+        </div>
+
+        <div class="flex gap-2">
+          <input type="text" id="redeem-code-input" placeholder="KODE-REDEEM" class="input-glow mono uppercase" style="flex: 1; padding: 0.7rem 1rem; font-size: 0.85rem; font-weight: 700;">
+          <button onclick="handleRedeemCode()" class="btn-success" style="width: auto; padding: 0.7rem 1rem; font-size: 0.8rem; background: linear-gradient(135deg, #10b981, #059669); color: #031a12;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Klaim
+          </button>
+        </div>
+
+        <div class="divider" style="margin: 0.5rem 0;"></div>
+
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Kode Redeem Aktif
+          </span>
+          <button onclick="loadActiveRedeems()" class="text-[10px] text-slate-400 hover:text-white underline flex items-center gap-1">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Refresh
+          </button>
+        </div>
+
+        <div id="active-redeems-list" class="space-y-2 max-h-60 overflow-y-auto">
+          <p class="text-slate-500 italic text-center py-2 text-xs">Memuat kode redeem...</p>
+        </div>
+      </div>
     </div>
 
     <!-- VIEW: CHAT GLOBAL -->
@@ -878,6 +957,49 @@ const htmlTemplate = `<!DOCTYPE html>
       <div class="flex items-center justify-between text-[10px] text-slate-500">
         <span id="chat-online-count">👥 0 user online</span>
         <button onclick="loadGlobalChat()" class="text-purple-400 hover:text-purple-300 underline">Refresh</button>
+      </div>
+    </div>
+
+    <!-- VIEW: REQUEST FITUR (NEW) -->
+    <div id="section-request" class="glass-panel space-y-4 hidden">
+      <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
+        <h2 class="section-title" style="margin: 0; color: #67e8f9;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          Request Fitur Tambahan
+        </h2>
+        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+      </div>
+
+      <div class="p-3 rounded-xl text-xs text-slate-300 leading-relaxed" style="background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.2);">
+        💡 <strong class="text-cyan-300">Punya ide fitur baru?</strong> Kirim saran Anda kepada admin. Fitur yang paling banyak diminta akan diprioritaskan.
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="text-[10px] font-bold uppercase tracking-widest text-purple-300 pl-1 mb-1.5 block">Judul Fitur</label>
+          <input type="text" id="feature-req-title" placeholder="Contoh: Dark Mode Toggle" class="input-glow" maxlength="100" style="padding: 0.75rem 1rem; font-size: 0.88rem;">
+        </div>
+        <div>
+          <label class="text-[10px] font-bold uppercase tracking-widest text-purple-300 pl-1 mb-1.5 block">Deskripsi</label>
+          <textarea id="feature-req-desc" placeholder="Jelaskan fitur yang Anda inginkan beserta manfaatnya..." class="input-glow" maxlength="800" style="height: 100px; resize: none; padding: 0.75rem 1rem; font-size: 0.88rem;"></textarea>
+          <p class="text-[10px] text-slate-500 mt-1 text-right"><span id="req-char-count">0</span>/800</p>
+        </div>
+        <button onclick="handleSubmitFeatureRequest()" class="btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          Kirim Request
+        </button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-purple-300">Request Saya</span>
+          <button onclick="loadUserFeatureRequests()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+        </div>
+        <div id="my-feature-requests" class="space-y-2 max-h-64 overflow-y-auto">
+          <p class="text-slate-500 italic text-center py-2 text-xs">Memuat...</p>
+        </div>
       </div>
     </div>
 
@@ -927,7 +1049,6 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- GANTI PASSWORD (NEW) -->
       <div>
         <div class="section-title" style="color: #fda4af;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -946,17 +1067,6 @@ const htmlTemplate = `<!DOCTYPE html>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           Ganti password segera setelah menerima akun VIP
         </p>
-      </div>
-
-      <div>
-        <div class="section-title" style="color: #67e8f9;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 12v10H4V12"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
-          Klaim Kode Redeem
-        </div>
-        <div class="flex gap-2">
-          <input type="text" id="redeem-code-input" placeholder="KODE-REDEEM" class="input-glow mono uppercase" style="flex: 1; padding: 0.7rem 1rem; font-size: 0.85rem; font-weight: 700;">
-          <button onclick="handleRedeemCode()" class="btn-primary" style="width: auto; padding: 0.7rem 1rem; font-size: 0.8rem;">Klaim</button>
-        </div>
       </div>
 
       <!-- RIWAYAT GMAIL TERVERIFIKASI -->
@@ -1032,16 +1142,37 @@ const htmlTemplate = `<!DOCTYPE html>
           <p class="text-slate-500 italic text-center py-2 text-xs">Memuat riwayat...</p>
         </div>
       </div>
+    </div>
 
-      <!-- ADMIN PANEL -->
-      <div id="admin-control-panel" class="hidden space-y-4 pt-3 border-t border-amber-500/20">
-        <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(168,85,247,0.08)); border: 1px solid rgba(245,158,11,0.3);">
-          <p class="text-xs font-extrabold text-amber-300 flex items-center gap-2">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
-            ADMIN MASTER CONTROL
-          </p>
-        </div>
+    <!-- VIEW: ADMIN PANEL (NEW - TERPISAH) -->
+    <div id="section-admin" class="glass-panel space-y-4 hidden">
+      <div class="flex items-center justify-between pb-3 border-b border-amber-500/30">
+        <h2 class="section-title" style="margin: 0; color: #fbbf24;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
+          Admin Panel
+        </h2>
+        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+      </div>
 
+      <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(168,85,247,0.08)); border: 1px solid rgba(245,158,11,0.3);">
+        <p class="text-xs font-extrabold text-amber-300 flex items-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
+          ADMIN MASTER CONTROL
+        </p>
+      </div>
+
+      <!-- TAB NAVIGATION UNTUK ADMIN -->
+      <div class="flex flex-wrap gap-1.5">
+        <button onclick="switchAdminTab('server')" data-admin-tab="server" class="admin-tab-btn btn-secondary active-admin-tab" style="padding: 0.45rem 0.8rem; font-size: 0.72rem; background: rgba(168,85,247,0.25); border-color: rgba(168,85,247,0.6); color: white;">🖥 Server</button>
+        <button onclick="switchAdminTab('video')" data-admin-tab="video" class="admin-tab-btn btn-secondary" style="padding: 0.45rem 0.8rem; font-size: 0.72rem;">🎬 Video</button>
+        <button onclick="switchAdminTab('vip')" data-admin-tab="vip" class="admin-tab-btn btn-secondary" style="padding: 0.45rem 0.8rem; font-size: 0.72rem;">⭐ VIP</button>
+        <button onclick="switchAdminTab('users')" data-admin-tab="users" class="admin-tab-btn btn-secondary" style="padding: 0.45rem 0.8rem; font-size: 0.72rem;">👥 Users</button>
+        <button onclick="switchAdminTab('redeem')" data-admin-tab="redeem" class="admin-tab-btn btn-secondary" style="padding: 0.45rem 0.8rem; font-size: 0.72rem;">🎁 Redeem</button>
+        <button onclick="switchAdminTab('requests')" data-admin-tab="requests" class="admin-tab-btn btn-secondary" style="padding: 0.45rem 0.8rem; font-size: 0.72rem;">💡 Requests</button>
+      </div>
+
+      <!-- ADMIN TAB: SERVER -->
+      <div id="admin-tab-server" class="admin-tab-content space-y-3">
         <div>
           <p class="section-title" style="color: #fbbf24;">Status Server</p>
           <div class="grid grid-cols-2 gap-2">
@@ -1053,7 +1184,10 @@ const htmlTemplate = `<!DOCTYPE html>
             </button>
           </div>
         </div>
+      </div>
 
+      <!-- ADMIN TAB: VIDEO -->
+      <div id="admin-tab-video" class="admin-tab-content space-y-3 hidden">
         <div>
           <p class="section-title" style="color: #fbbf24;">Upload Video (>5MB Support)</p>
           <div id="file-drop-zone" class="file-drop">
@@ -1082,7 +1216,10 @@ const htmlTemplate = `<!DOCTYPE html>
             <span id="btn-upload-text">Upload & Perbarui Video</span>
           </button>
         </div>
+      </div>
 
+      <!-- ADMIN TAB: VIP -->
+      <div id="admin-tab-vip" class="admin-tab-content space-y-3 hidden">
         <div>
           <p class="section-title" style="color: #fbbf24;">Kelola VIP User</p>
           <input type="text" id="vip-target-user" placeholder="Username target" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
@@ -1099,7 +1236,6 @@ const htmlTemplate = `<!DOCTYPE html>
           </div>
         </div>
 
-        <!-- CREATE VIP ACCOUNT (NEW) -->
         <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(168,85,247,0.1), rgba(6,182,212,0.06)); border: 1px solid rgba(168,85,247,0.35);">
           <p class="section-title" style="color: #d8b4fe; margin-top: 0;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
@@ -1122,7 +1258,10 @@ const htmlTemplate = `<!DOCTYPE html>
             <p class="text-slate-500 italic text-center py-2">Memuat...</p>
           </div>
         </div>
+      </div>
 
+      <!-- ADMIN TAB: USERS -->
+      <div id="admin-tab-users" class="admin-tab-content space-y-3 hidden">
         <div>
           <div class="flex justify-between items-center mb-2">
             <p class="section-title" style="color: #fbbf24; margin: 0;">
@@ -1171,11 +1310,14 @@ const htmlTemplate = `<!DOCTYPE html>
             </div>
           </div>
 
-          <div id="all-users-list" class="space-y-1.5 max-h-64 overflow-y-auto text-[11px]">
+          <div id="all-users-list" class="space-y-1.5 max-h-96 overflow-y-auto text-[11px]">
             <p class="text-slate-500 italic text-center py-2">Klik Refresh untuk memuat daftar user...</p>
           </div>
         </div>
+      </div>
 
+      <!-- ADMIN TAB: REDEEM -->
+      <div id="admin-tab-redeem" class="admin-tab-content space-y-3 hidden">
         <div>
           <p class="section-title" style="color: #fbbf24;">Generate Redeem Code</p>
           <input type="text" id="gen-code" placeholder="NAMA-KODE" class="input-glow uppercase mono mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem; font-weight: 700;">
@@ -1194,9 +1336,49 @@ const htmlTemplate = `<!DOCTYPE html>
             <span class="text-[10px] text-amber-300 font-bold">Daftar Kode Aktif</span>
             <button onclick="loadAdminRedeems()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
           </div>
-          <div id="admin-redeem-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px]">
+          <div id="admin-redeem-list" class="space-y-1.5 max-h-64 overflow-y-auto text-[11px]">
             <p class="text-slate-500 italic text-center py-2">Memuat...</p>
           </div>
+        </div>
+      </div>
+
+      <!-- ADMIN TAB: FEATURE REQUESTS (NEW) -->
+      <div id="admin-tab-requests" class="admin-tab-content space-y-3 hidden">
+        <div class="flex justify-between items-center">
+          <p class="section-title" style="color: #fbbf24; margin: 0;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            Feature Requests
+          </p>
+          <button onclick="loadAllFeatureRequests()" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.68rem;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Refresh
+          </button>
+        </div>
+
+        <div id="req-stats-bar" class="grid grid-cols-3 gap-1.5 text-center">
+          <div class="p-1.5 rounded-lg" style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2);">
+            <p class="text-[9px] text-amber-300 font-bold uppercase">Pending</p>
+            <p id="req-stat-pending" class="text-xs font-extrabold text-amber-300 mono">-</p>
+          </div>
+          <div class="p-1.5 rounded-lg" style="background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2);">
+            <p class="text-[9px] text-emerald-300 font-bold uppercase">Diterima</p>
+            <p id="req-stat-accepted" class="text-xs font-extrabold text-emerald-300 mono">-</p>
+          </div>
+          <div class="p-1.5 rounded-lg" style="background: rgba(244,63,94,0.08); border: 1px solid rgba(244,63,94,0.2);">
+            <p class="text-[9px] text-rose-300 font-bold uppercase">Ditolak</p>
+            <p id="req-stat-rejected" class="text-xs font-extrabold text-rose-300 mono">-</p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-1.5">
+          <button onclick="setReqFilter('all')" data-req-filter="all" class="req-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem; background: rgba(168,85,247,0.25); border-color: rgba(168,85,247,0.6); color: white;">Semua</button>
+          <button onclick="setReqFilter('pending')" data-req-filter="pending" class="req-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">⏳ Pending</button>
+          <button onclick="setReqFilter('accepted')" data-req-filter="accepted" class="req-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">✅ Diterima</button>
+          <button onclick="setReqFilter('rejected')" data-req-filter="rejected" class="req-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">❌ Ditolak</button>
+        </div>
+
+        <div id="all-feature-requests" class="space-y-2 max-h-96 overflow-y-auto">
+          <p class="text-slate-500 italic text-center py-2 text-xs">Memuat...</p>
         </div>
       </div>
     </div>
@@ -1251,7 +1433,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <p class="text-center text-[10px] text-slate-600 tracking-wider py-2">AM PREMIUM • BY BANGGUS • v3.0</p>
+    <p class="text-center text-[10px] text-slate-600 tracking-wider py-2">AM PREMIUM • BY BANGGUS • v3.1</p>
   </div>
 </div>
 
@@ -1272,6 +1454,10 @@ let unreadChatCount = 0;
 let lastChatMessageId = null;
 let currentView = 'generator';
 let userQuotaData = { usedQuota: 0, bonusQuota: 0, totalQuota: 1, nextResetTime: 0, lastResetTime: 0 };
+let currentAdminTab = 'server';
+let cachedFeatureRequests = [];
+let currentReqFilter = 'all';
+let cachedRedeemList = [];
 
 // ============ TOAST ============
 function showToast(message, type = 'info', duration = 3000) {
@@ -1304,8 +1490,9 @@ function switchView(viewName) {
     el.classList.toggle('active', el.dataset.nav === viewName);
   });
   toggleMenu();
-  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat'].forEach(id => {
-    document.getElementById(id).classList.add('hidden');
+  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
   });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hidden');
   else if (viewName === 'profile') {
@@ -1322,6 +1509,51 @@ function switchView(viewName) {
     loadGlobalChat();
     unreadChatCount = 0;
     updateChatBadge();
+  }
+  else if (viewName === 'request') {
+    document.getElementById('section-request').classList.remove('hidden');
+    loadUserFeatureRequests();
+  }
+  else if (viewName === 'admin' && isAdminUser) {
+    document.getElementById('section-admin').classList.remove('hidden');
+    loadAdminTabContent();
+  }
+}
+
+// ============ ADMIN TAB SWITCHING ============
+function switchAdminTab(tabName) {
+  currentAdminTab = tabName;
+  document.querySelectorAll('.admin-tab-btn').forEach(btn => {
+    const isActive = btn.dataset.adminTab === tabName;
+    if (isActive) {
+      btn.style.background = 'rgba(168,85,247,0.25)';
+      btn.style.borderColor = 'rgba(168,85,247,0.6)';
+      btn.style.color = 'white';
+    } else {
+      btn.style.background = '';
+      btn.style.borderColor = '';
+      btn.style.color = '';
+    }
+  });
+  document.querySelectorAll('.admin-tab-content').forEach(el => {
+    el.classList.add('hidden');
+  });
+  const tabEl = document.getElementById('admin-tab-' + tabName);
+  if (tabEl) tabEl.classList.remove('hidden');
+  loadAdminTabContent();
+}
+
+function loadAdminTabContent() {
+  if (!isAdminUser) return;
+  if (currentAdminTab === 'vip') {
+    loadAdminVipList();
+    loadVipAccounts();
+  } else if (currentAdminTab === 'users') {
+    loadAllUsers();
+  } else if (currentAdminTab === 'redeem') {
+    loadAdminRedeems();
+  } else if (currentAdminTab === 'requests') {
+    loadAllFeatureRequests();
   }
 }
 
@@ -1455,6 +1687,7 @@ function applySession(data) {
   checkVipStatus(data);
   loadUserAnnouncements();
   loadVerifiedEmails();
+  loadActiveRedeems();
   updateStatusUI(data.serverStatus);
   fetchFeaturedVideo();
 
@@ -1472,13 +1705,14 @@ function applySession(data) {
   if (data.isAdmin) {
     roleBadge.className = 'badge badge-admin';
     roleBadge.innerText = '👑 Admin';
-    document.getElementById('admin-control-panel').classList.remove('hidden');
+    document.getElementById('nav-admin-btn').classList.remove('hidden');
     document.getElementById('admin-announcement-panel').classList.remove('hidden');
     loadAdminRedeems();
     loadAdminAnnouncements();
     loadAdminVipList();
     loadAllUsers();
     loadVipAccounts();
+    loadAllFeatureRequests();
   } else if (data.isVip) {
     roleBadge.className = 'badge badge-vip';
     roleBadge.innerText = 'VIP Member';
@@ -1504,7 +1738,7 @@ async function checkSavedSession() {
 }
 checkSavedSession();
 
-// ============ GANTI PASSWORD (NEW) ============
+// ============ GANTI PASSWORD ============
 async function handleChangePassword() {
   const oldPassword = document.getElementById('old-password-input').value;
   const newPassword = document.getElementById('new-password-input').value;
@@ -1806,6 +2040,310 @@ function copyEmail(email) {
   });
 }
 
+// ============ ACTIVE REDEEMS (NEW) ============
+async function loadActiveRedeems() {
+  const container = document.getElementById('active-redeems-list');
+  if (!container) return;
+  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 text-xs animate-pulse">⏳ Memuat kode redeem...</p>';
+
+  try {
+    const res = await fetch('/api/redeems/active?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+
+    if (!data.success) {
+      container.innerHTML = '<p class="text-rose-400 italic text-center py-2 text-xs">Gagal memuat kode</p>';
+      return;
+    }
+
+    cachedRedeemList = data.redeems || [];
+
+    if (cachedRedeemList.length === 0) {
+      container.innerHTML = 
+        '<div class="p-3 rounded-xl text-center" style="background: rgba(148,163,184,0.05); border: 1px dashed rgba(148,163,184,0.2);">' +
+          '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.5" style="margin: 0 auto 0.5rem; display: block;">' +
+            '<path d="M20 12v10H4V12"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/>' +
+          '</svg>' +
+          '<p class="text-xs text-slate-400 font-semibold">Belum ada kode redeem aktif</p>' +
+          '<p class="text-[10px] text-slate-500 mt-0.5">Kode redeem akan muncul di sini saat admin membuatnya</p>' +
+        '</div>';
+      return;
+    }
+
+    container.innerHTML = cachedRedeemList.map(r => {
+      const claimed = r.claimedByMe;
+      const remaining = r.maxClaims - r.claimedCount;
+      const claimPercent = (r.claimedCount / r.maxClaims) * 100;
+      
+      return '<div class="redeem-card ' + (claimed ? 'redeem-card-claimed' : '') + '">' +
+        '<div class="flex justify-between items-start gap-2 mb-2">' +
+          '<div class="flex-1 min-w-0">' +
+            '<p class="text-sm font-black text-emerald-300 mono tracking-wider">' + escapeHtml(r.code) + '</p>' +
+            '<p class="text-[10px] text-slate-400 mt-0.5">' +
+              '💰 ' + r.totalQuota + ' total kuota • 👥 ' + r.claimedCount + '/' + r.maxClaims + ' klaim' +
+            '</p>' +
+          '</div>' +
+          (claimed 
+            ? '<span class="badge badge-online" style="font-size: 0.6rem; padding: 0.15rem 0.5rem;">✓ Sudah Klaim</span>'
+            : '<span class="badge badge-pending" style="font-size: 0.6rem; padding: 0.15rem 0.5rem;">⏳ Tersedia</span>'
+          ) +
+        '</div>' +
+        '<div class="progress-bar mb-2" style="height: 5px;">' +
+          '<div class="progress-fill" style="width: ' + claimPercent + '%; background: linear-gradient(90deg, #10b981, #06b6d4);"></div>' +
+        '</div>' +
+        '<div class="flex justify-between items-center text-[10px]">' +
+          '<span class="text-slate-400">Sisa slot: <strong class="text-emerald-300 mono">' + remaining + '</strong></span>' +
+          '<span class="text-slate-400">~<strong class="text-cyan-300 mono">' + Math.floor(r.estimatedReward) + '</strong> kuota/klaim</span>' +
+        '</div>' +
+        (claimed ? '' : 
+          '<button onclick="quickClaimRedeem(\\'' + escapeHtml(r.code) + '\\')" class="w-full mt-2 py-1.5 rounded-lg text-[11px] font-bold transition" ' +
+          'style="background: rgba(16,185,129,0.15); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);">' +
+            '🎁 Klaim Kode Ini' +
+          '</button>'
+        ) +
+      '</div>';
+    }).join('');
+
+  } catch (e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-center py-2 text-xs">Kesalahan koneksi</p>';
+  }
+}
+
+function quickClaimRedeem(code) {
+  document.getElementById('redeem-code-input').value = code;
+  handleRedeemCode();
+}
+
+// ============ FEATURE REQUESTS (NEW) ============
+async function handleSubmitFeatureRequest() {
+  if (!loggedInUsername) return showToast('Harus login dulu!', 'error');
+  const title = document.getElementById('feature-req-title').value.trim();
+  const description = document.getElementById('feature-req-desc').value.trim();
+
+  if (!title || title.length < 5) return showToast('Judul minimal 5 karakter!', 'error');
+  if (!description || description.length < 10) return showToast('Deskripsi minimal 10 karakter!', 'error');
+
+  const btn = event.target;
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/feature-request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername, title, description })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('🎉 Request fitur berhasil dikirim!', 'success');
+      document.getElementById('feature-req-title').value = '';
+      document.getElementById('feature-req-desc').value = '';
+      document.getElementById('req-char-count').innerText = '0';
+      loadUserFeatureRequests();
+    } else {
+      showToast(data.message || 'Gagal mengirim request', 'error');
+    }
+  } catch (e) {
+    showToast('Kesalahan koneksi', 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function loadUserFeatureRequests() {
+  if (!loggedInUsername) return;
+  const container = document.getElementById('my-feature-requests');
+  if (!container) return;
+  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 text-xs">Memuat...</p>';
+
+  try {
+    const res = await fetch('/api/feature-request/user?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+
+    if (!data.success) {
+      container.innerHTML = '<p class="text-rose-400 italic text-center py-2 text-xs">Gagal memuat</p>';
+      return;
+    }
+
+    const requests = data.requests || [];
+    if (requests.length === 0) {
+      container.innerHTML = '<p class="text-slate-500 italic text-center py-2 text-xs">Belum ada request. Kirim saran pertama Anda!</p>';
+      return;
+    }
+
+    container.innerHTML = requests.map(req => {
+      let statusBadge = '';
+      if (req.status === 'pending') statusBadge = '<span class="badge badge-pending" style="font-size: 0.6rem;">⏳ Pending</span>';
+      else if (req.status === 'accepted') statusBadge = '<span class="badge badge-accepted" style="font-size: 0.6rem;">✅ Diterima</span>';
+      else statusBadge = '<span class="badge badge-rejected" style="font-size: 0.6rem;">❌ Ditolak</span>';
+
+      return '<div class="feature-req-card">' +
+        '<div class="flex justify-between items-start gap-2 mb-1.5">' +
+          '<p class="text-xs font-bold text-white flex-1">' + escapeHtml(req.title) + '</p>' +
+          statusBadge +
+        '</div>' +
+        '<p class="text-[11px] text-slate-300 leading-relaxed">' + escapeHtml(req.description) + '</p>' +
+        '<p class="text-[9px] text-slate-500 mt-1.5">' + new Date(req.timestamp).toLocaleString('id-ID') + '</p>' +
+        (req.adminNote ? '<div class="mt-2 p-2 rounded-lg" style="background: rgba(168,85,247,0.08); border-left: 2px solid #a855f7;"><p class="text-[10px] text-purple-300"><strong>Catatan Admin:</strong> ' + escapeHtml(req.adminNote) + '</p></div>' : '') +
+      '</div>';
+    }).join('');
+
+  } catch (e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-center py-2 text-xs">Kesalahan koneksi</p>';
+  }
+}
+
+// ============ ADMIN: FEATURE REQUESTS ============
+async function loadAllFeatureRequests() {
+  if (!isAdminUser) return;
+  const container = document.getElementById('all-feature-requests');
+  if (!container) return;
+  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 text-xs">Memuat...</p>';
+
+  try {
+    const res = await fetch('/api/admin/feature-requests?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+
+    if (!data.success) {
+      container.innerHTML = '<p class="text-rose-400 italic text-center py-2 text-xs">Gagal memuat</p>';
+      return;
+    }
+
+    cachedFeatureRequests = data.requests || [];
+    
+    document.getElementById('req-stat-pending').innerText = cachedFeatureRequests.filter(r => r.status === 'pending').length;
+    document.getElementById('req-stat-accepted').innerText = cachedFeatureRequests.filter(r => r.status === 'accepted').length;
+    document.getElementById('req-stat-rejected').innerText = cachedFeatureRequests.filter(r => r.status === 'rejected').length;
+
+    renderFeatureRequests();
+
+  } catch (e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-center py-2 text-xs">Kesalahan koneksi</p>';
+  }
+}
+
+function setReqFilter(filter) {
+  currentReqFilter = filter;
+  document.querySelectorAll('.req-filter-btn').forEach(btn => {
+    const isActive = btn.dataset.reqFilter === filter;
+    if (isActive) {
+      btn.style.background = 'rgba(168,85,247,0.25)';
+      btn.style.borderColor = 'rgba(168,85,247,0.6)';
+      btn.style.color = 'white';
+    } else {
+      btn.style.background = '';
+      btn.style.borderColor = '';
+      btn.style.color = '';
+    }
+  });
+  renderFeatureRequests();
+}
+
+function renderFeatureRequests() {
+  const container = document.getElementById('all-feature-requests');
+  if (!container) return;
+
+  let filtered = cachedFeatureRequests;
+  if (currentReqFilter !== 'all') {
+    filtered = filtered.filter(r => r.status === currentReqFilter);
+  }
+
+  filtered.sort((a, b) => {
+    if (a.status === 'pending' && b.status !== 'pending') return -1;
+    if (a.status !== 'pending' && b.status === 'pending') return 1;
+    return b.timestamp - a.timestamp;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<p class="text-slate-500 italic text-center py-3 text-xs">Tidak ada request</p>';
+    return;
+  }
+
+  container.innerHTML = filtered.map(req => {
+    let statusBadge = '';
+    if (req.status === 'pending') statusBadge = '<span class="badge badge-pending" style="font-size: 0.6rem;">⏳ Pending</span>';
+    else if (req.status === 'accepted') statusBadge = '<span class="badge badge-accepted" style="font-size: 0.6rem;">✅ Diterima</span>';
+    else statusBadge = '<span class="badge badge-rejected" style="font-size: 0.6rem;">❌ Ditolak</span>';
+
+    const safeId = req.id;
+
+    return '<div class="feature-req-card">' +
+      '<div class="flex justify-between items-start gap-2 mb-1.5">' +
+        '<div class="flex-1 min-w-0">' +
+          '<p class="text-xs font-bold text-white">' + escapeHtml(req.title) + '</p>' +
+          '<p class="text-[10px] text-purple-400 font-semibold">👤 ' + escapeHtml(req.username) + '</p>' +
+        '</div>' +
+        statusBadge +
+      '</div>' +
+      '<p class="text-[11px] text-slate-300 leading-relaxed mb-2">' + escapeHtml(req.description) + '</p>' +
+      (req.adminNote ? '<div class="mb-2 p-2 rounded-lg" style="background: rgba(168,85,247,0.08); border-left: 2px solid #a855f7;"><p class="text-[10px] text-purple-300"><strong>Catatan:</strong> ' + escapeHtml(req.adminNote) + '</p></div>' : '') +
+      '<p class="text-[9px] text-slate-500 mb-2">' + new Date(req.timestamp).toLocaleString('id-ID') + '</p>' +
+      '<div class="flex gap-1.5 flex-wrap">' +
+        (req.status !== 'accepted' ? 
+          '<button onclick="updateFeatureRequestStatus(\\'' + safeId + '\\', \\'accepted\\')" class="px-2 py-1 rounded text-[10px] font-bold" style="background: rgba(16,185,129,0.15); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.3);">✅ Terima</button>' : '') +
+        (req.status !== 'rejected' ? 
+          '<button onclick="updateFeatureRequestStatus(\\'' + safeId + '\\', \\'rejected\\')" class="px-2 py-1 rounded text-[10px] font-bold" style="background: rgba(244,63,94,0.15); color: #fda4af; border: 1px solid rgba(244,63,94,0.3);">❌ Tolak</button>' : '') +
+        (req.status !== 'pending' ? 
+          '<button onclick="updateFeatureRequestStatus(\\'' + safeId + '\\', \\'pending\\')" class="px-2 py-1 rounded text-[10px] font-bold" style="background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3);">⏳ Pending</button>' : '') +
+        '<button onclick="addNoteToFeatureRequest(\\'' + safeId + '\\')" class="px-2 py-1 rounded text-[10px] font-bold" style="background: rgba(168,85,247,0.15); color: #d8b4fe; border: 1px solid rgba(168,85,247,0.3);">📝 Catatan</button>' +
+        '<button onclick="deleteFeatureRequest(\\'' + safeId + '\\')" class="delete-btn" style="padding: 0.25rem 0.5rem; font-size: 0.65rem;">🗑</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+async function updateFeatureRequestStatus(reqId, status) {
+  if (!isAdminUser) return;
+  try {
+    const res = await fetch('/api/admin/feature-request/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: loggedInUsername, reqId, status })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Status diubah ke: ' + status, 'success');
+      loadAllFeatureRequests();
+    }
+  } catch (e) {
+    showToast('Gagal update status', 'error');
+  }
+}
+
+async function addNoteToFeatureRequest(reqId) {
+  if (!isAdminUser) return;
+  const note = prompt('Catatan untuk user (kosongkan untuk hapus):');
+  if (note === null) return;
+  try {
+    const res = await fetch('/api/admin/feature-request/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: loggedInUsername, reqId, adminNote: note })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Catatan disimpan', 'success');
+      loadAllFeatureRequests();
+    }
+  } catch (e) {
+    showToast('Gagal simpan catatan', 'error');
+  }
+}
+
+async function deleteFeatureRequest(reqId) {
+  if (!confirm('Hapus request ini?')) return;
+  try {
+    const res = await fetch('/api/admin/feature-request/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: loggedInUsername, reqId })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Request dihapus', 'success');
+      loadAllFeatureRequests();
+    }
+  } catch (e) {}
+}
+
 // ============ CHUNKED UPLOAD ============
 function initFileDrop() {
   const dropZone = document.getElementById('file-drop-zone');
@@ -2060,7 +2598,7 @@ async function handleRemoveVip(targetUser) {
   } catch(e) {}
 }
 
-// ============ CREATE VIP ACCOUNT (NEW) ============
+// ============ CREATE VIP ACCOUNT ============
 async function handleCreateVipAccount() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
   const vipUsername = document.getElementById('vip-create-username').value.trim().toLowerCase();
@@ -2169,7 +2707,7 @@ async function deleteVipAccount(vipUsername) {
   }
 }
 
-// ============ CEK USER TERDAFTAR (ADMIN ONLY) ============
+// ============ CEK USER TERDAFTAR ============
 async function loadAllUsers() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
   const container = document.getElementById('all-users-list');
@@ -2326,7 +2864,7 @@ function renderUserList() {
   }).join('');
 }
 
-// ============ HAPUS AKUN (NEW) ============
+// ============ HAPUS AKUN ============
 async function deleteUserAccount(targetUsername, isTargetAdmin) {
   const confirmText = isTargetAdmin 
     ? '⚠️ HAPUS AKUN ADMIN "' + targetUsername + '"?\\n\\nAkun ini akan dihapus permanen!'
@@ -2334,7 +2872,6 @@ async function deleteUserAccount(targetUsername, isTargetAdmin) {
   
   if (!confirm(confirmText)) return;
   
-  // Extra confirmation for admin accounts
   if (isTargetAdmin) {
     const secondConfirm = prompt('Ketik "HAPUS" untuk konfirmasi hapus akun admin:');
     if (secondConfirm !== 'HAPUS') {
@@ -2362,10 +2899,10 @@ async function deleteUserAccount(targetUsername, isTargetAdmin) {
 }
 
 function quickSetVip(username) {
+  switchAdminTab('vip');
   document.getElementById('vip-target-user').value = username;
   document.getElementById('vip-duration-days').focus();
   showToast('Username "' + username + '" siap di-set VIP', 'info');
-  document.getElementById('vip-target-user').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 function copyUsername(username) {
@@ -2374,7 +2911,7 @@ function copyUsername(username) {
   });
 }
 
-// ============ GLOBAL CHAT (NEW) ============
+// ============ GLOBAL CHAT ============
 function updateChatBadge() {
   const badge = document.getElementById('chat-unread-badge');
   if (unreadChatCount > 0) {
@@ -2642,6 +3179,7 @@ async function handleCreateRedeem() {
       document.getElementById('gen-total-quota').value = '';
       document.getElementById('gen-max-claims').value = '';
       loadAdminRedeems();
+      loadActiveRedeems();
     } else showToast(data.message, 'error');
   } catch(e) {}
 }
@@ -2675,7 +3213,11 @@ async function handleDeleteRedeem(code) {
       body: JSON.stringify({ username: loggedInUsername, code })
     });
     const data = await res.json();
-    if (data.success) { showToast('Kode dihapus', 'success'); loadAdminRedeems(); }
+    if (data.success) { 
+      showToast('Kode dihapus', 'success'); 
+      loadAdminRedeems();
+      loadActiveRedeems();
+    }
   } catch(e) {}
 }
 
@@ -2694,6 +3236,7 @@ async function handleRedeemCode() {
       document.getElementById('redeem-code-input').value = '';
       updateQuotaDisplay(data);
       loadVerifiedEmails();
+      loadActiveRedeems();
     } else showToast(data.message, 'error');
   } catch(e) { showToast('Gagal redeem', 'error'); }
 }
@@ -2790,6 +3333,11 @@ function handleLogout() {
 
 initFileDrop();
 
+// Char counter for feature request
+document.getElementById('feature-req-desc').addEventListener('input', (e) => {
+  document.getElementById('req-char-count').innerText = e.target.value.length;
+});
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     const drawer = document.getElementById('nav-drawer');
@@ -2848,6 +3396,138 @@ const server = http.createServer(async (req, res) => {
       const announcements = await getAllAnnouncementsFromDb();
       jsonResponse(res, 200, { success: true, announcements });
 
+    // ===== ACTIVE REDEEMS (NEW) =====
+    } else if (parsedUrl.pathname === '/api/redeems/active') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+
+      const cleanUser = username.toLowerCase();
+      const allRedeems = await getAllRedeemsFromDb();
+      
+      const activeRedeems = [];
+      for (const [code, data] of Object.entries(allRedeems)) {
+        const remaining = data.maxClaims - data.claimedCount;
+        const isClaimedByMe = data.claimedUsers && data.claimedUsers.includes(cleanUser);
+        const remainingTotalQuota = data.totalQuota - (data.distributedQuota || 0);
+        const remainingClaims = data.maxClaims - data.claimedCount;
+        const estimatedReward = remainingClaims > 0 ? Math.max(1, Math.round(remainingTotalQuota / remainingClaims)) : 0;
+
+        activeRedeems.push({
+          code,
+          totalQuota: data.totalQuota,
+          maxClaims: data.maxClaims,
+          claimedCount: data.claimedCount,
+          remaining,
+          isActive: remaining > 0,
+          claimedByMe: isClaimedByMe,
+          estimatedReward
+        });
+      }
+
+      // Sort: not claimed first, then by remaining
+      activeRedeems.sort((a, b) => {
+        if (a.claimedByMe !== b.claimedByMe) return a.claimedByMe ? 1 : -1;
+        return b.remaining - a.remaining;
+      });
+
+      jsonResponse(res, 200, { success: true, redeems: activeRedeems });
+
+    // ===== FEATURE REQUESTS (NEW) =====
+    } else if (parsedUrl.pathname === '/api/feature-request' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, title, description } = JSON.parse(body);
+      
+      if (!username || !title || !description) {
+        return jsonResponse(res, 400, { success: false, message: 'Data tidak lengkap!' });
+      }
+      if (title.length < 5 || title.length > 100) {
+        return jsonResponse(res, 400, { success: false, message: 'Judul 5-100 karakter!' });
+      }
+      if (description.length < 10 || description.length > 800) {
+        return jsonResponse(res, 400, { success: false, message: 'Deskripsi 10-800 karakter!' });
+      }
+
+      const userObj = await getUserFromDb(username.toLowerCase());
+      if (!userObj) {
+        return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
+      }
+
+      const now = Date.now();
+      const reqId = 'req_' + now + '_' + Math.random().toString(36).substring(2, 8);
+      
+      await saveFeatureRequestToDb(reqId, {
+        username: username.toLowerCase(),
+        title: title.trim(),
+        description: description.trim(),
+        status: 'pending',
+        adminNote: '',
+        timestamp: now
+      });
+
+      jsonResponse(res, 200, { success: true, message: 'Request fitur terkirim!' });
+
+    } else if (parsedUrl.pathname === '/api/feature-request/user' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false });
+
+      const allReqs = await getAllFeatureRequestsFromDb();
+      const cleanUser = username.toLowerCase();
+      
+      const userReqs = Object.entries(allReqs)
+        .filter(([id, req]) => req.username === cleanUser)
+        .map(([id, req]) => ({ id, ...req }))
+        .sort((a, b) => b.timestamp - a.timestamp);
+
+      jsonResponse(res, 200, { success: true, requests: userReqs });
+
+    } else if (parsedUrl.pathname === '/api/admin/feature-requests' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+      if (!adminObj || !adminObj.isAdmin) {
+        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      }
+
+      const allReqs = await getAllFeatureRequestsFromDb();
+      const reqList = Object.entries(allReqs)
+        .map(([id, req]) => ({ id, ...req }))
+        .sort((a, b) => b.timestamp - a.timestamp);
+
+      jsonResponse(res, 200, { success: true, requests: reqList });
+
+    } else if (parsedUrl.pathname === '/api/admin/feature-request/update' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { adminUsername, reqId, status, adminNote } = JSON.parse(body);
+      
+      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) {
+        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      }
+
+      const allReqs = await getAllFeatureRequestsFromDb();
+      if (!allReqs[reqId]) {
+        return jsonResponse(res, 404, { success: false, message: 'Request tidak ditemukan!' });
+      }
+
+      const reqData = allReqs[reqId];
+      if (status !== undefined) reqData.status = status;
+      if (adminNote !== undefined) reqData.adminNote = adminNote;
+      reqData.updatedAt = Date.now();
+
+      await saveFeatureRequestToDb(reqId, reqData);
+      jsonResponse(res, 200, { success: true, message: 'Request diupdate!' });
+
+    } else if (parsedUrl.pathname === '/api/admin/feature-request/delete' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { adminUsername, reqId } = JSON.parse(body);
+      
+      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) {
+        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      }
+
+      await removeFeatureRequestFromDb(reqId);
+      jsonResponse(res, 200, { success: true, message: 'Request dihapus!' });
+
     // ===== USER EMAILS + RESET TIME =====
     } else if (parsedUrl.pathname === '/api/user/my-emails') {
       const username = parsedUrl.searchParams.get('username');
@@ -2894,7 +3574,7 @@ const server = http.createServer(async (req, res) => {
         resetJustNow: false
       });
 
-    // ===== GANTI PASSWORD (NEW) =====
+    // ===== GANTI PASSWORD =====
     } else if (parsedUrl.pathname === '/api/user/change-password' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, oldPassword, newPassword } = JSON.parse(body);
@@ -2921,19 +3601,16 @@ const server = http.createServer(async (req, res) => {
       
       jsonResponse(res, 200, { success: true, message: 'Password berhasil diubah!' });
 
-    // ===== GLOBAL CHAT ENDPOINTS (NEW) =====
+    // ===== GLOBAL CHAT ENDPOINTS =====
     } else if (parsedUrl.pathname === '/api/chat/messages' && req.method === 'GET') {
       const messages = await getGlobalChatFromDb();
       
-      // Cleanup old messages (older than 3 days) to prevent bloat
       const now = Date.now();
       const threeDays = 3 * 24 * 60 * 60 * 1000;
-      let cleaned = false;
       for (const [id, msg] of Object.entries(messages)) {
         if (now - msg.timestamp > threeDays) {
           await deleteGlobalChatMessageFromDb(id);
           delete messages[id];
-          cleaned = true;
         }
       }
       
@@ -2985,7 +3662,7 @@ const server = http.createServer(async (req, res) => {
       await deleteGlobalChatMessageFromDb(messageId);
       jsonResponse(res, 200, { success: true, message: 'Pesan dihapus' });
 
-    // ===== CREATE VIP ACCOUNT (NEW) =====
+    // ===== CREATE VIP ACCOUNT =====
     } else if (parsedUrl.pathname === '/api/admin/create-vip-account' && req.method === 'POST') {
       const body = await readBody(req);
       const { adminUsername, vipUsername, vipPassword, vipDays } = JSON.parse(body);
@@ -3025,7 +3702,6 @@ const server = http.createServer(async (req, res) => {
         createdAt: now
       });
 
-      // Save to vipAccounts registry for tracking
       const vipAccId = 'vip_' + now + '_' + Math.random().toString(36).substring(2, 8);
       await saveVipAccountToDb(vipAccId, {
         username: cleanVipUser,
@@ -3051,7 +3727,6 @@ const server = http.createServer(async (req, res) => {
 
       const vipAccounts = await getVipAccountsFromDb();
       
-      // Enrich with current status
       const enriched = {};
       const now = Date.now();
       for (const [id, acc] of Object.entries(vipAccounts)) {
@@ -3077,10 +3752,8 @@ const server = http.createServer(async (req, res) => {
 
       const cleanVipUser = vipUsername.toLowerCase();
 
-      // Delete user account
       await deleteUserFromDb(cleanVipUser);
 
-      // Delete from vipAccounts registry
       const vipAccounts = await getVipAccountsFromDb();
       for (const [id, acc] of Object.entries(vipAccounts)) {
         if (acc.username === cleanVipUser) {
@@ -3090,7 +3763,7 @@ const server = http.createServer(async (req, res) => {
 
       jsonResponse(res, 200, { success: true, message: 'Akun VIP dihapus!' });
 
-    // ===== DELETE USER ACCOUNT (NEW) =====
+    // ===== DELETE USER ACCOUNT =====
     } else if (parsedUrl.pathname === '/api/admin/delete-user' && req.method === 'POST') {
       const body = await readBody(req);
       const { adminUsername, targetUsername } = JSON.parse(body);
@@ -3102,12 +3775,10 @@ const server = http.createServer(async (req, res) => {
 
       const cleanTarget = targetUsername.toLowerCase();
       
-      // Prevent self-deletion
       if (cleanTarget === adminUsername.toLowerCase()) {
         return jsonResponse(res, 400, { success: false, message: 'Tidak dapat menghapus akun sendiri!' });
       }
 
-      // Prevent deleting the main admin
       if (cleanTarget === 'adminbaguss') {
         return jsonResponse(res, 400, { success: false, message: 'Akun admin utama tidak dapat dihapus!' });
       }
@@ -3117,10 +3788,8 @@ const server = http.createServer(async (req, res) => {
         return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan!' });
       }
 
-      // Delete from users
       await deleteUserFromDb(cleanTarget);
 
-      // Also delete from vipAccounts registry if exists
       const vipAccounts = await getVipAccountsFromDb();
       for (const [id, acc] of Object.entries(vipAccounts)) {
         if (acc.username === cleanTarget) {
@@ -3351,7 +4020,7 @@ const server = http.createServer(async (req, res) => {
       const existingCode = await getRedeemFromDb(code);
       if (existingCode) return jsonResponse(res, 400, { success: false, message: 'Kode redeem sudah ada!' });
 
-      await saveRedeemToDb(code, { totalQuota, maxClaims, claimedCount: 0, claimedUsers: [] });
+      await saveRedeemToDb(code, { totalQuota, maxClaims, claimedCount: 0, claimedUsers: [], distributedQuota: 0 });
       jsonResponse(res, 200, { success: true, message: 'Kode ' + code + ' dibuat!' });
 
     } else if (parsedUrl.pathname === '/api/admin/get-redeems') {
@@ -3559,7 +4228,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\\n╔══════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v3.0                  ║');
+  console.log('║  🚀 AM Premium Banggus v3.1                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                      ║');
   console.log('║  📦 Chunked Upload Ready (>200MB)            ║');
   console.log('║  👥 User List Viewer + Delete Account        ║');
@@ -3567,5 +4236,8 @@ server.listen(PORT, () => {
   console.log('║  💬 Global Chat (Real-time)                  ║');
   console.log('║  🔐 Change Password + Create VIP Account     ║');
   console.log('║  ⭐ VIP Account Generator                     ║');
+  console.log('║  🎁 Redeem in Generator + Active Codes       ║');
+  console.log('║  💡 Feature Request System                   ║');
+  console.log('║  👑 Separate Admin Panel                     ║');
   console.log('╚══════════════════════════════════════════════╝\\n');
 });
