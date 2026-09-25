@@ -602,7 +602,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
       <div>
         <p class="text-[10px] font-bold uppercase tracking-widest text-purple-400">Premium Access</p>
-        <p class="text-sm font-extrabold text-white">AM BANGGUS v3.0</p>
+        <p class="text-sm font-extrabold text-white">AM BANGGUS</p>
       </div>
     </div>
     <button id="header-menu-btn" onclick="toggleMenu()" class="icon-btn hidden">
