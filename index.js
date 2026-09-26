@@ -146,6 +146,34 @@ async function removeFeatureRequestFromDb(id) {
   await set(ref(db, `featureRequests/${id}`), null);
 }
 
+// ====== VIP SHOP HELPERS ======
+async function getVipShopFromDb() {
+  const snapshot = await get(child(ref(db), `vipShop`));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+async function saveVipShopToDb(id, data) {
+  await set(ref(db, `vipShop/${id}`), data);
+}
+async function removeVipShopFromDb(id) {
+  await set(ref(db, `vipShop/${id}`), null);
+}
+
+// ====== TRANSACTIONS HELPERS ======
+async function getTransactionsFromDb() {
+  const snapshot = await get(child(ref(db), `transactions`));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+async function getTransactionFromDb(id) {
+  const snapshot = await get(child(ref(db), `transactions/${id}`));
+  return snapshot.exists() ? snapshot.val() : null;
+}
+async function saveTransactionToDb(id, data) {
+  await set(ref(db, `transactions/${id}`), data);
+}
+async function removeTransactionFromDb(id) {
+  await set(ref(db, `transactions/${id}`), null);
+}
+
 async function initAdmin() {
   const adminData = await getUserFromDb('adminbaguss');
   if (!adminData) {
@@ -160,6 +188,22 @@ async function initAdmin() {
   }
 }
 initAdmin();
+
+// ====== INIT DEFAULT VIP SHOP ======
+async function initDefaultVipShop() {
+  const shop = await getVipShopFromDb();
+  if (Object.keys(shop).length === 0) {
+    const defaultItems = [
+      { id: 'vip_7d', name: 'VIP 7 Hari', price: 2000, days: 7, active: true, order: 1 },
+      { id: 'vip_30d', name: 'VIP 30 Hari', price: 5000, days: 30, active: true, order: 2 },
+      { id: 'vip_90d', name: 'VIP 90 Hari', price: 12000, days: 90, active: true, order: 3 }
+    ];
+    for (const item of defaultItems) {
+      await saveVipShopToDb(item.id, item);
+    }
+  }
+}
+initDefaultVipShop();
 
 const am = {
   async magiclink(email) {
@@ -607,6 +651,62 @@ const htmlTemplate = `<!DOCTYPE html>
     animation: slide-up 0.3s ease;
   }
 
+  .vip-shop-card {
+    background: linear-gradient(145deg, rgba(20,14,38,0.9), rgba(12,8,24,0.8));
+    border: 1px solid rgba(245,158,11,0.3);
+    border-radius: 1.25rem;
+    padding: 1.15rem;
+    animation: slide-up 0.4s ease;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+  .vip-shop-card:hover {
+    border-color: rgba(245,158,11,0.7);
+    transform: translateY(-3px);
+    box-shadow: 0 20px 40px -15px rgba(245,158,11,0.4);
+  }
+  .vip-shop-card::before {
+    content: '';
+    position: absolute; top: -50%; right: -50%;
+    width: 200%; height: 200%;
+    background: radial-gradient(circle, rgba(245,158,11,0.1) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .vip-benefit {
+    display: flex; align-items: flex-start; gap: 0.5rem;
+    font-size: 0.78rem; color: #cbd5e1;
+    margin-bottom: 0.4rem;
+  }
+  .vip-benefit-icon {
+    color: #fbbf24; flex-shrink: 0; margin-top: 0.1rem;
+  }
+
+  .qr-container {
+    background: white;
+    border-radius: 1rem;
+    padding: 0.85rem;
+    display: inline-block;
+    box-shadow: 0 0 40px rgba(255,255,255,0.15);
+  }
+  .qr-container img {
+    width: 200px; height: 200px;
+    display: block;
+    border-radius: 0.5rem;
+  }
+
+  .payment-status-badge {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.4rem 0.85rem; border-radius: 999px;
+    font-size: 0.72rem; font-weight: 800;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .status-pending { background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.4); color: #fbbf24; }
+  .status-process { background: rgba(6,182,212,0.15); border: 1px solid rgba(6,182,212,0.4); color: #67e8f9; }
+  .status-success { background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.4); color: #6ee7b7; }
+  .status-failed { background: rgba(244,63,94,0.15); border: 1px solid rgba(244,63,94,0.4); color: #fda4af; }
+
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(168,85,247,0.3); border-radius: 999px; }
@@ -666,6 +766,11 @@ const htmlTemplate = `<!DOCTYPE html>
         <button onclick="switchView('generator')" data-nav="generator" class="nav-item active">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
           Generator Utama
+        </button>
+        <button onclick="switchView('vipshop')" data-nav="vipshop" class="nav-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
+          Beli VIP
+          <span class="ml-auto text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(245,158,11,0.2); color: #fbbf24;">HOT</span>
         </button>
         <button onclick="switchView('chat')" data-nav="chat" class="nav-item">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -912,6 +1017,136 @@ const htmlTemplate = `<!DOCTYPE html>
             </button>
           </div>
           <pre id="result-text" class="mono text-[11px] text-purple-300 whitespace-pre-wrap break-all" style="max-height: 200px; overflow-y: auto;"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: VIP SHOP -->
+    <div id="section-vipshop" class="glass-panel space-y-4 hidden">
+      <div class="flex items-center justify-between pb-3 border-b border-amber-500/20">
+        <h2 class="section-title" style="margin: 0; color: #fbbf24;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
+          Beli VIP Premium
+        </h2>
+        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+      </div>
+
+      <!-- KEUNTUNGAN VIP -->
+      <div class="p-3.5 rounded-2xl" style="background: linear-gradient(135deg, rgba(245,158,11,0.15), rgba(168,85,247,0.1)); border: 1px solid rgba(245,158,11,0.35);">
+        <p class="text-xs font-extrabold text-amber-300 mb-2.5 flex items-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          KEUNTUNGAN VIP
+        </p>
+        <div class="space-y-1.5">
+          <div class="vip-benefit">
+            <span class="vip-benefit-icon">✦</span>
+            <span><strong class="text-amber-200">BISA MEMBUAT AM PREMIUM TERUS MENERUS</strong></span>
+          </div>
+          <div class="vip-benefit">
+            <span class="vip-benefit-icon">✦</span>
+            <span><strong class="text-amber-200">KUOTA MENJADI UNLIMITED</strong></span>
+          </div>
+          <div class="vip-benefit">
+            <span class="vip-benefit-icon">✦</span>
+            <span><strong class="text-amber-200">BISA MENJUAL AM PREMIUM TANPA BATAS</strong></span>
+          </div>
+          <div class="vip-benefit">
+            <span class="vip-benefit-icon">✦</span>
+            <span>Akses semua fitur tanpa batasan</span>
+          </div>
+          <div class="vip-benefit">
+            <span class="vip-benefit-icon">✦</span>
+            <span>Prioritas dukungan & update</span>
+          </div>
+          <div class="vip-benefit">
+            <span class="vip-benefit-icon">✦</span>
+            <span>Badge VIP eksklusif di Chat Global</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- DAFTAR LAYANAN VIP -->
+      <div>
+        <p class="section-title" style="color: #fbbf24;">Pilih Layanan VIP</p>
+        <div id="vip-shop-list" class="space-y-3">
+          <p class="text-slate-500 italic text-xs text-center py-3">Memuat layanan...</p>
+        </div>
+      </div>
+
+      <!-- FORM PEMBELIAN (muncul setelah pilih) -->
+      <div id="vip-purchase-form" class="hidden space-y-3 pt-3 border-t border-amber-500/20">
+        <input type="hidden" id="selected-vip-id" value="">
+        <input type="hidden" id="selected-vip-price" value="">
+        <input type="hidden" id="selected-vip-days" value="">
+        <input type="hidden" id="selected-vip-name" value="">
+
+        <div class="p-3 rounded-xl" style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25);">
+          <p class="text-[10px] font-bold uppercase tracking-wider text-amber-300 mb-1">Layanan Dipilih</p>
+          <p id="selected-vip-display" class="text-sm font-extrabold text-white">-</p>
+        </div>
+
+        <div class="p-3 rounded-xl" style="background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.25);">
+          <p class="text-[10px] font-bold uppercase tracking-wider text-cyan-300 mb-1">Total Pembayaran</p>
+          <p id="selected-vip-price-display" class="text-lg font-extrabold text-cyan-300 mono">Rp 0</p>
+        </div>
+
+        <!-- QRIS -->
+        <div class="text-center p-3 rounded-xl" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(168,85,247,0.2);">
+          <p class="text-[10px] font-bold uppercase tracking-wider text-purple-300 mb-2">Scan QRIS untuk Bayar</p>
+          <div class="qr-container">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=00020101021126610014COM.GO-JEK.WWW011893600914000000000002115000000000000000303UMI5204581253033605802ID5910AM%20PREMIUM6007JAKARTA61051219062070703A0163041A2B" alt="QRIS Payment" style="width:200px;height:200px;">
+          </div>
+          <p class="text-[10px] text-slate-400 mt-2">Scan menggunakan aplikasi bank/e-wallet apapun</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="p-2.5 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(168,85,247,0.15);">
+            <p class="text-[9px] text-slate-400 uppercase font-bold">ID Top Up</p>
+            <p id="topup-id-display" class="text-xs font-bold text-white mono truncate">-</p>
+          </div>
+          <div class="p-2.5 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(168,85,247,0.15);">
+            <p class="text-[9px] text-slate-400 uppercase font-bold">Status</p>
+            <p id="topup-status-display"><span class="payment-status-badge status-pending">Menunggu</span></p>
+          </div>
+        </div>
+
+        <button onclick="handleCreatePayment()" id="btn-create-payment" class="btn-primary" style="background: linear-gradient(135deg, #f59e0b, #d97706);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+          Buat Pesanan & Bayar
+        </button>
+
+        <!-- UPLOAD BUKTI -->
+        <div id="payment-proof-section" class="hidden space-y-3 pt-3 border-t border-emerald-500/20">
+          <p class="text-[10px] font-bold uppercase tracking-wider text-emerald-300">Upload Bukti Pembayaran</p>
+          <div class="file-drop" onclick="document.getElementById('payment-proof-file').click()">
+            <input type="file" id="payment-proof-file" accept="image/*" class="hidden" onchange="handlePaymentProofSelect(event)">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="1.5" style="margin: 0 auto 0.5rem; display: block;">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+            </svg>
+            <p id="proof-file-info" class="text-xs font-bold text-slate-300">Klik untuk upload bukti transfer</p>
+            <p class="text-[10px] text-slate-500 mt-1">Format: JPG, PNG (Max 5MB)</p>
+          </div>
+          <button onclick="handleUploadProof()" id="btn-upload-proof" class="btn-success" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Kirim Bukti Pembayaran
+          </button>
+        </div>
+
+        <!-- STATUS TRANSAKSI -->
+        <div id="transaction-status-box" class="hidden p-3 rounded-xl" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(168,85,247,0.2);">
+          <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Status Transaksi</p>
+          <div id="transaction-status-content"></div>
+        </div>
+      </div>
+
+      <!-- RIWAYAT TRANSAKSI USER -->
+      <div class="pt-3 border-t border-amber-500/20">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-amber-300">Riwayat Pembelian</span>
+          <button onclick="loadUserTransactions()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+        </div>
+        <div id="user-transactions-list" class="space-y-2 max-h-60 overflow-y-auto">
+          <p class="text-slate-500 italic text-xs text-center py-2">Memuat riwayat...</p>
         </div>
       </div>
     </div>
@@ -1183,6 +1418,50 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
+      <!-- PENGATURAN LAYANAN VIP SHOP -->
+      <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(168,85,247,0.06)); border: 1px solid rgba(245,158,11,0.35);">
+        <p class="section-title" style="color: #fbbf24; margin-top: 0;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Pengaturan Layanan VIP
+        </p>
+        
+        <input type="hidden" id="vip-shop-edit-id" value="">
+        <input type="text" id="vip-shop-name" placeholder="Nama layanan (contoh: VIP 7 Hari)" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+        <div class="grid grid-cols-2 gap-2 mb-2">
+          <input type="number" id="vip-shop-price" placeholder="Harga (Rp)" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+          <input type="number" id="vip-shop-days" placeholder="Masa aktif (hari)" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+        </div>
+        <div class="flex gap-2">
+          <button onclick="handleSaveVipShop()" id="vip-shop-submit-btn" class="btn-primary" style="flex: 1;">Tambah Layanan</button>
+          <button onclick="resetVipShopForm()" id="vip-shop-cancel-btn" class="btn-secondary hidden">Batal</button>
+        </div>
+
+        <div class="flex justify-between items-center mt-3 mb-1">
+          <span class="text-[10px] text-amber-300 font-bold">Daftar Layanan VIP</span>
+          <button onclick="loadAdminVipShop()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+        </div>
+        <div id="admin-vip-shop-list" class="space-y-1.5 max-h-40 overflow-y-auto text-[11px]">
+          <p class="text-slate-500 italic text-center py-2">Memuat...</p>
+        </div>
+      </div>
+
+      <!-- KONFIRMASI PEMBAYARAN (ADMIN) -->
+      <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(6,182,212,0.1), rgba(168,85,247,0.06)); border: 1px solid rgba(6,182,212,0.35);">
+        <div class="flex justify-between items-center mb-2">
+          <p class="section-title" style="color: #67e8f9; margin: 0;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+            Konfirmasi Pembayaran
+          </p>
+          <button onclick="loadAdminTransactions()" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.68rem;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Refresh
+          </button>
+        </div>
+        <div id="admin-transactions-list" class="space-y-2 max-h-64 overflow-y-auto text-[11px]">
+          <p class="text-slate-500 italic text-center py-2">Memuat transaksi...</p>
+        </div>
+      </div>
+
       <!-- Daftar User Terdaftar -->
       <div>
         <div class="flex justify-between items-center mb-2">
@@ -1386,6 +1665,9 @@ let lastChatMessageId = null;
 let currentView = 'generator';
 let userQuotaData = { usedQuota: 0, bonusQuota: 0, totalQuota: 1, nextResetTime: 0, lastResetTime: 0 };
 let claimedRedeemCodes = {};
+let selectedPaymentProofFile = null;
+let currentTransactionId = null;
+let cachedVipShopItems = [];
 
 // ============ OPTIMASI KUOTA ============
 let isPageVisible = true;
@@ -1399,12 +1681,12 @@ let lastRedeemsFetch = 0;
 let lastAnnouncementsFetch = 0;
 
 const CACHE_DURATION = {
-  status: 30000,      // 30 detik
-  video: 60000,       // 60 detik
-  chat: 15000,        // 15 detik
-  emails: 30000,      // 30 detik
-  redeems: 60000,     // 60 detik
-  announcements: 60000 // 60 detik
+  status: 30000,
+  video: 60000,
+  chat: 15000,
+  emails: 30000,
+  redeems: 60000,
+  announcements: 60000
 };
 
 const memoryCache = {};
@@ -1423,16 +1705,17 @@ function setCache(key, data, duration) {
   memoryCache[key] = { data, time: Date.now(), duration };
 }
 
-// Visibility API - hentikan polling saat tab tidak aktif
 document.addEventListener('visibilitychange', () => {
   isPageVisible = !document.hidden;
   if (isPageVisible) {
-    // Refresh data saat kembali aktif
     if (currentView === 'generator') {
       fetchServerStatus(true);
     }
     if (currentView === 'chat') {
       loadGlobalChat(true);
+    }
+    if (currentView === 'vipshop') {
+      loadUserTransactions();
     }
   }
 });
@@ -1468,10 +1751,15 @@ function switchView(viewName) {
     el.classList.toggle('active', el.dataset.nav === viewName);
   });
   toggleMenu();
-  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request'].forEach(id => {
+  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request', 'section-vipshop'].forEach(id => {
     document.getElementById(id).classList.add('hidden');
   });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hidden');
+  else if (viewName === 'vipshop') {
+    document.getElementById('section-vipshop').classList.remove('hidden');
+    loadVipShopItems();
+    loadUserTransactions();
+  }
   else if (viewName === 'profile') {
     document.getElementById('section-profile').classList.remove('hidden');
     loadVerifiedEmails();
@@ -1500,6 +1788,8 @@ function switchView(viewName) {
     loadAllUsers();
     loadVipAccounts();
     loadAdminFeatureRequests();
+    loadAdminVipShop();
+    loadAdminTransactions();
   }
 }
 
@@ -1562,7 +1852,6 @@ function updateStatusUI(status) {
   }
 }
 
-// Polling lambat (30 detik) dan hanya saat tab aktif
 function startPolling() {
   if (statusPollInterval) clearInterval(statusPollInterval);
   statusPollInterval = setInterval(() => {
@@ -1675,7 +1964,6 @@ function applySession(data) {
 
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   loadGlobalChat();
-  // Chat polling lebih lambat (15 detik) dan hanya saat tab aktif
   chatRefreshInterval = setInterval(() => {
     if (!isPageVisible) return;
     if (currentView !== 'chat') {
@@ -1800,6 +2088,215 @@ function quickClaimRedeem(code) {
   document.getElementById('redeem-code-input-main').value = code;
   showToast('Kode "' + code + '" siap diklaim', 'info');
   document.getElementById('redeem-code-input-main').focus();
+}
+
+// ============ VIP SHOP (USER) ============
+async function loadVipShopItems() {
+  const container = document.getElementById('vip-shop-list');
+  if (!container) return;
+  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3 animate-pulse">Memuat layanan...</p>';
+  try {
+    const res = await fetch('/api/vip-shop');
+    const data = await res.json();
+    if (data.success && data.items && Object.keys(data.items).length > 0) {
+      const items = Object.entries(data.items)
+        .filter(([_, v]) => v.active !== false)
+        .sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+      cachedVipShopItems = items;
+      container.innerHTML = items.map(([id, item]) => {
+        const priceFormatted = 'Rp ' + Number(item.price).toLocaleString('id-ID');
+        return '<div class="vip-shop-card cursor-pointer" onclick="selectVipItem(\\'' + escapeHtml(id) + '\\')">' +
+          '<div class="flex items-center justify-between mb-2">' +
+            '<div class="flex items-center gap-2.5">' +
+              '<div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: linear-gradient(135deg, rgba(245,158,11,0.3), rgba(168,85,247,0.2));">' +
+                '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>' +
+              '</div>' +
+              '<div>' +
+                '<p class="text-sm font-extrabold text-white">' + escapeHtml(item.name) + '</p>' +
+                '<p class="text-[10px] text-amber-300">⭐ ' + item.days + ' Hari</p>' +
+              '</div>' +
+            '</div>' +
+            '<div class="text-right">' +
+              '<p class="text-base font-extrabold text-amber-300 mono">' + priceFormatted + '</p>' +
+            '</div>' +
+          '</div>' +
+          '<button class="w-full py-2 rounded-xl text-xs font-bold transition" style="background: linear-gradient(135deg, rgba(245,158,11,0.2), rgba(168,85,247,0.15)); border: 1px solid rgba(245,158,11,0.4); color: #fbbf24;">Pilih & Bayar</button>' +
+        '</div>';
+      }).join('');
+    } else {
+      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada layanan VIP tersedia</p>';
+    }
+  } catch(e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-3">Gagal memuat layanan</p>';
+  }
+}
+
+function selectVipItem(itemId) {
+  const item = cachedVipShopItems.find(([id]) => id === itemId);
+  if (!item) return showToast('Layanan tidak ditemukan', 'error');
+  const [id, data] = item;
+
+  document.getElementById('selected-vip-id').value = id;
+  document.getElementById('selected-vip-price').value = data.price;
+  document.getElementById('selected-vip-days').value = data.days;
+  document.getElementById('selected-vip-name').value = data.name;
+
+  document.getElementById('selected-vip-display').innerText = data.name + ' (' + data.days + ' Hari)';
+  document.getElementById('selected-vip-price-display').innerText = 'Rp ' + Number(data.price).toLocaleString('id-ID');
+  document.getElementById('vip-purchase-form').classList.remove('hidden');
+  document.getElementById('payment-proof-section').classList.add('hidden');
+  document.getElementById('transaction-status-box').classList.add('hidden');
+  document.getElementById('topup-id-display').innerText = '-';
+  document.getElementById('topup-status-display').innerHTML = '<span class="payment-status-badge status-pending">Menunggu</span>';
+  
+  document.getElementById('vip-purchase-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  showToast('Layanan dipilih: ' + data.name, 'info');
+}
+
+async function handleCreatePayment() {
+  const vipId = document.getElementById('selected-vip-id').value;
+  const vipName = document.getElementById('selected-vip-name').value;
+  const vipPrice = document.getElementById('selected-vip-price').value;
+  const vipDays = document.getElementById('selected-vip-days').value;
+
+  if (!vipId) return showToast('Pilih layanan VIP terlebih dahulu!', 'error');
+
+  const btn = document.getElementById('btn-create-payment');
+  btn.disabled = true;
+  btn.innerText = 'Memproses...';
+
+  try {
+    const res = await fetch('/api/transaction/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: loggedInUsername,
+        vipId,
+        vipName,
+        vipPrice: parseInt(vipPrice),
+        vipDays: parseInt(vipDays)
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      currentTransactionId = data.transactionId;
+      document.getElementById('topup-id-display').innerText = data.transactionId;
+      document.getElementById('topup-status-display').innerHTML = '<span class="payment-status-badge status-pending">Menunggu</span>';
+      document.getElementById('payment-proof-section').classList.remove('hidden');
+      showToast('Pesanan dibuat! Silakan upload bukti pembayaran.', 'success');
+      loadUserTransactions();
+    } else {
+      showToast(data.message || 'Gagal membuat pesanan', 'error');
+    }
+  } catch(e) {
+    showToast('Kesalahan koneksi', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg> Buat Pesanan & Bayar';
+  }
+}
+
+function handlePaymentProofSelect(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    showToast('File harus berupa gambar!', 'error');
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    showToast('File terlalu besar! Maksimal 5MB', 'error');
+    return;
+  }
+  selectedPaymentProofFile = file;
+  document.getElementById('proof-file-info').innerText = '📎 ' + file.name + ' (' + (file.size / 1024).toFixed(0) + ' KB)';
+  document.getElementById('btn-upload-proof').disabled = false;
+  showToast('Bukti pembayaran siap diupload', 'info');
+}
+
+async function handleUploadProof() {
+  if (!currentTransactionId) return showToast('Buat pesanan terlebih dahulu!', 'error');
+  if (!selectedPaymentProofFile) return showToast('Pilih bukti pembayaran!', 'error');
+
+  const btn = document.getElementById('btn-upload-proof');
+  btn.disabled = true;
+  btn.innerText = 'Mengirim...';
+
+  try {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result;
+      const res = await fetch('/api/transaction/upload-proof', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: loggedInUsername,
+          transactionId: currentTransactionId,
+          proofImage: base64,
+          fileName: selectedPaymentProofFile.name
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast('Bukti pembayaran terkirim! Menunggu konfirmasi admin.', 'success');
+        document.getElementById('payment-proof-section').classList.add('hidden');
+        document.getElementById('transaction-status-box').classList.remove('hidden');
+        document.getElementById('transaction-status-content').innerHTML = 
+          '<div class="flex items-center gap-2">' +
+            '<span class="payment-status-badge status-process">Diproses</span>' +
+            '<span class="text-xs text-slate-300">Menunggu verifikasi admin</span>' +
+          '</div>';
+        selectedPaymentProofFile = null;
+        document.getElementById('payment-proof-file').value = '';
+        document.getElementById('proof-file-info').innerText = 'Klik untuk upload bukti transfer';
+        loadUserTransactions();
+      } else {
+        showToast(data.message || 'Gagal upload bukti', 'error');
+      }
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Kirim Bukti Pembayaran';
+    };
+    reader.readAsDataURL(selectedPaymentProofFile);
+  } catch(e) {
+    showToast('Gagal upload bukti', 'error');
+    btn.disabled = false;
+    btn.innerText = 'Kirim Bukti Pembayaran';
+  }
+}
+
+async function loadUserTransactions() {
+  if (!loggedInUsername) return;
+  const container = document.getElementById('user-transactions-list');
+  if (!container) return;
+  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2 animate-pulse">Memuat riwayat...</p>';
+  try {
+    const res = await fetch('/api/transaction/my?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+    if (data.success && data.transactions && data.transactions.length > 0) {
+      container.innerHTML = data.transactions.map(t => {
+        const statusClass = t.status === 'success' ? 'status-success' : t.status === 'failed' ? 'status-failed' : t.status === 'process' ? 'status-process' : 'status-pending';
+        const statusText = t.status === 'success' ? '✓ Sukses' : t.status === 'failed' ? '✗ Gagal' : t.status === 'process' ? '⚙ Diproses' : '⏳ Menunggu';
+        const priceFormatted = 'Rp ' + Number(t.vipPrice).toLocaleString('id-ID');
+        return '<div class="p-2.5 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(168,85,247,0.15);">' +
+          '<div class="flex justify-between items-start mb-1">' +
+            '<div class="flex-1 min-w-0">' +
+              '<p class="text-xs font-bold text-white">' + escapeHtml(t.vipName) + '</p>' +
+              '<p class="text-[9px] text-slate-500 mono">ID: ' + escapeHtml(t.transactionId) + '</p>' +
+            '</div>' +
+            '<span class="payment-status-badge ' + statusClass + '" style="font-size: 0.6rem; padding: 0.2rem 0.5rem;">' + statusText + '</span>' +
+          '</div>' +
+          '<div class="flex justify-between items-center text-[10px] mt-1.5">' +
+            '<span class="text-amber-300 font-bold">' + priceFormatted + '</span>' +
+            '<span class="text-slate-500">' + new Date(t.createdAt).toLocaleDateString('id-ID') + '</span>' +
+          '</div>' +
+          (t.adminNote ? '<p class="text-[9px] text-amber-300 mt-1 p-1 rounded" style="background: rgba(245,158,11,0.1);">💬 ' + escapeHtml(t.adminNote) + '</p>' : '') +
+        '</div>';
+      }).join('');
+    } else {
+      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada transaksi</p>';
+    }
+  } catch(e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-2">Gagal memuat riwayat</p>';
+  }
 }
 
 // ============ REQUEST FITUR (USER) ============
@@ -1943,6 +2440,201 @@ async function deleteFeatureRequest(reqId) {
     if (data.success) {
       showToast('Request dihapus', 'success');
       loadAdminFeatureRequests();
+    }
+  } catch(e) {}
+}
+
+// ============ ADMIN: VIP SHOP MANAGEMENT ============
+async function loadAdminVipShop() {
+  if (!isAdminUser) return;
+  const container = document.getElementById('admin-vip-shop-list');
+  if (!container) return;
+  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 animate-pulse">Memuat layanan VIP...</p>';
+  try {
+    const res = await fetch('/api/vip-shop');
+    const data = await res.json();
+    if (data.success && data.items && Object.keys(data.items).length > 0) {
+      const items = Object.entries(data.items).sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+      container.innerHTML = items.map(([id, item]) => 
+        '<div class="flex justify-between items-center p-2 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(245,158,11,0.2);">' +
+          '<div class="flex-1 min-w-0">' +
+            '<p class="text-xs font-bold text-amber-300">' + escapeHtml(item.name) + '</p>' +
+            '<p class="text-[9px] text-slate-500">' + item.days + ' hari • Rp ' + Number(item.price).toLocaleString('id-ID') + ' • ' + (item.active !== false ? '✅ Aktif' : '❌ Nonaktif') + '</p>' +
+          '</div>' +
+          '<div class="flex gap-1 shrink-0">' +
+            '<button onclick="editVipShopItem(\\'' + id + '\\', \\'' + encodeURIComponent(item.name) + '\\', ' + item.price + ', ' + item.days + ')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(6,182,212,0.2); color: #67e8f9;">Edit</button>' +
+            '<button onclick="toggleVipShopItem(\\'' + id + '\\', ' + (item.active !== false) + ')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(245,158,11,0.2); color: #fbbf24;">' + (item.active !== false ? 'Off' : 'On') + '</button>' +
+            '<button onclick="deleteVipShopItem(\\'' + id + '\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(244,63,94,0.2); color: #fda4af;">×</button>' +
+          '</div>' +
+        '</div>'
+      ).join('');
+    } else {
+      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada layanan VIP</p>';
+    }
+  } catch(e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-center py-2">Gagal memuat</p>';
+  }
+}
+
+async function handleSaveVipShop() {
+  if (!isAdminUser) return showToast('Akses ditolak!', 'error');
+  const editId = document.getElementById('vip-shop-edit-id').value;
+  const name = document.getElementById('vip-shop-name').value.trim();
+  const price = parseInt(document.getElementById('vip-shop-price').value);
+  const days = parseInt(document.getElementById('vip-shop-days').value);
+
+  if (!name || isNaN(price) || isNaN(days)) return showToast('Lengkapi semua field!', 'error');
+  if (price < 1000) return showToast('Harga minimal Rp 1.000!', 'error');
+  if (days < 1) return showToast('Masa aktif minimal 1 hari!', 'error');
+
+  try {
+    const res = await fetch('/api/admin/vip-shop/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: loggedInUsername, id: editId, name, price, days })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success');
+      resetVipShopForm();
+      loadAdminVipShop();
+    } else {
+      showToast(data.message, 'error');
+    }
+  } catch(e) {
+    showToast('Gagal menyimpan', 'error');
+  }
+}
+
+function editVipShopItem(id, encName, price, days) {
+  document.getElementById('vip-shop-edit-id').value = id;
+  document.getElementById('vip-shop-name').value = decodeURIComponent(encName);
+  document.getElementById('vip-shop-price').value = price;
+  document.getElementById('vip-shop-days').value = days;
+  document.getElementById('vip-shop-submit-btn').innerText = 'Perbarui Layanan';
+  document.getElementById('vip-shop-cancel-btn').classList.remove('hidden');
+}
+
+function resetVipShopForm() {
+  document.getElementById('vip-shop-edit-id').value = '';
+  document.getElementById('vip-shop-name').value = '';
+  document.getElementById('vip-shop-price').value = '';
+  document.getElementById('vip-shop-days').value = '';
+  document.getElementById('vip-shop-submit-btn').innerText = 'Tambah Layanan';
+  document.getElementById('vip-shop-cancel-btn').classList.add('hidden');
+}
+
+async function toggleVipShopItem(id, currentActive) {
+  try {
+    const res = await fetch('/api/admin/vip-shop/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: loggedInUsername, id, active: !currentActive })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success');
+      loadAdminVipShop();
+    }
+  } catch(e) {}
+}
+
+async function deleteVipShopItem(id) {
+  if (!confirm('Hapus layanan VIP ini?')) return;
+  try {
+    const res = await fetch('/api/admin/vip-shop/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: loggedInUsername, id })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Layanan dihapus', 'success');
+      loadAdminVipShop();
+    }
+  } catch(e) {}
+}
+
+// ============ ADMIN: TRANSACTIONS ============
+async function loadAdminTransactions() {
+  if (!isAdminUser) return;
+  const container = document.getElementById('admin-transactions-list');
+  if (!container) return;
+  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 animate-pulse">Memuat transaksi...</p>';
+  try {
+    const res = await fetch('/api/admin/transactions?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+    if (data.success && data.transactions && data.transactions.length > 0) {
+      const pending = data.transactions.filter(t => t.status === 'pending' || t.status === 'process');
+      const others = data.transactions.filter(t => t.status !== 'pending' && t.status !== 'process');
+      const sorted = [...pending, ...others];
+      
+      container.innerHTML = sorted.map(t => {
+        const statusClass = t.status === 'success' ? 'status-success' : t.status === 'failed' ? 'status-failed' : t.status === 'process' ? 'status-process' : 'status-pending';
+        const statusText = t.status === 'success' ? '✓ Sukses' : t.status === 'failed' ? '✗ Gagal' : t.status === 'process' ? '⚙ Diproses' : '⏳ Menunggu';
+        const priceFormatted = 'Rp ' + Number(t.vipPrice).toLocaleString('id-ID');
+        return '<div class="p-2.5 rounded-lg animate-slide-up" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(6,182,212,0.2);">' +
+          '<div class="flex justify-between items-start mb-1">' +
+            '<div class="flex-1 min-w-0">' +
+              '<p class="text-xs font-bold text-white">' + escapeHtml(t.vipName) + ' <span class="text-[9px] text-slate-500">oleh ' + escapeHtml(t.username) + '</span></p>' +
+              '<p class="text-[9px] text-slate-500 mono">ID: ' + escapeHtml(t.transactionId) + '</p>' +
+            '</div>' +
+            '<span class="payment-status-badge ' + statusClass + '" style="font-size: 0.55rem; padding: 0.15rem 0.45rem;">' + statusText + '</span>' +
+          '</div>' +
+          '<div class="flex justify-between items-center text-[10px] mt-1">' +
+            '<span class="text-amber-300 font-bold">' + priceFormatted + '</span>' +
+            '<span class="text-slate-500">' + new Date(t.createdAt).toLocaleDateString('id-ID') + '</span>' +
+          '</div>' +
+          (t.proofImage ? '<img src="' + t.proofImage + '" alt="Bukti" style="max-width:100%; max-height:120px; border-radius:0.5rem; margin-top:0.5rem; cursor:pointer;" onclick="window.open(this.src)">' : '<p class="text-[9px] text-rose-400 mt-1">Belum upload bukti</p>') +
+          '<div class="flex gap-1.5 mt-2 pt-1.5 border-t border-slate-800">' +
+            (t.status === 'pending' || t.status === 'process' ? 
+              '<button onclick="confirmTransaction(\\'' + t.transactionId + '\\', \\'success\\')" class="flex-1 py-1 rounded text-[9px] font-bold" style="background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);">✓ Konfirmasi</button>' +
+              '<button onclick="confirmTransaction(\\'' + t.transactionId + '\\', \\'failed\\')" class="flex-1 py-1 rounded text-[9px] font-bold" style="background: rgba(244,63,94,0.2); color: #fda4af; border: 1px solid rgba(244,63,94,0.4);">✗ Tolak</button>' : '') +
+            '<button onclick="deleteTransaction(\\'' + t.transactionId + '\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(148,163,184,0.2); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.4);">🗑</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    } else {
+      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada transaksi</p>';
+    }
+  } catch(e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-center py-2">Gagal memuat</p>';
+  }
+}
+
+async function confirmTransaction(transactionId, status) {
+  const note = prompt('Catatan admin (opsional):') || '';
+  try {
+    const res = await fetch('/api/admin/transaction/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: loggedInUsername, transactionId, status, adminNote: note })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success');
+      loadAdminTransactions();
+      loadAllUsers();
+    } else {
+      showToast(data.message, 'error');
+    }
+  } catch(e) {
+    showToast('Gagal konfirmasi', 'error');
+  }
+}
+
+async function deleteTransaction(transactionId) {
+  if (!confirm('Hapus transaksi ini?')) return;
+  try {
+    const res = await fetch('/api/admin/transaction/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: loggedInUsername, transactionId })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Transaksi dihapus', 'success');
+      loadAdminTransactions();
     }
   } catch(e) {}
 }
@@ -2165,7 +2857,7 @@ function handleCountdown(data) {
   const totalDuration = data.nextResetTime - data.lastResetTime;
 
   function tick() {
-    if (!isPageVisible) return; // Skip update saat tab tidak aktif
+    if (!isPageVisible) return;
     const now = Date.now();
     const msLeft = userQuotaData.nextResetTime - now;
 
@@ -3341,6 +4033,148 @@ const server = http.createServer(async (req, res) => {
       const announcements = await getAllAnnouncementsFromDb();
       jsonResponse(res, 200, { success: true, announcements });
 
+    } else if (parsedUrl.pathname === '/api/vip-shop' && req.method === 'GET') {
+      const items = await getVipShopFromDb();
+      jsonResponse(res, 200, { success: true, items });
+
+    } else if (parsedUrl.pathname === '/api/transaction/create' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, vipId, vipName, vipPrice, vipDays } = JSON.parse(body);
+      const cleanUser = username ? username.toLowerCase() : '';
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
+
+      const transactionId = 'TRX-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+      await saveTransactionToDb(transactionId, {
+        transactionId,
+        username: cleanUser,
+        vipId,
+        vipName,
+        vipPrice: parseInt(vipPrice),
+        vipDays: parseInt(vipDays),
+        status: 'pending',
+        proofImage: null,
+        proofFileName: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        adminNote: ''
+      });
+
+      jsonResponse(res, 200, { success: true, transactionId, message: 'Pesanan dibuat! Silakan upload bukti pembayaran.' });
+
+    } else if (parsedUrl.pathname === '/api/transaction/upload-proof' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, transactionId, proofImage, fileName } = JSON.parse(body);
+      const cleanUser = username ? username.toLowerCase() : '';
+      const trx = await getTransactionFromDb(transactionId);
+      if (!trx) return jsonResponse(res, 404, { success: false, message: 'Transaksi tidak ditemukan!' });
+      if (trx.username !== cleanUser) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+
+      trx.proofImage = proofImage;
+      trx.proofFileName = fileName;
+      trx.status = 'process';
+      trx.updatedAt = Date.now();
+      await saveTransactionToDb(transactionId, trx);
+
+      jsonResponse(res, 200, { success: true, message: 'Bukti pembayaran terkirim! Menunggu konfirmasi admin.' });
+
+    } else if (parsedUrl.pathname === '/api/transaction/my' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+      const cleanUser = username.toLowerCase();
+      const allTrx = await getTransactionsFromDb();
+      const myTrx = Object.values(allTrx)
+        .filter(t => t.username === cleanUser)
+        .sort((a, b) => b.createdAt - a.createdAt);
+      jsonResponse(res, 200, { success: true, transactions: myTrx });
+
+    } else if (parsedUrl.pathname === '/api/admin/transactions' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      const allTrx = await getTransactionsFromDb();
+      const transactions = Object.values(allTrx).sort((a, b) => b.createdAt - a.createdAt);
+      jsonResponse(res, 200, { success: true, transactions });
+
+    } else if (parsedUrl.pathname === '/api/admin/transaction/confirm' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { adminUsername, transactionId, status, adminNote } = JSON.parse(body);
+      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+
+      const trx = await getTransactionFromDb(transactionId);
+      if (!trx) return jsonResponse(res, 404, { success: false, message: 'Transaksi tidak ditemukan!' });
+
+      trx.status = status;
+      trx.adminNote = adminNote || '';
+      trx.updatedAt = Date.now();
+      await saveTransactionToDb(transactionId, trx);
+
+      if (status === 'success') {
+        const targetUser = await getUserFromDb(trx.username);
+        if (targetUser) {
+          targetUser.vipUntil = Date.now() + (trx.vipDays * 24 * 60 * 60 * 1000);
+          await saveUserToDb(trx.username, targetUser);
+        }
+      }
+
+      jsonResponse(res, 200, { 
+        success: true, 
+        message: status === 'success' ? 'Pembayaran dikonfirmasi! User ' + trx.username + ' sekarang VIP.' : 'Pembayaran ditolak.' 
+      });
+
+    } else if (parsedUrl.pathname === '/api/admin/transaction/delete' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { adminUsername, transactionId } = JSON.parse(body);
+      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      await removeTransactionFromDb(transactionId);
+      jsonResponse(res, 200, { success: true, message: 'Transaksi dihapus' });
+
+    } else if (parsedUrl.pathname === '/api/admin/vip-shop/save' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { adminUsername, id, name, price, days } = JSON.parse(body);
+      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+
+      if (!name || !price || !days) return jsonResponse(res, 400, { success: false, message: 'Lengkapi semua field!' });
+      if (price < 1000) return jsonResponse(res, 400, { success: false, message: 'Harga minimal Rp 1.000!' });
+      if (days < 1) return jsonResponse(res, 400, { success: false, message: 'Masa aktif minimal 1 hari!' });
+
+      const itemId = id || ('vip_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
+      const shop = await getVipShopFromDb();
+      const order = id ? (shop[id]?.order || Object.keys(shop).length + 1) : Object.keys(shop).length + 1;
+
+      await saveVipShopToDb(itemId, {
+        id: itemId,
+        name,
+        price: parseInt(price),
+        days: parseInt(days),
+        active: true,
+        order
+      });
+
+      jsonResponse(res, 200, { success: true, message: id ? 'Layanan VIP diperbarui!' : 'Layanan VIP ditambahkan!' });
+
+    } else if (parsedUrl.pathname === '/api/admin/vip-shop/toggle' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { adminUsername, id, active } = JSON.parse(body);
+      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      const item = await getVipShopFromDb();
+      if (!item[id]) return jsonResponse(res, 404, { success: false, message: 'Layanan tidak ditemukan!' });
+      item[id].active = active;
+      await saveVipShopToDb(id, item[id]);
+      jsonResponse(res, 200, { success: true, message: active ? 'Layanan diaktifkan' : 'Layanan dinonaktifkan' });
+
+    } else if (parsedUrl.pathname === '/api/admin/vip-shop/delete' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { adminUsername, id } = JSON.parse(body);
+      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      await removeVipShopFromDb(id);
+      jsonResponse(res, 200, { success: true, message: 'Layanan VIP dihapus' });
+
     } else if (parsedUrl.pathname === '/api/redeems/active' && req.method === 'GET') {
       const allRedeems = await getAllRedeemsFromDb();
       const activeRedeems = {};
@@ -4167,8 +5001,11 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\\n╔══════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v3.2 (Kuota Hemat)                ║');
+  console.log('║  🚀 AM Premium Banggus v3.3 (VIP Shop + Payment)         ║');
   console.log('║  📡 http://localhost:' + PORT + '                                  ║');
+  console.log('║  🛒 VIP Shop + QRIS Payment + Upload Bukti              ║');
+  console.log('║  🔧 Admin dapat mengatur layanan VIP                    ║');
+  console.log('║  ✅ Konfirmasi Pembayaran → Auto VIP                    ║');
   console.log('║  💾 Optimasi: Cache 30-60s, Lazy Load, Visibility API   ║');
   console.log('║  📦 Chunked Upload Ready (>200MB)                        ║');
   console.log('║  👥 User List Viewer + Delete Account                    ║');
