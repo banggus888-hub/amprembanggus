@@ -146,60 +146,6 @@ async function removeFeatureRequestFromDb(id) {
   await set(ref(db, `featureRequests/${id}`), null);
 }
 
-// ====== VIP PURCHASE HELPERS ======
-async function getVipPackagesFromDb() {
-  const snapshot = await get(child(ref(db), `settings/vipPackages`));
-  if (snapshot.exists()) return snapshot.val();
-  // Default packages
-  const defaults = {
-    vip7: { id: 'vip7', name: 'VIP 7 Hari', days: 7, price: 2000, active: true, order: 1 },
-    vip30: { id: 'vip30', name: 'VIP 30 Hari', days: 30, price: 7000, active: true, order: 2 },
-    vip90: { id: 'vip90', name: 'VIP 90 Hari', days: 90, price: 18000, active: true, order: 3 },
-    vip365: { id: 'vip365', name: 'VIP 365 Hari', days: 365, price: 50000, active: true, order: 4 }
-  };
-  await set(ref(db, `settings/vipPackages`), defaults);
-  return defaults;
-}
-async function saveVipPackageToDb(id, data) {
-  await set(ref(db, `settings/vipPackages/${id}`), data);
-}
-async function removeVipPackageFromDb(id) {
-  await set(ref(db, `settings/vipPackages/${id}`), null);
-}
-
-// ====== ORDERS HELPERS ======
-async function getOrdersFromDb() {
-  const snapshot = await get(child(ref(db), `vipOrders`));
-  return snapshot.exists() ? snapshot.val() : {};
-}
-async function getOrderFromDb(orderId) {
-  const snapshot = await get(child(ref(db), `vipOrders/${orderId}`));
-  return snapshot.exists() ? snapshot.val() : null;
-}
-async function saveOrderToDb(orderId, data) {
-  await set(ref(db, `vipOrders/${orderId}`), data);
-}
-async function removeOrderFromDb(orderId) {
-  await set(ref(db, `vipOrders/${orderId}`), null);
-}
-
-// ====== PAYMENT SETTINGS ======
-async function getPaymentSettingsFromDb() {
-  const snapshot = await get(child(ref(db), `settings/payment`));
-  if (snapshot.exists()) return snapshot.val();
-  const defaults = {
-    qrisImage: '',
-    merchantName: 'AM Premium Banggus',
-    paymentNote: 'Scan QRIS untuk pembayaran. Upload bukti transfer setelah membayar.',
-    active: true
-  };
-  await set(ref(db, `settings/payment`), defaults);
-  return defaults;
-}
-async function savePaymentSettingsToDb(data) {
-  await set(ref(db, `settings/payment`), data);
-}
-
 async function initAdmin() {
   const adminData = await getUserFromDb('adminbaguss');
   if (!adminData) {
@@ -212,8 +158,6 @@ async function initAdmin() {
       vipUntil: 0
     });
   }
-  await getVipPackagesFromDb();
-  await getPaymentSettingsFromDb();
 }
 initAdmin();
 
@@ -459,10 +403,6 @@ const htmlTemplate = `<!DOCTYPE html>
   .badge-admin { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.4); color: #fbbf24; }
   .badge-vip { background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.4); color: #d8b4fe; }
   .badge-user { background: rgba(148,163,184,0.1); border-color: rgba(148,163,184,0.3); color: #cbd5e1; }
-  .badge-pending { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.4); color: #fbbf24; }
-  .badge-success { background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.4); color: #6ee7b7; }
-  .badge-failed { background: rgba(244,63,94,0.15); border-color: rgba(244,63,94,0.4); color: #fda4af; }
-  .badge-process { background: rgba(6,182,212,0.15); border-color: rgba(6,182,212,0.4); color: #67e8f9; }
 
   .divider {
     height: 1px;
@@ -667,96 +607,6 @@ const htmlTemplate = `<!DOCTYPE html>
     animation: slide-up 0.3s ease;
   }
 
-  /* ====== VIP SHOP STYLES ====== */
-  .vip-package-card {
-    background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(168,85,247,0.08));
-    border: 2px solid rgba(245,158,11,0.3);
-    border-radius: 1.25rem;
-    padding: 1rem;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    position: relative;
-    overflow: hidden;
-  }
-  .vip-package-card:hover {
-    border-color: rgba(245,158,11,0.7);
-    transform: translateY(-3px);
-    box-shadow: 0 15px 35px -10px rgba(245,158,11,0.3);
-  }
-  .vip-package-card.selected {
-    border-color: #f59e0b;
-    background: linear-gradient(135deg, rgba(245,158,11,0.2), rgba(168,85,247,0.12));
-    box-shadow: 0 0 30px rgba(245,158,11,0.3);
-  }
-  .vip-package-card.popular::before {
-    content: 'POPULER';
-    position: absolute;
-    top: 10px;
-    right: -30px;
-    background: linear-gradient(135deg, #f59e0b, #d97706);
-    color: white;
-    font-size: 0.55rem;
-    font-weight: 800;
-    padding: 0.2rem 2.5rem;
-    transform: rotate(45deg);
-    letter-spacing: 0.05em;
-  }
-
-  .benefit-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.6rem;
-    padding: 0.5rem;
-    border-radius: 0.75rem;
-    background: rgba(16,185,129,0.05);
-    border: 1px solid rgba(16,185,129,0.15);
-    margin-bottom: 0.5rem;
-  }
-
-  .qr-container {
-    background: white;
-    border-radius: 1rem;
-    padding: 1rem;
-    display: inline-block;
-    box-shadow: 0 0 40px rgba(168,85,247,0.3);
-  }
-  .qr-container img {
-    width: 200px;
-    height: 200px;
-    display: block;
-  }
-
-  .order-card {
-    border-radius: 1rem;
-    padding: 0.85rem;
-    animation: slide-up 0.3s ease;
-    border: 1px solid;
-  }
-  .order-pending { background: rgba(245,158,11,0.06); border-color: rgba(245,158,11,0.3); }
-  .order-process { background: rgba(6,182,212,0.06); border-color: rgba(6,182,212,0.3); }
-  .order-success { background: rgba(16,185,129,0.06); border-color: rgba(16,185,129,0.3); }
-  .order-failed { background: rgba(244,63,94,0.06); border-color: rgba(244,63,94,0.3); }
-
-  .modal-overlay {
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,0.85);
-    backdrop-filter: blur(8px);
-    z-index: 100;
-    display: flex; align-items: center; justify-content: center;
-    padding: 1rem;
-    animation: fadeIn 0.3s ease;
-  }
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-  .modal-content {
-    background: linear-gradient(145deg, rgba(20,14,38,0.98), rgba(12,8,24,0.98));
-    border: 1px solid rgba(168,85,247,0.3);
-    border-radius: 1.5rem;
-    padding: 1.5rem;
-    width: 100%; max-width: 400px;
-    max-height: 90vh; overflow-y: auto;
-    animation: slide-up 0.3s ease;
-  }
-
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(168,85,247,0.3); border-radius: 999px; }
@@ -816,10 +666,6 @@ const htmlTemplate = `<!DOCTYPE html>
         <button onclick="switchView('generator')" data-nav="generator" class="nav-item active">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
           Generator Utama
-        </button>
-        <button onclick="switchView('vipshop')" data-nav="vipshop" class="nav-item">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
-          Beli VIP Premium
         </button>
         <button onclick="switchView('chat')" data-nav="chat" class="nav-item">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -1070,76 +916,6 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- VIEW: VIP SHOP -->
-    <div id="section-vipshop" class="glass-panel space-y-4 hidden">
-      <div class="flex items-center justify-between pb-3 border-b border-amber-500/20">
-        <h2 class="section-title" style="margin: 0; color: #fbbf24;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
-          Beli VIP Premium
-        </h2>
-        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
-      </div>
-
-      <!-- Keuntungan VIP -->
-      <div class="p-3.5 rounded-2xl" style="background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(168,85,247,0.08)); border: 1px solid rgba(245,158,11,0.3);">
-        <p class="text-xs font-extrabold text-amber-300 mb-2 flex items-center gap-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-          KEUNTUNGAN VIP PREMIUM
-        </p>
-        <div class="space-y-1.5">
-          <div class="benefit-item">
-            <span class="text-emerald-400 font-bold text-sm">✓</span>
-            <p class="text-[11px] text-slate-300 font-medium">BISA MEMBUAT AM PREMIUM TERUS MENERUS</p>
-          </div>
-          <div class="benefit-item">
-            <span class="text-emerald-400 font-bold text-sm">✓</span>
-            <p class="text-[11px] text-slate-300 font-medium">KUOTA MENJADI UNLIMITED</p>
-          </div>
-          <div class="benefit-item">
-            <span class="text-emerald-400 font-bold text-sm">✓</span>
-            <p class="text-[11px] text-slate-300 font-medium">BISA MENJUAL AM PREMIUM TANPA BATAS</p>
-          </div>
-          <div class="benefit-item">
-            <span class="text-emerald-400 font-bold text-sm">✓</span>
-            <p class="text-[11px] text-slate-300 font-medium">AKSES SEMUA FITUR PREMIUM</p>
-          </div>
-          <div class="benefit-item">
-            <span class="text-emerald-400 font-bold text-sm">✓</span>
-            <p class="text-[11px] text-slate-300 font-medium">PRIORITAS SUPPORT ADMIN</p>
-          </div>
-          <div class="benefit-item">
-            <span class="text-emerald-400 font-bold text-sm">✓</span>
-            <p class="text-[11px] text-slate-300 font-medium">BADGE VIP DI CHAT GLOBAL</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Pilih Paket VIP -->
-      <div>
-        <p class="section-title" style="color: #fbbf24;">Pilih Paket VIP</p>
-        <div id="vip-packages-list" class="grid grid-cols-2 gap-2.5">
-          <p class="text-slate-500 italic text-xs text-center py-2 col-span-2">Memuat paket...</p>
-        </div>
-      </div>
-
-      <!-- Tombol Beli -->
-      <button onclick="handleBuyVip()" id="btn-buy-vip" class="btn-primary" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #1a0e00;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-        Beli VIP Sekarang
-      </button>
-
-      <!-- Riwayat Order -->
-      <div class="pt-3 border-t border-amber-500/20">
-        <div class="flex justify-between items-center mb-2">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-amber-300">Riwayat Pembelian</span>
-          <button onclick="loadMyOrders()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
-        </div>
-        <div id="my-orders-list" class="space-y-2 max-h-64 overflow-y-auto">
-          <p class="text-slate-500 italic text-xs text-center py-2">Belum ada order</p>
-        </div>
-      </div>
-    </div>
-
     <!-- VIEW: CHAT GLOBAL -->
     <div id="section-chat" class="glass-panel space-y-3 hidden">
       <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
@@ -1364,62 +1140,6 @@ const htmlTemplate = `<!DOCTYPE html>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           <span id="btn-upload-text">Upload & Perbarui Video</span>
         </button>
-      </div>
-
-      <!-- ====== KELOLA VIP PACKAGES ====== -->
-      <div class="space-y-3 pt-3 border-t border-amber-500/20">
-        <p class="section-title" style="color: #fbbf24; margin: 0;">Kelola Paket VIP</p>
-        <div id="admin-vip-packages-list" class="space-y-2 max-h-48 overflow-y-auto text-[11px]">
-          <p class="text-slate-500 italic text-center py-2">Memuat paket...</p>
-        </div>
-        
-        <div class="p-3 rounded-xl" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(245,158,11,0.2);">
-          <p class="text-[10px] font-bold text-amber-300 mb-2">Tambah/Edit Paket VIP</p>
-          <input type="text" id="pkg-id" placeholder="ID Paket (contoh: vip7)" class="input-glow mb-2 mono" style="padding: 0.6rem 0.85rem; font-size: 0.8rem;">
-          <input type="text" id="pkg-name" placeholder="Nama Paket (contoh: VIP 7 Hari)" class="input-glow mb-2" style="padding: 0.6rem 0.85rem; font-size: 0.8rem;">
-          <div class="grid grid-cols-2 gap-2 mb-2">
-            <input type="number" id="pkg-days" placeholder="Hari" class="input-glow" style="padding: 0.6rem 0.85rem; font-size: 0.8rem;" min="1">
-            <input type="number" id="pkg-price" placeholder="Harga (Rp)" class="input-glow" style="padding: 0.6rem 0.85rem; font-size: 0.8rem;" min="1">
-          </div>
-          <button onclick="handleSaveVipPackage()" class="btn-primary" style="padding: 0.6rem 1rem; font-size: 0.8rem;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Simpan Paket
-          </button>
-        </div>
-      </div>
-
-      <!-- ====== KELOLA PENGATURAN PEMBAYARAN ====== -->
-      <div class="space-y-3 pt-3 border-t border-amber-500/20">
-        <p class="section-title" style="color: #fbbf24; margin: 0;">Pengaturan Pembayaran</p>
-        <div class="p-3 rounded-xl" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(245,158,11,0.2);">
-          <label class="text-[10px] font-bold text-amber-300 block mb-1">Nama Merchant</label>
-          <input type="text" id="pay-merchant-name" placeholder="Nama Merchant" class="input-glow mb-2" style="padding: 0.6rem 0.85rem; font-size: 0.8rem;">
-          
-          <label class="text-[10px] font-bold text-amber-300 block mb-1">Catatan Pembayaran</label>
-          <textarea id="pay-note" placeholder="Catatan untuk user..." class="input-glow mb-2" style="height: 60px; resize: none; padding: 0.6rem 0.85rem; font-size: 0.8rem;"></textarea>
-          
-          <label class="text-[10px] font-bold text-amber-300 block mb-1">QRIS Image (URL/Base64)</label>
-          <textarea id="pay-qris-image" placeholder="URL gambar QRIS atau base64..." class="input-glow mb-2 mono" style="height: 80px; resize: none; padding: 0.6rem 0.85rem; font-size: 0.75rem;"></textarea>
-          
-          <button onclick="handleSavePaymentSettings()" class="btn-primary" style="padding: 0.6rem 1rem; font-size: 0.8rem;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-            Simpan Pengaturan
-          </button>
-        </div>
-      </div>
-
-      <!-- ====== KONFIRMASI ORDER VIP ====== -->
-      <div class="space-y-3 pt-3 border-t border-emerald-500/20">
-        <div class="flex justify-between items-center">
-          <p class="section-title" style="color: #6ee7b7; margin: 0;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            Konfirmasi Order VIP
-          </p>
-          <button onclick="loadAdminOrders()" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.68rem;">Refresh</button>
-        </div>
-        <div id="admin-orders-list" class="space-y-2 max-h-96 overflow-y-auto text-[11px]">
-          <p class="text-slate-500 italic text-center py-2">Memuat order...</p>
-        </div>
       </div>
 
       <!-- Kelola VIP User -->
@@ -1648,22 +1368,6 @@ const htmlTemplate = `<!DOCTYPE html>
   </div>
 </div>
 
-<!-- MODAL PEMBAYARAN -->
-<div id="payment-modal" class="modal-overlay hidden">
-  <div class="modal-content">
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="text-base font-extrabold text-white">Pembayaran VIP</h3>
-      <button onclick="closePaymentModal()" class="icon-btn" style="width:2.25rem;height:2.25rem;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
-
-    <div id="payment-modal-content">
-      <!-- Content will be filled by JS -->
-    </div>
-  </div>
-</div>
-
 <script>
 // ============ STATE ============
 let currentAuthMode = 'login';
@@ -1682,10 +1386,6 @@ let lastChatMessageId = null;
 let currentView = 'generator';
 let userQuotaData = { usedQuota: 0, bonusQuota: 0, totalQuota: 1, nextResetTime: 0, lastResetTime: 0 };
 let claimedRedeemCodes = {};
-let selectedVipPackage = null;
-let vipPackages = {};
-let paymentSettings = {};
-let currentOrderId = null;
 
 // ============ OPTIMASI KUOTA ============
 let isPageVisible = true;
@@ -1697,18 +1397,14 @@ let lastChatFetch = 0;
 let lastEmailsFetch = 0;
 let lastRedeemsFetch = 0;
 let lastAnnouncementsFetch = 0;
-let lastPackagesFetch = 0;
-let lastOrdersFetch = 0;
 
 const CACHE_DURATION = {
-  status: 30000,
-  video: 60000,
-  chat: 15000,
-  emails: 30000,
-  redeems: 60000,
-  announcements: 60000,
-  packages: 120000,
-  orders: 30000
+  status: 30000,      // 30 detik
+  video: 60000,       // 60 detik
+  chat: 15000,        // 15 detik
+  emails: 30000,      // 30 detik
+  redeems: 60000,     // 60 detik
+  announcements: 60000 // 60 detik
 };
 
 const memoryCache = {};
@@ -1727,14 +1423,16 @@ function setCache(key, data, duration) {
   memoryCache[key] = { data, time: Date.now(), duration };
 }
 
+// Visibility API - hentikan polling saat tab tidak aktif
 document.addEventListener('visibilitychange', () => {
   isPageVisible = !document.hidden;
   if (isPageVisible) {
-    if (currentView === 'generator') fetchServerStatus(true);
-    if (currentView === 'chat') loadGlobalChat(true);
-    if (currentView === 'vipshop') {
-      loadVipPackages(true);
-      loadMyOrders(true);
+    // Refresh data saat kembali aktif
+    if (currentView === 'generator') {
+      fetchServerStatus(true);
+    }
+    if (currentView === 'chat') {
+      loadGlobalChat(true);
     }
   }
 });
@@ -1770,15 +1468,10 @@ function switchView(viewName) {
     el.classList.toggle('active', el.dataset.nav === viewName);
   });
   toggleMenu();
-  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request', 'section-vipshop'].forEach(id => {
+  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request'].forEach(id => {
     document.getElementById(id).classList.add('hidden');
   });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hidden');
-  else if (viewName === 'vipshop') {
-    document.getElementById('section-vipshop').classList.remove('hidden');
-    loadVipPackages();
-    loadMyOrders();
-  }
   else if (viewName === 'profile') {
     document.getElementById('section-profile').classList.remove('hidden');
     loadVerifiedEmails();
@@ -1807,13 +1500,10 @@ function switchView(viewName) {
     loadAllUsers();
     loadVipAccounts();
     loadAdminFeatureRequests();
-    loadAdminVipPackages();
-    loadPaymentSettings();
-    loadAdminOrders();
   }
 }
 
-// ============ STATUS & VIDEO ============
+// ============ STATUS & VIDEO (OPTIMIZED) ============
 async function fetchServerStatus(force = false) {
   if (!isPageVisible && !force) return;
   const now = Date.now();
@@ -1872,15 +1562,20 @@ function updateStatusUI(status) {
   }
 }
 
+// Polling lambat (30 detik) dan hanya saat tab aktif
 function startPolling() {
   if (statusPollInterval) clearInterval(statusPollInterval);
   statusPollInterval = setInterval(() => {
-    if (isPageVisible) fetchServerStatus();
+    if (isPageVisible) {
+      fetchServerStatus();
+    }
   }, CACHE_DURATION.status);
 
   if (videoPollInterval) clearInterval(videoPollInterval);
   videoPollInterval = setInterval(() => {
-    if (isPageVisible) fetchFeaturedVideo();
+    if (isPageVisible) {
+      fetchFeaturedVideo();
+    }
   }, CACHE_DURATION.video);
 }
 
@@ -1980,10 +1675,14 @@ function applySession(data) {
 
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   loadGlobalChat();
+  // Chat polling lebih lambat (15 detik) dan hanya saat tab aktif
   chatRefreshInterval = setInterval(() => {
     if (!isPageVisible) return;
-    if (currentView !== 'chat') checkNewChatMessages();
-    else loadGlobalChat();
+    if (currentView !== 'chat') {
+      checkNewChatMessages();
+    } else {
+      loadGlobalChat();
+    }
   }, CACHE_DURATION.chat);
 
   const roleBadge = document.getElementById('role-badge');
@@ -2015,523 +1714,6 @@ async function checkSavedSession() {
   } catch (e) {}
 }
 checkSavedSession();
-
-// ============ VIP SHOP ============
-async function loadVipPackages(force = false) {
-  const now = Date.now();
-  if (!force && now - lastPackagesFetch < CACHE_DURATION.packages) {
-    const cached = getCached('vipPackages');
-    if (cached) { renderVipPackages(cached); return; }
-  }
-  try {
-    const res = await fetch('/api/vip/packages');
-    const data = await res.json();
-    if (data.success) {
-      vipPackages = data.packages;
-      lastPackagesFetch = now;
-      setCache('vipPackages', data.packages, CACHE_DURATION.packages);
-      renderVipPackages(data.packages);
-    }
-  } catch(e) {}
-}
-
-function renderVipPackages(packages) {
-  const container = document.getElementById('vip-packages-list');
-  if (!container) return;
-  
-  const sorted = Object.values(packages).filter(p => p.active !== false).sort((a,b) => (a.order || 99) - (b.order || 99));
-  
-  if (sorted.length === 0) {
-    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2 col-span-2">Tidak ada paket tersedia</p>';
-    return;
-  }
-
-  container.innerHTML = sorted.map(pkg => {
-    const isPopular = pkg.days >= 30 && pkg.days <= 90;
-    const priceFormatted = 'Rp ' + pkg.price.toLocaleString('id-ID');
-    return '<div class="vip-package-card' + (isPopular ? ' popular' : '') + '" onclick="selectVipPackage(\\'' + pkg.id + '\\')" data-pkg-id="' + pkg.id + '">' +
-      '<div class="text-center">' +
-        '<p class="text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-1">' + pkg.days + ' HARI</p>' +
-        '<p class="text-sm font-extrabold text-white mb-2">' + escapeHtml(pkg.name) + '</p>' +
-        '<p class="text-lg font-extrabold text-amber-300 mono">' + priceFormatted + '</p>' +
-        '<p class="text-[9px] text-slate-400 mt-1">≈ Rp ' + Math.round(pkg.price / pkg.days).toLocaleString('id-ID') + '/hari</p>' +
-      '</div>' +
-    '</div>';
-  }).join('');
-}
-
-function selectVipPackage(pkgId) {
-  selectedVipPackage = pkgId;
-  document.querySelectorAll('.vip-package-card').forEach(el => {
-    el.classList.toggle('selected', el.dataset.pkgId === pkgId);
-  });
-  showToast('Paket dipilih: ' + (vipPackages[pkgId] ? vipPackages[pkgId].name : pkgId), 'info');
-}
-
-async function handleBuyVip() {
-  if (!loggedInUsername) return showToast('Harus login dulu!', 'error');
-  if (!selectedVipPackage) return showToast('Pilih paket VIP dulu!', 'error');
-  
-  const pkg = vipPackages[selectedVipPackage];
-  if (!pkg) return showToast('Paket tidak valid!', 'error');
-
-  try {
-    const res = await fetch('/api/vip/create-order', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, packageId: selectedVipPackage })
-    });
-    const data = await res.json();
-    if (data.success) {
-      currentOrderId = data.orderId;
-      showPaymentModal(data);
-      loadMyOrders(true);
-    } else {
-      showToast(data.message || 'Gagal membuat order', 'error');
-    }
-  } catch(e) {
-    showToast('Kesalahan koneksi', 'error');
-  }
-}
-
-async function showPaymentModal(orderData) {
-  const modal = document.getElementById('payment-modal');
-  const content = document.getElementById('payment-modal-content');
-  
-  // Get payment settings
-  let settings = paymentSettings;
-  if (!settings.qrisImage) {
-    try {
-      const res = await fetch('/api/payment/settings');
-      const data = await res.json();
-      if (data.success) {
-        settings = data.settings;
-        paymentSettings = settings;
-      }
-    } catch(e) {}
-  }
-
-  const qrisImg = settings.qrisImage || 'https://i.ibb.co/6Pj7Q0Z/qris-placeholder.png';
-  const orderDate = new Date(orderData.order.createdAt).toLocaleString('id-ID');
-
-  content.innerHTML = 
-    '<div class="space-y-4">' +
-      // Order Info
-      '<div class="p-3 rounded-xl" style="background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.25);">' +
-        '<div class="flex justify-between items-center mb-2">' +
-          '<span class="text-[10px] font-bold uppercase tracking-wider text-purple-300">ID Top Up</span>' +
-          '<span class="text-xs font-bold text-white mono">' + orderData.orderId + '</span>' +
-        '</div>' +
-        '<div class="flex justify-between items-center mb-2">' +
-          '<span class="text-[10px] font-bold uppercase tracking-wider text-purple-300">Paket</span>' +
-          '<span class="text-xs font-bold text-amber-300">' + escapeHtml(orderData.order.packageName) + ' (' + orderData.order.days + ' hari)</span>' +
-        '</div>' +
-        '<div class="flex justify-between items-center mb-2">' +
-          '<span class="text-[10px] font-bold uppercase tracking-wider text-purple-300">Harga</span>' +
-          '<span class="text-base font-extrabold text-cyan-300 mono">Rp ' + orderData.order.price.toLocaleString('id-ID') + '</span>' +
-        '</div>' +
-        '<div class="flex justify-between items-center mb-2">' +
-          '<span class="text-[10px] font-bold uppercase tracking-wider text-purple-300">Status</span>' +
-          '<span class="badge badge-pending" style="font-size: 0.6rem; padding: 0.15rem 0.5rem;">⏳ Menunggu Pembayaran</span>' +
-        '</div>' +
-        '<div class="flex justify-between items-center">' +
-          '<span class="text-[10px] font-bold uppercase tracking-wider text-purple-300">Tanggal</span>' +
-          '<span class="text-[10px] text-slate-400 mono">' + orderDate + '</span>' +
-        '</div>' +
-      '</div>' +
-
-      // QR Code
-      '<div class="text-center">' +
-        '<p class="text-[10px] font-bold uppercase tracking-wider text-amber-300 mb-2">Scan QRIS untuk Bayar</p>' +
-        '<div class="qr-container">' +
-          '<img src="' + qrisImg + '" alt="QRIS" onerror="this.src=\\'https://i.ibb.co/6Pj7Q0Z/qris-placeholder.png\\'">' +
-        '</div>' +
-        '<p class="text-[10px] text-slate-400 mt-2">' + escapeHtml(settings.merchantName || 'AM Premium Banggus') + '</p>' +
-      '</div>' +
-
-      // Note
-      '<div class="p-2.5 rounded-xl" style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25);">' +
-        '<p class="text-[10px] text-amber-300 text-center">' + escapeHtml(settings.paymentNote || 'Scan QRIS di atas untuk pembayaran') + '</p>' +
-      '</div>' +
-
-      // Upload Bukti
-      '<div class="pt-2 border-t border-purple-500/20">' +
-        '<p class="text-[10px] font-bold uppercase tracking-wider text-emerald-300 mb-2">Upload Bukti Pembayaran</p>' +
-        '<input type="file" id="proof-upload-input" accept="image/*" class="hidden" onchange="handleProofUpload(this)">' +
-        '<div id="proof-drop-zone" onclick="document.getElementById(\\'proof-upload-input\\').click()" class="file-drop" style="padding: 1rem;">' +
-          '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="1.5" style="margin: 0 auto 0.5rem; display: block;">' +
-            '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>' +
-          '</svg>' +
-          '<p class="text-[10px] font-bold text-slate-300">Klik untuk upload bukti</p>' +
-          '<p class="text-[9px] text-slate-500 mt-0.5">Format: JPG, PNG • Max 5MB</p>' +
-          '<p id="proof-file-info" class="text-[9px] text-emerald-300 mono mt-1 hidden"></p>' +
-        '</div>' +
-        '<div id="proof-preview" class="hidden mt-2 text-center">' +
-          '<img id="proof-preview-img" src="" class="max-w-full max-h-32 rounded-lg mx-auto" style="border: 1px solid rgba(16,185,129,0.3);">' +
-        '</div>' +
-        '<button onclick="submitPaymentProof()" id="btn-submit-proof" class="btn-success mt-2" disabled>' +
-          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>' +
-          Kirim Bukti Pembayaran
-        '</button>' +
-      '</div>' +
-    '</div>';
-
-  modal.classList.remove('hidden');
-}
-
-function closePaymentModal() {
-  document.getElementById('payment-modal').classList.add('hidden');
-  currentOrderId = null;
-}
-
-let proofFileData = null;
-
-async function handleProofUpload(input) {
-  const file = input.files[0];
-  if (!file) return;
-  
-  if (!file.type.startsWith('image/')) {
-    showToast('File harus berupa gambar!', 'error');
-    return;
-  }
-  if (file.size > 5 * 1024 * 1024) {
-    showToast('File terlalu besar! Maksimal 5MB', 'error');
-    return;
-  }
-
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    proofFileData = e.target.result;
-    document.getElementById('proof-file-info').innerText = '✓ ' + file.name + ' (' + (file.size/1024).toFixed(1) + ' KB)';
-    document.getElementById('proof-file-info').classList.remove('hidden');
-    document.getElementById('proof-preview-img').src = proofFileData;
-    document.getElementById('proof-preview').classList.remove('hidden');
-    document.getElementById('btn-submit-proof').disabled = false;
-  };
-  reader.readAsDataURL(file);
-}
-
-async function submitPaymentProof() {
-  if (!proofFileData || !currentOrderId) return showToast('Upload bukti dulu!', 'error');
-  
-  const btn = document.getElementById('btn-submit-proof');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="animate-pulse">Mengirim...</span>';
-
-  try {
-    const res = await fetch('/api/vip/submit-proof', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: loggedInUsername,
-        orderId: currentOrderId,
-        proofImage: proofFileData
-      })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('Bukti pembayaran terkirim! Menunggu konfirmasi admin.', 'success', 5000);
-      closePaymentModal();
-      loadMyOrders(true);
-    } else {
-      showToast(data.message || 'Gagal mengirim bukti', 'error');
-      btn.disabled = false;
-      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Kirim Bukti Pembayaran';
-    }
-  } catch(e) {
-    showToast('Kesalahan koneksi', 'error');
-    btn.disabled = false;
-  }
-}
-
-async function loadMyOrders(force = false) {
-  if (!loggedInUsername) return;
-  const now = Date.now();
-  if (!force && now - lastOrdersFetch < CACHE_DURATION.orders) {
-    const cached = getCached('myOrders');
-    if (cached) { renderMyOrders(cached); return; }
-  }
-  try {
-    const res = await fetch('/api/vip/my-orders?username=' + encodeURIComponent(loggedInUsername));
-    const data = await res.json();
-    if (data.success) {
-      lastOrdersFetch = now;
-      setCache('myOrders', data.orders, CACHE_DURATION.orders);
-      renderMyOrders(data.orders);
-    }
-  } catch(e) {}
-}
-
-function renderMyOrders(orders) {
-  const container = document.getElementById('my-orders-list');
-  if (!container) return;
-
-  if (!orders || orders.length === 0) {
-    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada order</p>';
-    return;
-  }
-
-  const statusMap = {
-    pending: { label: '⏳ Menunggu', cls: 'order-pending', badge: 'badge-pending' },
-    process: { label: '🔄 Diproses', cls: 'order-process', badge: 'badge-process' },
-    success: { label: '✓ Sukses', cls: 'order-success', badge: 'badge-success' },
-    failed: { label: '✗ Gagal', cls: 'order-failed', badge: 'badge-failed' },
-    expired: { label: '⏰ Kadaluarsa', cls: 'order-failed', badge: 'badge-failed' }
-  };
-
-  container.innerHTML = orders.map(o => {
-    const st = statusMap[o.status] || statusMap.pending;
-    const date = new Date(o.createdAt).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    
-    let actionBtn = '';
-    if (o.status === 'pending' && !o.proofImage) {
-      actionBtn = '<button onclick="reopenPayment(\\'' + o.orderId + '\\')" class="w-full mt-2 py-1.5 rounded-lg text-[10px] font-bold" style="background: rgba(245,158,11,0.2); color: #fbbf24; border: 1px solid rgba(245,158,11,0.4);">💳 Bayar Sekarang</button>';
-    } else if (o.proofImage && o.status === 'pending') {
-      actionBtn = '<p class="text-[9px] text-cyan-300 mt-1.5 text-center">📸 Bukti terkirim, menunggu konfirmasi admin</p>';
-    }
-
-    return '<div class="order-card ' + st.cls + '">' +
-      '<div class="flex justify-between items-start mb-1.5">' +
-        '<div class="flex-1 min-w-0">' +
-          '<p class="text-[10px] font-bold text-white mono truncate">' + o.orderId + '</p>' +
-          '<p class="text-[10px] text-slate-300">' + escapeHtml(o.packageName) + ' (' + o.days + ' hari)</p>' +
-        '</div>' +
-        '<span class="badge ' + st.badge + '" style="font-size: 0.55rem; padding: 0.15rem 0.45rem;">' + st.label + '</span>' +
-      '</div>' +
-      '<div class="flex justify-between items-center text-[10px]">' +
-        '<span class="text-slate-400">' + date + '</span>' +
-        '<span class="font-bold text-cyan-300 mono">Rp ' + o.price.toLocaleString('id-ID') + '</span>' +
-      '</div>' +
-      (o.adminNote ? '<p class="text-[9px] text-amber-300 mt-1.5 p-1.5 rounded" style="background: rgba(245,158,11,0.1);">💬 ' + escapeHtml(o.adminNote) + '</p>' : '') +
-      actionBtn +
-    '</div>';
-  }).join('');
-}
-
-async function reopenPayment(orderId) {
-  try {
-    const res = await fetch('/api/vip/order-detail?username=' + encodeURIComponent(loggedInUsername) + '&orderId=' + orderId);
-    const data = await res.json();
-    if (data.success) {
-      currentOrderId = orderId;
-      showPaymentModal({ success: true, orderId, order: data.order });
-    }
-  } catch(e) {}
-}
-
-// ============ ADMIN: VIP PACKAGES ============
-async function loadAdminVipPackages() {
-  if (!isAdminUser) return;
-  const container = document.getElementById('admin-vip-packages-list');
-  if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 animate-pulse">Memuat paket...</p>';
-  
-  try {
-    const res = await fetch('/api/admin/vip-packages?username=' + encodeURIComponent(loggedInUsername));
-    const data = await res.json();
-    if (data.success && Object.keys(data.packages).length > 0) {
-      const sorted = Object.values(data.packages).sort((a,b) => (a.order || 99) - (b.order || 99));
-      container.innerHTML = sorted.map(pkg => 
-        '<div class="flex justify-between items-center p-2 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(245,158,11,0.2);">' +
-          '<div class="min-w-0 flex-1">' +
-            '<p class="text-xs font-bold text-amber-300 truncate">' + escapeHtml(pkg.name) + '</p>' +
-            '<p class="text-[9px] text-slate-500 mono">' + pkg.id + ' • ' + pkg.days + ' hari • Rp ' + pkg.price.toLocaleString('id-ID') + '</p>' +
-          '</div>' +
-          '<div class="flex gap-1 shrink-0">' +
-            '<button onclick="editVipPackage(\\'' + pkg.id + '\\', \\'' + encodeURIComponent(pkg.name) + '\\', ' + pkg.days + ', ' + pkg.price + ')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.3);">✎</button>' +
-            '<button onclick="deleteVipPackage(\\'' + pkg.id + '\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(244,63,94,0.15); color: #fda4af; border: 1px solid rgba(244,63,94,0.3);">×</button>' +
-          '</div>' +
-        '</div>'
-      ).join('');
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada paket</p>';
-    }
-  } catch(e) {}
-}
-
-function editVipPackage(id, encName, days, price) {
-  document.getElementById('pkg-id').value = id;
-  document.getElementById('pkg-name').value = decodeURIComponent(encName);
-  document.getElementById('pkg-days').value = days;
-  document.getElementById('pkg-price').value = price;
-  showToast('Edit mode: ' + id, 'info');
-}
-
-async function handleSaveVipPackage() {
-  if (!isAdminUser) return;
-  const id = document.getElementById('pkg-id').value.trim().toLowerCase();
-  const name = document.getElementById('pkg-name').value.trim();
-  const days = parseInt(document.getElementById('pkg-days').value);
-  const price = parseInt(document.getElementById('pkg-price').value);
-
-  if (!id || !name || isNaN(days) || isNaN(price)) {
-    return showToast('Lengkapi semua field!', 'error');
-  }
-  if (days < 1 || price < 1) {
-    return showToast('Hari dan harga minimal 1!', 'error');
-  }
-
-  try {
-    const res = await fetch('/api/admin/save-vip-package', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, id, name, days, price })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('Paket disimpan!', 'success');
-      document.getElementById('pkg-id').value = '';
-      document.getElementById('pkg-name').value = '';
-      document.getElementById('pkg-days').value = '';
-      document.getElementById('pkg-price').value = '';
-      loadAdminVipPackages();
-      lastPackagesFetch = 0;
-    } else {
-      showToast(data.message, 'error');
-    }
-  } catch(e) {
-    showToast('Gagal menyimpan paket', 'error');
-  }
-}
-
-async function deleteVipPackage(pkgId) {
-  if (!confirm('Hapus paket ' + pkgId + '?')) return;
-  try {
-    const res = await fetch('/api/admin/delete-vip-package', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, packageId: pkgId })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('Paket dihapus', 'success');
-      loadAdminVipPackages();
-      lastPackagesFetch = 0;
-    }
-  } catch(e) {}
-}
-
-// ============ ADMIN: PAYMENT SETTINGS ============
-async function loadPaymentSettings() {
-  if (!isAdminUser) return;
-  try {
-    const res = await fetch('/api/payment/settings');
-    const data = await res.json();
-    if (data.success) {
-      paymentSettings = data.settings;
-      document.getElementById('pay-merchant-name').value = data.settings.merchantName || '';
-      document.getElementById('pay-note').value = data.settings.paymentNote || '';
-      document.getElementById('pay-qris-image').value = data.settings.qrisImage || '';
-    }
-  } catch(e) {}
-}
-
-async function handleSavePaymentSettings() {
-  if (!isAdminUser) return;
-  const merchantName = document.getElementById('pay-merchant-name').value.trim();
-  const paymentNote = document.getElementById('pay-note').value.trim();
-  const qrisImage = document.getElementById('pay-qris-image').value.trim();
-
-  try {
-    const res = await fetch('/api/admin/save-payment-settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, merchantName, paymentNote, qrisImage })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('Pengaturan pembayaran disimpan!', 'success');
-      paymentSettings = { merchantName, paymentNote, qrisImage };
-    } else {
-      showToast(data.message, 'error');
-    }
-  } catch(e) {
-    showToast('Gagal menyimpan', 'error');
-  }
-}
-
-// ============ ADMIN: ORDERS ============
-async function loadAdminOrders() {
-  if (!isAdminUser) return;
-  const container = document.getElementById('admin-orders-list');
-  if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 animate-pulse">Memuat order...</p>';
-
-  try {
-    const res = await fetch('/api/admin/vip-orders?username=' + encodeURIComponent(loggedInUsername));
-    const data = await res.json();
-    if (data.success && data.orders.length > 0) {
-      container.innerHTML = data.orders.map(o => {
-        const date = new Date(o.createdAt).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-        const statusBadge = o.status === 'success' ? 'badge-success' : o.status === 'failed' ? 'badge-failed' : o.status === 'process' ? 'badge-process' : 'badge-pending';
-        const statusText = o.status === 'success' ? '✓ Sukses' : o.status === 'failed' ? '✗ Gagal' : o.status === 'process' ? '🔄 Proses' : '⏳ Pending';
-        
-        let proofHtml = '';
-        if (o.proofImage) {
-          proofHtml = '<div class="mt-2 pt-2 border-t border-slate-800">' +
-            '<p class="text-[9px] text-emerald-300 mb-1">📸 Bukti Pembayaran:</p>' +
-            '<img src="' + o.proofImage + '" class="max-w-full max-h-32 rounded-lg cursor-pointer" onclick="showFullProof(\\'' + o.orderId + '\\')" style="border: 1px solid rgba(16,185,129,0.3);">' +
-          '</div>';
-        }
-
-        let actionButtons = '';
-        if (o.status === 'pending') {
-          actionButtons = '<div class="flex gap-1.5 mt-2 pt-2 border-t border-slate-800">' +
-            '<button onclick="adminConfirmOrder(\\'' + o.orderId + '\\', \\'success\\')" class="flex-1 py-1.5 rounded text-[10px] font-bold" style="background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);">✓ Konfirmasi</button>' +
-            '<button onclick="adminConfirmOrder(\\'' + o.orderId + '\\', \\'failed\\')" class="flex-1 py-1.5 rounded text-[10px] font-bold" style="background: rgba(244,63,94,0.2); color: #fda4af; border: 1px solid rgba(244,63,94,0.4);">✗ Tolak</button>' +
-          '</div>';
-        }
-
-        return '<div class="order-card ' + (o.status === 'pending' ? 'order-pending' : o.status === 'success' ? 'order-success' : o.status === 'failed' ? 'order-failed' : 'order-process') + '">' +
-          '<div class="flex justify-between items-start mb-1">' +
-            '<div class="min-w-0 flex-1">' +
-              '<p class="text-[10px] font-bold text-white mono truncate">' + o.orderId + '</p>' +
-              '<p class="text-[9px] text-slate-400">👤 ' + escapeHtml(o.username) + ' • ' + escapeHtml(o.packageName) + '</p>' +
-            '</div>' +
-            '<span class="badge ' + statusBadge + '" style="font-size: 0.55rem; padding: 0.15rem 0.45rem;">' + statusText + '</span>' +
-          '</div>' +
-          '<div class="flex justify-between items-center text-[10px]">' +
-            '<span class="text-slate-400">' + date + '</span>' +
-            '<span class="font-bold text-cyan-300 mono">Rp ' + o.price.toLocaleString('id-ID') + '</span>' +
-          '</div>' +
-          proofHtml +
-          actionButtons +
-        '</div>';
-      }).join('');
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada order</p>';
-    }
-  } catch(e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-center py-2">Gagal memuat</p>';
-  }
-}
-
-async function adminConfirmOrder(orderId, status) {
-  const note = prompt('Catatan admin (opsional):') || '';
-  try {
-    const res = await fetch('/api/admin/confirm-order', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, orderId, status, adminNote: note })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast(data.message, 'success');
-      loadAdminOrders();
-    } else {
-      showToast(data.message, 'error');
-    }
-  } catch(e) {
-    showToast('Gagal konfirmasi', 'error');
-  }
-}
-
-function showFullProof(orderId) {
-  // Simple - open in new tab or show in modal
-  const img = event.target.src;
-  const w = window.open('');
-  w.document.write('<html><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh;"><img src="' + img + '" style="max-width:100%;max-height:100vh;"></body></html>');
-}
 
 // ============ KLAIM REDEEM ============
 async function handleRedeemCodeMain() {
@@ -2828,7 +2010,7 @@ async function triggerUpdateUsername() {
   }
 }
 
-// ============ RIWAYAT GMAIL & COUNTDOWN RESET ============
+// ============ RIWAYAT GMAIL & COUNTDOWN RESET (OPTIMIZED) ============
 async function loadVerifiedEmails(force = false) {
   if (!loggedInUsername) return;
   const now = Date.now();
@@ -2983,7 +2165,7 @@ function handleCountdown(data) {
   const totalDuration = data.nextResetTime - data.lastResetTime;
 
   function tick() {
-    if (!isPageVisible) return;
+    if (!isPageVisible) return; // Skip update saat tab tidak aktif
     const now = Date.now();
     const msLeft = userQuotaData.nextResetTime - now;
 
@@ -3389,7 +2571,7 @@ async function loadVipAccounts() {
     const container = document.getElementById('vip-accounts-list');
     if (data.success && Object.keys(data.vipAccounts).length > 0) {
       const now = Date.now();
-      container.innerHTML = Object.entries(data.vipAccounts).map(([id, val]) => {
+      container.innerHTML = Object.entries(data.vipAccounts).map(([uname, val]) => {
         const isActive = val.vipUntil > now;
         const statusBadge = isActive 
           ? '<span class="text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(16,185,129,0.15); color: #6ee7b7;">AKTIF</span>'
@@ -3398,7 +2580,7 @@ async function loadVipAccounts() {
         return '<div class="vip-account-card">' +
           '<div class="flex justify-between items-start mb-1.5">' +
             '<div class="flex-1 min-w-0">' +
-              '<p class="text-xs font-bold text-white mono truncate">' + escapeHtml(val.username) + '</p>' +
+              '<p class="text-xs font-bold text-white mono truncate">' + escapeHtml(uname) + '</p>' +
               '<p class="text-[10px] text-slate-400 mono">Pwd: ' + escapeHtml(val.password) + '</p>' +
             '</div>' +
             statusBadge +
@@ -3406,8 +2588,8 @@ async function loadVipAccounts() {
           '<div class="flex items-center justify-between text-[10px]">' +
             '<span class="text-amber-300">⭐ s/d ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span>' +
             '<div class="flex gap-1">' +
-              '<button onclick="copyVipCredentials(\\'' + escapeHtml(val.username) + '\\', \\'' + escapeHtml(val.password) + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.3);">📋 Copy</button>' +
-              '<button onclick="deleteVipAccount(\\'' + escapeHtml(val.username) + '\\')" class="delete-btn">🗑 Hapus</button>' +
+              '<button onclick="copyVipCredentials(\\'' + escapeHtml(uname) + '\\', \\'' + escapeHtml(val.password) + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.3);">📋 Copy</button>' +
+              '<button onclick="deleteVipAccount(\\'' + escapeHtml(uname) + '\\')" class="delete-btn">🗑 Hapus</button>' +
             '</div>' +
           '</div>' +
         '</div>';
@@ -3426,7 +2608,7 @@ function copyVipCredentials(username, password) {
 }
 
 async function deleteVipAccount(vipUsername) {
-  if (!confirm('Hapus akun VIP ' + vipUsername + '?')) return;
+  if (!confirm('Hapus akun VIP ' + vipUsername + '? User yang login dengan akun ini akan kehilangan akses.')) return;
   try {
     const res = await fetch('/api/admin/delete-vip-account', {
       method: 'POST',
@@ -3438,11 +2620,15 @@ async function deleteVipAccount(vipUsername) {
       showToast('Akun VIP dihapus', 'success');
       loadVipAccounts();
       loadAllUsers();
+    } else {
+      showToast(data.message, 'error');
     }
-  } catch(e) {}
+  } catch(e) {
+    showToast('Gagal hapus akun VIP', 'error');
+  }
 }
 
-// ============ USER LIST ============
+// ============ CEK USER TERDAFTAR ============
 async function loadAllUsers() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
   const container = document.getElementById('all-users-list');
@@ -3467,6 +2653,7 @@ async function loadAllUsers() {
     showToast('Berhasil memuat ' + data.stats.total + ' user', 'success');
   } catch (e) {
     container.innerHTML = '<p class="text-rose-400 italic text-center py-2">Kesalahan koneksi</p>';
+    showToast('Gagal memuat daftar user', 'error');
   }
 }
 
@@ -3598,6 +2785,7 @@ function renderUserList() {
   }).join('');
 }
 
+// ============ HAPUS AKUN ============
 async function deleteUserAccount(targetUsername, isTargetAdmin) {
   const confirmText = isTargetAdmin 
     ? '⚠️ HAPUS AKUN ADMIN "' + targetUsername + '"?\\n\\nAkun ini akan dihapus permanen!'
@@ -3644,7 +2832,7 @@ function copyUsername(username) {
   });
 }
 
-// ============ GLOBAL CHAT ============
+// ============ GLOBAL CHAT (OPTIMIZED) ============
 function updateChatBadge() {
   const badge = document.getElementById('chat-unread-badge');
   if (unreadChatCount > 0) {
@@ -3807,7 +2995,7 @@ async function deleteChatMessage(messageId) {
   } catch(e) {}
 }
 
-// ============ ANNOUNCEMENTS ============
+// ============ ANNOUNCEMENTS (OPTIMIZED) ============
 async function loadUserAnnouncements(force = false) {
   const now = Date.now();
   if (!force && now - lastAnnouncementsFetch < CACHE_DURATION.announcements) {
@@ -4090,8 +3278,6 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     const drawer = document.getElementById('nav-drawer');
     if (drawer.classList.contains('open')) toggleMenu();
-    const modal = document.getElementById('payment-modal');
-    if (!modal.classList.contains('hidden')) closePaymentModal();
   }
 });
 </script>
@@ -4154,216 +3340,6 @@ const server = http.createServer(async (req, res) => {
     } else if (parsedUrl.pathname === '/api/announcements') {
       const announcements = await getAllAnnouncementsFromDb();
       jsonResponse(res, 200, { success: true, announcements });
-
-    } else if (parsedUrl.pathname === '/api/vip/packages' && req.method === 'GET') {
-      const packages = await getVipPackagesFromDb();
-      jsonResponse(res, 200, { success: true, packages });
-
-    } else if (parsedUrl.pathname === '/api/payment/settings' && req.method === 'GET') {
-      const settings = await getPaymentSettingsFromDb();
-      jsonResponse(res, 200, { success: true, settings });
-
-    } else if (parsedUrl.pathname === '/api/vip/create-order' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { username, packageId } = JSON.parse(body);
-      const cleanUser = username ? username.toLowerCase() : '';
-      const userObj = await getUserFromDb(cleanUser);
-      
-      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
-
-      const packages = await getVipPackagesFromDb();
-      const pkg = packages[packageId];
-      if (!pkg || pkg.active === false) {
-        return jsonResponse(res, 400, { success: false, message: 'Paket tidak valid!' });
-      }
-
-      const orderId = 'ORD' + Date.now().toString().slice(-8) + Math.random().toString(36).substring(2, 5).toUpperCase();
-      const order = {
-        orderId,
-        username: cleanUser,
-        packageId,
-        packageName: pkg.name,
-        days: pkg.days,
-        price: pkg.price,
-        status: 'pending',
-        proofImage: '',
-        adminNote: '',
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      };
-
-      await saveOrderToDb(orderId, order);
-
-      jsonResponse(res, 200, {
-        success: true,
-        message: 'Order berhasil dibuat',
-        orderId,
-        order
-      });
-
-    } else if (parsedUrl.pathname === '/api/vip/order-detail' && req.method === 'GET') {
-      const username = parsedUrl.searchParams.get('username');
-      const orderId = parsedUrl.searchParams.get('orderId');
-      if (!username || !orderId) return jsonResponse(res, 400, { success: false, message: 'Parameter kurang' });
-      
-      const order = await getOrderFromDb(orderId);
-      if (!order || order.username !== username.toLowerCase()) {
-        return jsonResponse(res, 404, { success: false, message: 'Order tidak ditemukan' });
-      }
-
-      jsonResponse(res, 200, { success: true, order });
-
-    } else if (parsedUrl.pathname === '/api/vip/submit-proof' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { username, orderId, proofImage } = JSON.parse(body);
-      
-      if (!username || !orderId || !proofImage) {
-        return jsonResponse(res, 400, { success: false, message: 'Data tidak lengkap' });
-      }
-
-      const cleanUser = username.toLowerCase();
-      const order = await getOrderFromDb(orderId);
-      if (!order || order.username !== cleanUser) {
-        return jsonResponse(res, 404, { success: false, message: 'Order tidak ditemukan' });
-      }
-
-      if (order.status !== 'pending') {
-        return jsonResponse(res, 400, { success: false, message: 'Order sudah diproses' });
-      }
-
-      order.proofImage = proofImage;
-      order.status = 'process';
-      order.updatedAt = Date.now();
-      await saveOrderToDb(orderId, order);
-
-      jsonResponse(res, 200, { success: true, message: 'Bukti pembayaran terkirim! Menunggu konfirmasi admin.' });
-
-    } else if (parsedUrl.pathname === '/api/vip/my-orders' && req.method === 'GET') {
-      const username = parsedUrl.searchParams.get('username');
-      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-      
-      const allOrders = await getOrdersFromDb();
-      const cleanUser = username.toLowerCase();
-      const myOrders = Object.values(allOrders)
-        .filter(o => o.username === cleanUser)
-        .sort((a, b) => b.createdAt - a.createdAt);
-
-      jsonResponse(res, 200, { success: true, orders: myOrders });
-
-    } else if (parsedUrl.pathname === '/api/admin/vip-orders' && req.method === 'GET') {
-      const username = parsedUrl.searchParams.get('username');
-      const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      }
-
-      const allOrders = await getOrdersFromDb();
-      const orders = Object.values(allOrders).sort((a, b) => b.createdAt - a.createdAt);
-      jsonResponse(res, 200, { success: true, orders });
-
-    } else if (parsedUrl.pathname === '/api/admin/confirm-order' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { adminUsername, orderId, status, adminNote } = JSON.parse(body);
-      
-      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      }
-
-      if (!['success', 'failed'].includes(status)) {
-        return jsonResponse(res, 400, { success: false, message: 'Status tidak valid!' });
-      }
-
-      const order = await getOrderFromDb(orderId);
-      if (!order) return jsonResponse(res, 404, { success: false, message: 'Order tidak ditemukan!' });
-
-      order.status = status;
-      order.adminNote = adminNote || '';
-      order.updatedAt = Date.now();
-      await saveOrderToDb(orderId, order);
-
-      if (status === 'success') {
-        // Activate VIP for user
-        const userObj = await getUserFromDb(order.username);
-        if (userObj) {
-          const now = Date.now();
-          const currentVipUntil = userObj.vipUntil && userObj.vipUntil > now ? userObj.vipUntil : now;
-          userObj.vipUntil = currentVipUntil + (order.days * 24 * 60 * 60 * 1000);
-          await saveUserToDb(order.username, userObj);
-        }
-      }
-
-      jsonResponse(res, 200, { 
-        success: true, 
-        message: status === 'success' ? 'Order dikonfirmasi! VIP user telah diaktifkan.' : 'Order ditolak.'
-      });
-
-    } else if (parsedUrl.pathname === '/api/admin/vip-packages' && req.method === 'GET') {
-      const username = parsedUrl.searchParams.get('username');
-      const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      }
-
-      const packages = await getVipPackagesFromDb();
-      jsonResponse(res, 200, { success: true, packages });
-
-    } else if (parsedUrl.pathname === '/api/admin/save-vip-package' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { adminUsername, id, name, days, price } = JSON.parse(body);
-      
-      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      }
-
-      const cleanId = id.toLowerCase().replace(/[^a-z0-9_]/g, '');
-      if (!cleanId) return jsonResponse(res, 400, { success: false, message: 'ID tidak valid!' });
-
-      const packages = await getVipPackagesFromDb();
-      const isNew = !packages[cleanId];
-      const order = isNew ? Object.keys(packages).length + 1 : (packages[cleanId].order || 99);
-
-      await saveVipPackageToDb(cleanId, {
-        id: cleanId,
-        name: name.trim(),
-        days: parseInt(days),
-        price: parseInt(price),
-        active: true,
-        order
-      });
-
-      jsonResponse(res, 200, { success: true, message: 'Paket berhasil disimpan!' });
-
-    } else if (parsedUrl.pathname === '/api/admin/delete-vip-package' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { adminUsername, packageId } = JSON.parse(body);
-      
-      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      }
-
-      await removeVipPackageFromDb(packageId);
-      jsonResponse(res, 200, { success: true, message: 'Paket dihapus!' });
-
-    } else if (parsedUrl.pathname === '/api/admin/save-payment-settings' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { adminUsername, merchantName, paymentNote, qrisImage } = JSON.parse(body);
-      
-      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      }
-
-      await savePaymentSettingsToDb({
-        merchantName: merchantName || 'AM Premium Banggus',
-        paymentNote: paymentNote || '',
-        qrisImage: qrisImage || '',
-        active: true
-      });
-
-      jsonResponse(res, 200, { success: true, message: 'Pengaturan disimpan!' });
 
     } else if (parsedUrl.pathname === '/api/redeems/active' && req.method === 'GET') {
       const allRedeems = await getAllRedeemsFromDb();
@@ -5191,14 +4167,18 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\\n╔══════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v4.0 - VIP SHOP EDITION           ║');
+  console.log('║  🚀 AM Premium Banggus v3.2 (Kuota Hemat)                ║');
   console.log('║  📡 http://localhost:' + PORT + '                                  ║');
-  console.log('║  💎 Fitur Baru:                                          ║');
-  console.log('║  🛒 Pembelian VIP dengan QRIS                            ║');
-  console.log('║  📸 Upload Bukti Pembayaran                              ║');
-  console.log('║  ✅ Konfirmasi Order oleh Admin                          ║');
-  console.log('║  ⚙️ Admin bisa atur paket VIP & QRIS                     ║');
-  console.log('║  📊 Status Order: Pending/Process/Success/Failed         ║');
-  console.log('║  🎁 Auto-activate VIP setelah konfirmasi admin           ║');
+  console.log('║  💾 Optimasi: Cache 30-60s, Lazy Load, Visibility API   ║');
+  console.log('║  📦 Chunked Upload Ready (>200MB)                        ║');
+  console.log('║  👥 User List Viewer + Delete Account                    ║');
+  console.log('║  📧 Gmail History + Reset Countdown                      ║');
+  console.log('║  💬 Global Chat (Polling 15s, hemat kuota)               ║');
+  console.log('║  🔐 Change Password + Create VIP Account                 ║');
+  console.log('║  ⭐ VIP Account Generator                                ║');
+  console.log('║  🎁 Redeem Code (Fixed Quota per User)                   ║');
+  console.log('║  ✅ Cek Kode Sudah Diklaim (Centang)                     ║');
+  console.log('║  💡 Request Fitur Baru (User → Admin)                    ║');
+  console.log('║  🛡️ Panel Admin Terpisah dari Profil                    ║');
   console.log('╚══════════════════════════════════════════════════════════╝\\n');
 });
