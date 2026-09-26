@@ -43,7 +43,13 @@ setInterval(() => {
       const fp = path.join(UPLOAD_DIR, f);
       try {
         const stat = fs.statSync(fp);
-        if (now - stat.mtimeMs > 3600000) fs.unlinkSync(fp);
+        if (now - stat.mtimeMs > 3600000) {
+          if (fs.statSync(fp).isDirectory()) {
+            fs.rmSync(fp, { recursive: true, force: true });
+          } else {
+            fs.unlinkSync(fp);
+          }
+        }
       } catch (e) {}
     });
   } catch (e) {}
@@ -128,7 +134,7 @@ async function removeVipAccountFromDb(id) {
   await set(ref(db, `vipAccounts/${id}`), null);
 }
 
-// ====== FEATURE REQUESTS HELPERS (NEW) ======
+// ====== FEATURE REQUESTS HELPERS ======
 async function getFeatureRequestsFromDb() {
   const snapshot = await get(child(ref(db), `featureRequests`));
   return snapshot.exists() ? snapshot.val() : {};
@@ -473,7 +479,6 @@ const htmlTemplate = `<!DOCTYPE html>
     letter-spacing: 0.05em;
   }
 
-  /* CHAT STYLES */
   .chat-container {
     display: flex; flex-direction: column;
     height: 420px;
@@ -562,7 +567,6 @@ const htmlTemplate = `<!DOCTYPE html>
     margin-top: 0.2rem;
   }
 
-  /* VIP ACCOUNT CARD */
   .vip-account-card {
     background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(168,85,247,0.06));
     border: 1px solid rgba(245,158,11,0.3);
@@ -587,7 +591,6 @@ const htmlTemplate = `<!DOCTYPE html>
     border-color: rgba(244,63,94,0.6);
   }
 
-  /* REDEEM CODE CARD (NEW) */
   .redeem-card {
     background: linear-gradient(135deg, rgba(6,182,212,0.08), rgba(168,85,247,0.06));
     border: 1px solid rgba(6,182,212,0.3);
@@ -596,7 +599,6 @@ const htmlTemplate = `<!DOCTYPE html>
     animation: slide-up 0.3s ease;
   }
 
-  /* FEATURE REQUEST CARD (NEW) */
   .feature-request-card {
     background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(6,182,212,0.06));
     border: 1px solid rgba(16,185,129,0.3);
@@ -764,7 +766,7 @@ const htmlTemplate = `<!DOCTYPE html>
     <div id="terminal-view" class="space-y-3 hidden">
 
       <div class="video-container">
-        <video id="main-display-video" src="" autoplay loop muted playsinline></video>
+        <video id="main-display-video" src="" autoplay loop muted playsinline preload="none"></video>
       </div>
 
       <div class="glass-panel py-2.5 px-3.5 flex items-center justify-between">
@@ -942,7 +944,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- VIEW: PROFILE (HANYA USER PROFILE, ADMIN DIPINDAH KE PANEL ADMIN) -->
+    <!-- VIEW: PROFILE -->
     <div id="section-profile" class="glass-panel space-y-4 hidden">
       <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
         <h2 class="section-title" style="margin: 0;">Akun & Profil</h2>
@@ -1083,7 +1085,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- VIEW: PANEL ADMIN (SEMUA FITUR ADMIN DIPINDAH KE SINI) -->
+    <!-- VIEW: PANEL ADMIN -->
     <div id="section-admin" class="glass-panel space-y-4 hidden">
       <div class="flex items-center justify-between pb-3 border-b border-amber-500/20">
         <h2 class="section-title" style="margin: 0; color: #fbbf24;">Panel Admin Master</h2>
@@ -1235,7 +1237,7 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- Generate Redeem Code (UPDATED) -->
+      <!-- Generate Redeem Code -->
       <div>
         <p class="section-title" style="color: #fbbf24;">Generate Redeem Code</p>
         <input type="text" id="gen-code" placeholder="NAMA-KODE" class="input-glow uppercase mono mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem; font-weight: 700;">
@@ -1383,7 +1385,57 @@ let unreadChatCount = 0;
 let lastChatMessageId = null;
 let currentView = 'generator';
 let userQuotaData = { usedQuota: 0, bonusQuota: 0, totalQuota: 1, nextResetTime: 0, lastResetTime: 0 };
-let claimedRedeemCodes = {}; // NEW: Track kode yang sudah diklaim user
+let claimedRedeemCodes = {};
+
+// ============ OPTIMASI KUOTA ============
+let isPageVisible = true;
+let statusPollInterval = null;
+let videoPollInterval = null;
+let lastStatusFetch = 0;
+let lastVideoFetch = 0;
+let lastChatFetch = 0;
+let lastEmailsFetch = 0;
+let lastRedeemsFetch = 0;
+let lastAnnouncementsFetch = 0;
+
+const CACHE_DURATION = {
+  status: 30000,      // 30 detik
+  video: 60000,       // 60 detik
+  chat: 15000,        // 15 detik
+  emails: 30000,      // 30 detik
+  redeems: 60000,     // 60 detik
+  announcements: 60000 // 60 detik
+};
+
+const memoryCache = {};
+
+function getCached(key) {
+  const entry = memoryCache[key];
+  if (!entry) return null;
+  if (Date.now() - entry.time > entry.duration) {
+    delete memoryCache[key];
+    return null;
+  }
+  return entry.data;
+}
+
+function setCache(key, data, duration) {
+  memoryCache[key] = { data, time: Date.now(), duration };
+}
+
+// Visibility API - hentikan polling saat tab tidak aktif
+document.addEventListener('visibilitychange', () => {
+  isPageVisible = !document.hidden;
+  if (isPageVisible) {
+    // Refresh data saat kembali aktif
+    if (currentView === 'generator') {
+      fetchServerStatus(true);
+    }
+    if (currentView === 'chat') {
+      loadGlobalChat(true);
+    }
+  }
+});
 
 // ============ TOAST ============
 function showToast(message, type = 'info', duration = 3000) {
@@ -1435,7 +1487,7 @@ function switchView(viewName) {
   }
   else if (viewName === 'chat') {
     document.getElementById('section-chat').classList.remove('hidden');
-    loadGlobalChat();
+    loadGlobalChat(true);
     unreadChatCount = 0;
     updateChatBadge();
   }
@@ -1451,26 +1503,46 @@ function switchView(viewName) {
   }
 }
 
-// ============ STATUS & VIDEO ============
-async function fetchServerStatus() {
+// ============ STATUS & VIDEO (OPTIMIZED) ============
+async function fetchServerStatus(force = false) {
+  if (!isPageVisible && !force) return;
+  const now = Date.now();
+  if (!force && now - lastStatusFetch < CACHE_DURATION.status) {
+    const cached = getCached('serverStatus');
+    if (cached) { updateStatusUI(cached); return; }
+  }
   try {
     const res = await fetch('/api/status');
     const data = await res.json();
     updateStatusUI(data.status);
+    lastStatusFetch = now;
+    setCache('serverStatus', data.status, CACHE_DURATION.status);
   } catch(e) {}
 }
-async function fetchFeaturedVideo() {
+
+async function fetchFeaturedVideo(force = false) {
+  if (!isPageVisible && !force) return;
+  const now = Date.now();
+  if (!force && now - lastVideoFetch < CACHE_DURATION.video) {
+    const cached = getCached('featuredVideo');
+    if (cached) {
+      const v = document.getElementById('main-display-video');
+      if (v && v.src !== cached) v.src = cached;
+      return;
+    }
+  }
   try {
     const res = await fetch('/api/video');
     const data = await res.json();
     if (data.success && data.videoUrl) {
       const v = document.getElementById('main-display-video');
-      if (v && v.src !== data.videoUrl) {
-        v.src = data.videoUrl;
-      }
+      if (v && v.src !== data.videoUrl) v.src = data.videoUrl;
+      lastVideoFetch = now;
+      setCache('featuredVideo', data.videoUrl, CACHE_DURATION.video);
     }
   } catch(e) {}
 }
+
 function updateStatusUI(status) {
   const ind = document.getElementById('server-status-indicator');
   const dot = document.getElementById('server-dot');
@@ -1490,10 +1562,26 @@ function updateStatusUI(status) {
   }
 }
 
+// Polling lambat (30 detik) dan hanya saat tab aktif
+function startPolling() {
+  if (statusPollInterval) clearInterval(statusPollInterval);
+  statusPollInterval = setInterval(() => {
+    if (isPageVisible) {
+      fetchServerStatus();
+    }
+  }, CACHE_DURATION.status);
+
+  if (videoPollInterval) clearInterval(videoPollInterval);
+  videoPollInterval = setInterval(() => {
+    if (isPageVisible) {
+      fetchFeaturedVideo();
+    }
+  }, CACHE_DURATION.video);
+}
+
 fetchServerStatus();
 fetchFeaturedVideo();
-setInterval(fetchServerStatus, 5000);
-setInterval(fetchFeaturedVideo, 15000);
+startPolling();
 
 // ============ AUTH ============
 function switchAuthTab(mode) {
@@ -1583,17 +1671,19 @@ function applySession(data) {
   loadVerifiedEmails();
   loadActiveRedeems();
   updateStatusUI(data.serverStatus);
-  fetchFeaturedVideo();
+  fetchFeaturedVideo(true);
 
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   loadGlobalChat();
+  // Chat polling lebih lambat (15 detik) dan hanya saat tab aktif
   chatRefreshInterval = setInterval(() => {
+    if (!isPageVisible) return;
     if (currentView !== 'chat') {
       checkNewChatMessages();
     } else {
       loadGlobalChat();
     }
-  }, 5000);
+  }, CACHE_DURATION.chat);
 
   const roleBadge = document.getElementById('role-badge');
   if (data.isAdmin) {
@@ -1625,7 +1715,7 @@ async function checkSavedSession() {
 }
 checkSavedSession();
 
-// ============ KLAIM REDEEM (DI GENERATOR) - UPDATED ============
+// ============ KLAIM REDEEM ============
 async function handleRedeemCodeMain() {
   const code = document.getElementById('redeem-code-input-main').value.trim().toUpperCase();
   if (!code) return showToast('Masukkan kode!', 'error');
@@ -1640,15 +1730,19 @@ async function handleRedeemCodeMain() {
       showToast(data.message, 'success');
       document.getElementById('redeem-code-input-main').value = '';
       updateQuotaDisplay(data);
-      loadVerifiedEmails();
-      loadActiveRedeems();
+      loadVerifiedEmails(true);
+      loadActiveRedeems(true);
     } else showToast(data.message, 'error');
   } catch(e) { showToast('Gagal redeem', 'error'); }
 }
 
-async function loadActiveRedeems() {
+async function loadActiveRedeems(force = false) {
+  const now = Date.now();
+  if (!force && now - lastRedeemsFetch < CACHE_DURATION.redeems) {
+    const cached = getCached('activeRedeems');
+    if (cached) { renderActiveRedeems(cached); return; }
+  }
   try {
-    // Fetch kode aktif dan juga kode yang sudah diklaim user
     const [resActive, resClaimed] = await Promise.all([
       fetch('/api/redeems/active'),
       loggedInUsername ? fetch('/api/redeems/claimed?username=' + encodeURIComponent(loggedInUsername)) : Promise.resolve({ json: () => ({ claimedCodes: [] }) })
@@ -1657,43 +1751,48 @@ async function loadActiveRedeems() {
     const dataActive = await resActive.json();
     const dataClaimed = await resClaimed.json();
     claimedRedeemCodes = dataClaimed.claimedCodes || {};
-
-    const container = document.getElementById('active-redeem-list');
-    if (!container) return;
-
-    if (dataActive.success && Object.keys(dataActive.redeems).length > 0) {
-      container.innerHTML = Object.entries(dataActive.redeems).map(([code, val]) => {
-        const remainingClaims = val.maxClaims - val.claimedCount;
-        const quotaPerUser = val.quotaPerUser || 1;
-        const hasClaimed = claimedRedeemCodes[code] === true;
-        
-        if (remainingClaims <= 0) return '';
-        
-        // Tombol klaim atau centang jika sudah pernah klaim
-        const buttonHtml = hasClaimed 
-          ? '<span class="px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1" style="background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);">' +
-              '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' +
-              'Sudah</span>'
-          : '<button onclick="quickClaimRedeem(\\'' + escapeHtml(code) + '\\')" class="px-2 py-1 rounded text-[10px] font-bold" style="background: rgba(6,182,212,0.2); color: #67e8f9; border: 1px solid rgba(6,182,212,0.4);">Klaim</button>';
-        
-        return '<div class="redeem-card">' +
-          '<div class="flex justify-between items-start mb-1.5">' +
-            '<div class="flex-1 min-w-0">' +
-              '<p class="text-xs font-bold text-cyan-300 mono">' + escapeHtml(code) + '</p>' +
-              '<p class="text-[10px] text-slate-400">Kuota: ' + quotaPerUser + ' per user | Sisa klaim: ' + remainingClaims + '/' + val.maxClaims + '</p>' +
-            '</div>' +
-            buttonHtml +
-          '</div>' +
-          '<div class="progress-bar" style="height: 4px;">' +
-            '<div class="progress-fill" style="width: ' + Math.round((val.claimedCount / val.maxClaims) * 100) + '%; background: linear-gradient(90deg, #06b6d4, #a855f7);"></div>' +
-          '</div>' +
-        '</div>';
-      }).filter(Boolean).join('') || '<p class="text-slate-500 italic text-xs text-center py-2">Tidak ada kode aktif</p>';
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Tidak ada kode redeem aktif</p>';
-    }
+    lastRedeemsFetch = now;
+    setCache('activeRedeems', { dataActive, claimedRedeemCodes }, CACHE_DURATION.redeems);
+    renderActiveRedeems({ dataActive, claimedRedeemCodes });
   } catch(e) {
     console.error('Failed to load redeems:', e);
+  }
+}
+
+function renderActiveRedeems(payload) {
+  const { dataActive, claimedRedeemCodes } = payload;
+  const container = document.getElementById('active-redeem-list');
+  if (!container) return;
+
+  if (dataActive.success && Object.keys(dataActive.redeems).length > 0) {
+    container.innerHTML = Object.entries(dataActive.redeems).map(([code, val]) => {
+      const remainingClaims = val.maxClaims - val.claimedCount;
+      const quotaPerUser = val.quotaPerUser || 1;
+      const hasClaimed = claimedRedeemCodes[code] === true;
+      
+      if (remainingClaims <= 0) return '';
+      
+      const buttonHtml = hasClaimed 
+        ? '<span class="px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1" style="background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' +
+            'Sudah</span>'
+        : '<button onclick="quickClaimRedeem(\\'' + escapeHtml(code) + '\\')" class="px-2 py-1 rounded text-[10px] font-bold" style="background: rgba(6,182,212,0.2); color: #67e8f9; border: 1px solid rgba(6,182,212,0.4);">Klaim</button>';
+      
+      return '<div class="redeem-card">' +
+        '<div class="flex justify-between items-start mb-1.5">' +
+          '<div class="flex-1 min-w-0">' +
+            '<p class="text-xs font-bold text-cyan-300 mono">' + escapeHtml(code) + '</p>' +
+            '<p class="text-[10px] text-slate-400">Kuota: ' + quotaPerUser + ' per user | Sisa klaim: ' + remainingClaims + '/' + val.maxClaims + '</p>' +
+          '</div>' +
+          buttonHtml +
+        '</div>' +
+        '<div class="progress-bar" style="height: 4px;">' +
+          '<div class="progress-fill" style="width: ' + Math.round((val.claimedCount / val.maxClaims) * 100) + '%; background: linear-gradient(90deg, #06b6d4, #a855f7);"></div>' +
+        '</div>' +
+      '</div>';
+    }).filter(Boolean).join('') || '<p class="text-slate-500 italic text-xs text-center py-2">Tidak ada kode aktif</p>';
+  } else {
+    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Tidak ada kode redeem aktif</p>';
   }
 }
 
@@ -1911,9 +2010,14 @@ async function triggerUpdateUsername() {
   }
 }
 
-// ============ RIWAYAT GMAIL & COUNTDOWN RESET ============
-async function loadVerifiedEmails() {
+// ============ RIWAYAT GMAIL & COUNTDOWN RESET (OPTIMIZED) ============
+async function loadVerifiedEmails(force = false) {
   if (!loggedInUsername) return;
+  const now = Date.now();
+  if (!force && now - lastEmailsFetch < CACHE_DURATION.emails) {
+    const cached = getCached('verifiedEmails');
+    if (cached) { renderVerifiedEmails(cached); return; }
+  }
   const container = document.getElementById('verified-emails-list');
   if (!container) return;
   container.innerHTML = '<p class="text-slate-500 italic text-center py-2 text-xs animate-pulse">⏳ Memuat riwayat...</p>';
@@ -1927,55 +2031,63 @@ async function loadVerifiedEmails() {
       return;
     }
 
-    updateQuotaStatusCard(data);
-    handleCountdown(data);
-
-    const emails = data.activatedEmails || [];
-    if (emails.length === 0) {
-      container.innerHTML = 
-        '<div class="p-3 rounded-xl text-center" style="background: rgba(148,163,184,0.05); border: 1px dashed rgba(148,163,184,0.2);">' +
-          '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.5" style="margin: 0 auto 0.5rem; display: block;">' +
-            '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>' +
-          '</svg>' +
-          '<p class="text-xs text-slate-400 font-semibold">Belum ada Gmail terverifikasi</p>' +
-          '<p class="text-[10px] text-slate-500 mt-0.5">Gmail yang berhasil diverifikasi akan muncul di sini</p>' +
-        '</div>';
-      return;
-    }
-
-    container.innerHTML = emails.map((email, idx) => {
-      const isLatest = idx === emails.length - 1;
-      const safeEmail = email.replace(/'/g, "\\\\'");
-      return '<div class="p-2.5 rounded-xl animate-slide-up flex items-center justify-between gap-2" ' +
-        'style="background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.22);">' +
-        '<div class="flex items-center gap-2.5 min-w-0 flex-1">' +
-          '<div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background: rgba(6,182,212,0.15);">' +
-            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#67e8f9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
-              '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>' +
-            '</svg>' +
-          '</div>' +
-          '<div class="min-w-0 flex-1">' +
-            '<p class="text-xs font-bold text-white truncate mono">' + escapeHtml(email) + '</p>' +
-            '<div class="flex items-center gap-1.5 mt-0.5">' +
-              '<span class="text-[9px] text-emerald-400 font-bold flex items-center gap-1">' +
-                '<span class="w-1 h-1 rounded-full bg-emerald-400"></span> Terverifikasi' +
-              '</span>' +
-              (isLatest ? '<span class="text-[9px] text-amber-300 font-bold">• Terbaru</span>' : '') +
-            '</div>' +
-          '</div>' +
-        '</div>' +
-        '<button onclick="copyEmail(\\'' + safeEmail + '\\')" class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" ' +
-        'style="background: rgba(168,85,247,0.15); border: 1px solid rgba(168,85,247,0.25);" title="Copy email">' +
-          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="2.5">' +
-            '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>' +
-          '</svg>' +
-        '</button>' +
-      '</div>';
-    }).join('');
-
+    lastEmailsFetch = now;
+    setCache('verifiedEmails', data, CACHE_DURATION.emails);
+    renderVerifiedEmails(data);
   } catch (e) {
     container.innerHTML = '<p class="text-rose-400 italic text-center py-2 text-xs">Kesalahan koneksi</p>';
   }
+}
+
+function renderVerifiedEmails(data) {
+  const container = document.getElementById('verified-emails-list');
+  if (!container) return;
+
+  updateQuotaStatusCard(data);
+  handleCountdown(data);
+
+  const emails = data.activatedEmails || [];
+  if (emails.length === 0) {
+    container.innerHTML = 
+      '<div class="p-3 rounded-xl text-center" style="background: rgba(148,163,184,0.05); border: 1px dashed rgba(148,163,184,0.2);">' +
+        '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.5" style="margin: 0 auto 0.5rem; display: block;">' +
+          '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>' +
+        '</svg>' +
+        '<p class="text-xs text-slate-400 font-semibold">Belum ada Gmail terverifikasi</p>' +
+        '<p class="text-[10px] text-slate-500 mt-0.5">Gmail yang berhasil diverifikasi akan muncul di sini</p>' +
+      '</div>';
+    return;
+  }
+
+  container.innerHTML = emails.map((email, idx) => {
+    const isLatest = idx === emails.length - 1;
+    const safeEmail = email.replace(/'/g, "\\\\'");
+    return '<div class="p-2.5 rounded-xl animate-slide-up flex items-center justify-between gap-2" ' +
+      'style="background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.22);">' +
+      '<div class="flex items-center gap-2.5 min-w-0 flex-1">' +
+        '<div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background: rgba(6,182,212,0.15);">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#67e8f9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>' +
+          '</svg>' +
+        '</div>' +
+        '<div class="min-w-0 flex-1">' +
+          '<p class="text-xs font-bold text-white truncate mono">' + escapeHtml(email) + '</p>' +
+          '<div class="flex items-center gap-1.5 mt-0.5">' +
+            '<span class="text-[9px] text-emerald-400 font-bold flex items-center gap-1">' +
+              '<span class="w-1 h-1 rounded-full bg-emerald-400"></span> Terverifikasi' +
+            '</span>' +
+            (isLatest ? '<span class="text-[9px] text-amber-300 font-bold">• Terbaru</span>' : '') +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<button onclick="copyEmail(\\'' + safeEmail + '\\')" class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" ' +
+      'style="background: rgba(168,85,247,0.15); border: 1px solid rgba(168,85,247,0.25);" title="Copy email">' +
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="2.5">' +
+          '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>' +
+        '</svg>' +
+      '</button>' +
+    '</div>';
+  }).join('');
 }
 
 function updateQuotaStatusCard(data) {
@@ -2053,6 +2165,7 @@ function handleCountdown(data) {
   const totalDuration = data.nextResetTime - data.lastResetTime;
 
   function tick() {
+    if (!isPageVisible) return; // Skip update saat tab tidak aktif
     const now = Date.now();
     const msLeft = userQuotaData.nextResetTime - now;
 
@@ -2065,7 +2178,7 @@ function handleCountdown(data) {
       });
       showToast('🎉 Kuota Anda telah direset! Silakan verifikasi Gmail baru.', 'success', 5000);
       setTimeout(() => {
-        loadVerifiedEmails();
+        loadVerifiedEmails(true);
         checkSavedSession();
       }, 2000);
       return;
@@ -2125,6 +2238,7 @@ function updateResetTimerDisplay(data) {
   if (globalCountdownInterval) clearInterval(globalCountdownInterval);
 
   function updateStatCard() {
+    if (!isPageVisible) return;
     const now = Date.now();
     const msLeft = data.nextResetTime - now;
     if (msLeft <= 0) {
@@ -2284,7 +2398,7 @@ async function handleUploadVideo() {
     selectedVideoFile = null;
     document.getElementById('admin-video-file').value = '';
     document.getElementById('file-info').classList.add('hidden');
-    fetchFeaturedVideo();
+    fetchFeaturedVideo(true);
 
     setTimeout(() => {
       progressContainer.classList.add('hidden');
@@ -2340,6 +2454,7 @@ async function changeServerState(newState) {
     const data = await res.json();
     if (data.success) {
       updateStatusUI(newState);
+      setCache('serverStatus', newState, CACHE_DURATION.status);
       showToast('Server: ' + newState.toUpperCase(), 'success');
     }
   } catch(e) { showToast('Gagal ubah status', 'error'); }
@@ -2513,7 +2628,7 @@ async function deleteVipAccount(vipUsername) {
   }
 }
 
-// ============ CEK USER TERDAFTAR (ADMIN ONLY) ============
+// ============ CEK USER TERDAFTAR ============
 async function loadAllUsers() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
   const container = document.getElementById('all-users-list');
@@ -2717,7 +2832,7 @@ function copyUsername(username) {
   });
 }
 
-// ============ GLOBAL CHAT ============
+// ============ GLOBAL CHAT (OPTIMIZED) ============
 function updateChatBadge() {
   const badge = document.getElementById('chat-unread-badge');
   if (unreadChatCount > 0) {
@@ -2729,7 +2844,9 @@ function updateChatBadge() {
 }
 
 async function checkNewChatMessages() {
-  if (!loggedInUsername) return;
+  if (!loggedInUsername || !isPageVisible) return;
+  const now = Date.now();
+  if (now - lastChatFetch < CACHE_DURATION.chat) return;
   try {
     const res = await fetch('/api/chat/messages');
     const data = await res.json();
@@ -2742,81 +2859,94 @@ async function checkNewChatMessages() {
           updateChatBadge();
         }
         lastChatMessageId = latestId;
+        lastChatFetch = now;
       }
     }
   } catch(e) {}
 }
 
-async function loadGlobalChat() {
-  if (!loggedInUsername) return;
+async function loadGlobalChat(force = false) {
+  if (!loggedInUsername || !isPageVisible) return;
+  const now = Date.now();
+  if (!force && now - lastChatFetch < CACHE_DURATION.chat) {
+    const cached = getCached('globalChat');
+    if (cached) { renderGlobalChat(cached); return; }
+  }
   const container = document.getElementById('chat-messages');
   
   try {
     const res = await fetch('/api/chat/messages');
     const data = await res.json();
-    
-    if (!data.success || !data.messages) {
-      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada pesan</p>';
-      return;
-    }
-
-    const entries = Object.entries(data.messages).sort((a,b) => a[1].timestamp - b[1].timestamp);
-    
-    if (entries.length === 0) {
-      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada pesan. Jadilah yang pertama!</p>';
-      return;
-    }
-
-    if (entries.length > 0) {
-      lastChatMessageId = entries[entries.length - 1][0];
-    }
-
-    const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 60;
-
-    container.innerHTML = entries.map(([id, msg]) => {
-      const isMe = msg.username === loggedInUsername;
-      const isAdmin = msg.isAdmin;
-      const isVip = msg.isVip;
-      
-      let bubbleClass = isMe ? 'chat-bubble-me' : 'chat-bubble-other';
-      if (isAdmin) bubbleClass += ' chat-bubble-admin';
-      else if (isVip) bubbleClass += ' chat-bubble-vip';
-
-      let roleIcon = '';
-      if (isAdmin) roleIcon = '👑 ';
-      else if (isVip) roleIcon = '⭐ ';
-      else roleIcon = '👤 ';
-
-      const time = new Date(msg.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-      const date = new Date(msg.timestamp).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
-      const isToday = new Date(msg.timestamp).toDateString() === new Date().toDateString();
-      const timeStr = isToday ? time : date + ' ' + time;
-
-      const deleteBtn = isAdminUser ? 
-        '<button onclick="deleteChatMessage(\\'' + id + '\\')" class="text-[9px] opacity-50 hover:opacity-100 ml-1" title="Hapus">🗑</button>' : '';
-
-      return '<div class="chat-bubble ' + bubbleClass + '">' +
-        '<div class="chat-meta">' +
-          roleIcon + '<span>' + escapeHtml(msg.username) + '</span>' +
-          (isAdmin ? '<span class="text-amber-300">ADMIN</span>' : '') +
-          (isVip && !isAdmin ? '<span class="text-purple-300">VIP</span>' : '') +
-          deleteBtn +
-        '</div>' +
-        '<div>' + escapeHtml(msg.message) + '</div>' +
-        '<div class="chat-timestamp">' + timeStr + '</div>' +
-      '</div>';
-    }).join('');
-
-    if (wasAtBottom || container.scrollTop === 0) {
-      container.scrollTop = container.scrollHeight;
-    }
-
-    const uniqueUsers = new Set(entries.slice(-50).map(e => e[1].username)).size;
-    document.getElementById('chat-online-count').innerText = '👥 ' + uniqueUsers + ' user aktif';
-
+    lastChatFetch = now;
+    setCache('globalChat', data, CACHE_DURATION.chat);
+    renderGlobalChat(data);
   } catch(e) {
     container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-3">Gagal memuat chat</p>';
   }
+}
+
+function renderGlobalChat(data) {
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+
+  if (!data.success || !data.messages) {
+    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada pesan</p>';
+    return;
+  }
+
+  const entries = Object.entries(data.messages).sort((a,b) => a[1].timestamp - b[1].timestamp);
+  
+  if (entries.length === 0) {
+    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada pesan. Jadilah yang pertama!</p>';
+    return;
+  }
+
+  if (entries.length > 0) {
+    lastChatMessageId = entries[entries.length - 1][0];
+  }
+
+  const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 60;
+
+  container.innerHTML = entries.map(([id, msg]) => {
+    const isMe = msg.username === loggedInUsername;
+    const isAdmin = msg.isAdmin;
+    const isVip = msg.isVip;
+    
+    let bubbleClass = isMe ? 'chat-bubble-me' : 'chat-bubble-other';
+    if (isAdmin) bubbleClass += ' chat-bubble-admin';
+    else if (isVip) bubbleClass += ' chat-bubble-vip';
+
+    let roleIcon = '';
+    if (isAdmin) roleIcon = '👑 ';
+    else if (isVip) roleIcon = '⭐ ';
+    else roleIcon = '👤 ';
+
+    const time = new Date(msg.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    const date = new Date(msg.timestamp).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+    const isToday = new Date(msg.timestamp).toDateString() === new Date().toDateString();
+    const timeStr = isToday ? time : date + ' ' + time;
+
+    const deleteBtn = isAdminUser ? 
+      '<button onclick="deleteChatMessage(\\'' + id + '\\')" class="text-[9px] opacity-50 hover:opacity-100 ml-1" title="Hapus">🗑</button>' : '';
+
+    return '<div class="chat-bubble ' + bubbleClass + '">' +
+      '<div class="chat-meta">' +
+        roleIcon + '<span>' + escapeHtml(msg.username) + '</span>' +
+        (isAdmin ? '<span class="text-amber-300">ADMIN</span>' : '') +
+        (isVip && !isAdmin ? '<span class="text-purple-300">VIP</span>' : '') +
+        deleteBtn +
+      '</div>' +
+      '<div>' + escapeHtml(msg.message) + '</div>' +
+      '<div class="chat-timestamp">' + timeStr + '</div>' +
+    '</div>';
+  }).join('');
+
+  if (wasAtBottom || container.scrollTop === 0) {
+    container.scrollTop = container.scrollHeight;
+  }
+
+  const uniqueUsers = new Set(entries.slice(-50).map(e => e[1].username)).size;
+  document.getElementById('chat-online-count').innerText = '👥 ' + uniqueUsers + ' user aktif';
 }
 
 async function sendChatMessage() {
@@ -2835,7 +2965,8 @@ async function sendChatMessage() {
     });
     const data = await res.json();
     if (data.success) {
-      await loadGlobalChat();
+      lastChatFetch = 0;
+      await loadGlobalChat(true);
     } else {
       showToast(data.message || 'Gagal kirim pesan', 'error');
       input.value = message;
@@ -2858,32 +2989,45 @@ async function deleteChatMessage(messageId) {
     const data = await res.json();
     if (data.success) {
       showToast('Pesan dihapus', 'success');
-      loadGlobalChat();
+      lastChatFetch = 0;
+      loadGlobalChat(true);
     }
   } catch(e) {}
 }
 
-// ============ ANNOUNCEMENTS ============
-async function loadUserAnnouncements() {
+// ============ ANNOUNCEMENTS (OPTIMIZED) ============
+async function loadUserAnnouncements(force = false) {
+  const now = Date.now();
+  if (!force && now - lastAnnouncementsFetch < CACHE_DURATION.announcements) {
+    const cached = getCached('userAnnouncements');
+    if (cached) { renderUserAnnouncements(cached); return; }
+  }
   try {
     const res = await fetch('/api/announcements');
     const data = await res.json();
-    const container = document.getElementById('user-announcement-container');
-    if (data.success && Object.keys(data.announcements).length > 0) {
-      const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
-      container.innerHTML = entries.map(([id, val]) => 
-        '<div class="p-3 rounded-xl animate-slide-up" style="background: rgba(168,85,247,0.06); border: 1px solid rgba(168,85,247,0.18);">' +
-          '<div class="flex justify-between items-start mb-1.5">' +
-            '<span class="text-cyan-300 font-bold text-xs">' + escapeHtml(val.title) + '</span>' +
-            '<span class="text-[9px] text-slate-500 mono">' + new Date(val.timestamp).toLocaleDateString('id-ID') + '</span>' +
-          '</div>' +
-          '<p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">' + escapeHtml(val.content) + '</p>' +
-        '</div>'
-      ).join('');
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada informasi</p>';
-    }
+    lastAnnouncementsFetch = now;
+    setCache('userAnnouncements', data, CACHE_DURATION.announcements);
+    renderUserAnnouncements(data);
   } catch(e) {}
+}
+
+function renderUserAnnouncements(data) {
+  const container = document.getElementById('user-announcement-container');
+  if (!container) return;
+  if (data.success && Object.keys(data.announcements).length > 0) {
+    const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
+    container.innerHTML = entries.map(([id, val]) => 
+      '<div class="p-3 rounded-xl animate-slide-up" style="background: rgba(168,85,247,0.06); border: 1px solid rgba(168,85,247,0.18);">' +
+        '<div class="flex justify-between items-start mb-1.5">' +
+          '<span class="text-cyan-300 font-bold text-xs">' + escapeHtml(val.title) + '</span>' +
+          '<span class="text-[9px] text-slate-500 mono">' + new Date(val.timestamp).toLocaleDateString('id-ID') + '</span>' +
+        '</div>' +
+        '<p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">' + escapeHtml(val.content) + '</p>' +
+      '</div>'
+    ).join('');
+  } else {
+    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada informasi</p>';
+  }
 }
 
 async function loadAdminAnnouncements() {
@@ -2927,7 +3071,8 @@ async function handleSaveAnnouncement() {
       showToast(data.message, 'success');
       resetInfoForm();
       loadAdminAnnouncements();
-      loadUserAnnouncements();
+      lastAnnouncementsFetch = 0;
+      loadUserAnnouncements(true);
     } else showToast(data.message, 'error');
   } catch(e) { showToast('Gagal simpan', 'error'); }
 }
@@ -2960,12 +3105,13 @@ async function deleteAnnouncement(id) {
     if (data.success) {
       showToast('Info dihapus', 'success');
       loadAdminAnnouncements();
-      loadUserAnnouncements();
+      lastAnnouncementsFetch = 0;
+      loadUserAnnouncements(true);
     }
   } catch(e) {}
 }
 
-// ============ REDEEM (ADMIN) - UPDATED ============
+// ============ REDEEM (ADMIN) ============
 async function handleCreateRedeem() {
   if (!isAdminUser) return;
   const code = document.getElementById('gen-code').value.trim().toUpperCase();
@@ -2995,7 +3141,8 @@ async function handleCreateRedeem() {
       document.getElementById('gen-quota-per-user').value = '';
       document.getElementById('gen-max-claims').value = '';
       loadAdminRedeems();
-      loadActiveRedeems();
+      lastRedeemsFetch = 0;
+      loadActiveRedeems(true);
     } else showToast(data.message, 'error');
   } catch(e) {}
 }
@@ -3029,7 +3176,7 @@ async function handleDeleteRedeem(code) {
       body: JSON.stringify({ username: loggedInUsername, code })
     });
     const data = await res.json();
-    if (data.success) { showToast('Kode dihapus', 'success'); loadAdminRedeems(); loadActiveRedeems(); }
+    if (data.success) { showToast('Kode dihapus', 'success'); loadAdminRedeems(); lastRedeemsFetch = 0; loadActiveRedeems(true); }
   } catch(e) {}
 }
 
@@ -3058,13 +3205,13 @@ async function handleSendEmail() {
       resultText.innerText = currentResultText;
       showToast('Magic link terkirim!', 'success');
       if (!isAdminUser && data.quotaInfo) updateQuotaDisplay(data.quotaInfo);
-      loadVerifiedEmails();
+      loadVerifiedEmails(true);
     } else {
       sendText.innerText = 'Kirim Magic Link';
       currentResultText = 'Error: ' + data.message;
       resultText.innerText = currentResultText;
       showToast(data.message, 'error');
-      loadVerifiedEmails();
+      loadVerifiedEmails(true);
     }
   } catch (err) {
     sendText.innerText = 'Kirim Magic Link';
@@ -3117,6 +3264,8 @@ function handleLogout() {
   if (quotaCountdownInterval) clearInterval(quotaCountdownInterval);
   if (globalCountdownInterval) clearInterval(globalCountdownInterval);
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
+  if (statusPollInterval) clearInterval(statusPollInterval);
+  if (videoPollInterval) clearInterval(videoPollInterval);
   localStorage.removeItem('authToken');
   localStorage.removeItem('savedUsername');
   sessionStorage.clear();
@@ -3141,8 +3290,13 @@ document.addEventListener('keydown', (e) => {
 const PORT = 3001;
 
 function jsonResponse(res, code, data) {
-  res.writeHead(code, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(data));
+  const body = JSON.stringify(data);
+  res.writeHead(code, {
+    'Content-Type': 'application/json',
+    'Content-Length': Buffer.byteLength(body),
+    'Cache-Control': 'no-store'
+  });
+  res.end(body);
 }
 
 function readBody(req) {
@@ -3169,7 +3323,11 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (parsedUrl.pathname === '/' && req.method === 'GET') {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'public, max-age=300',
+        'Content-Length': Buffer.byteLength(htmlTemplate)
+      });
       res.end(htmlTemplate);
 
     } else if (parsedUrl.pathname === '/api/status') {
@@ -3183,7 +3341,6 @@ const server = http.createServer(async (req, res) => {
       const announcements = await getAllAnnouncementsFromDb();
       jsonResponse(res, 200, { success: true, announcements });
 
-    // ===== ACTIVE REDEEMS (UPDATED - QUOTA PER USER) =====
     } else if (parsedUrl.pathname === '/api/redeems/active' && req.method === 'GET') {
       const allRedeems = await getAllRedeemsFromDb();
       const activeRedeems = {};
@@ -3201,7 +3358,6 @@ const server = http.createServer(async (req, res) => {
       
       jsonResponse(res, 200, { success: true, redeems: activeRedeems });
 
-    // ===== CLAIMED CODES CHECK (NEW) =====
     } else if (parsedUrl.pathname === '/api/redeems/claimed' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 200, { success: true, claimedCodes: {} });
@@ -3218,7 +3374,6 @@ const server = http.createServer(async (req, res) => {
       
       jsonResponse(res, 200, { success: true, claimedCodes });
 
-    // ===== FEATURE REQUESTS (NEW) =====
     } else if (parsedUrl.pathname === '/api/feature-request/submit' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, title, description } = JSON.parse(body);
@@ -3309,7 +3464,6 @@ const server = http.createServer(async (req, res) => {
       await removeFeatureRequestFromDb(requestId);
       jsonResponse(res, 200, { success: true, message: 'Request dihapus!' });
 
-    // ===== USER EMAILS + RESET TIME =====
     } else if (parsedUrl.pathname === '/api/user/my-emails') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
@@ -3355,7 +3509,6 @@ const server = http.createServer(async (req, res) => {
         resetJustNow: false
       });
 
-    // ===== GANTI PASSWORD =====
     } else if (parsedUrl.pathname === '/api/user/change-password' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, oldPassword, newPassword } = JSON.parse(body);
@@ -3382,7 +3535,6 @@ const server = http.createServer(async (req, res) => {
       
       jsonResponse(res, 200, { success: true, message: 'Password berhasil diubah!' });
 
-    // ===== GLOBAL CHAT ENDPOINTS =====
     } else if (parsedUrl.pathname === '/api/chat/messages' && req.method === 'GET') {
       const messages = await getGlobalChatFromDb();
       
@@ -3443,7 +3595,6 @@ const server = http.createServer(async (req, res) => {
       await deleteGlobalChatMessageFromDb(messageId);
       jsonResponse(res, 200, { success: true, message: 'Pesan dihapus' });
 
-    // ===== CREATE VIP ACCOUNT =====
     } else if (parsedUrl.pathname === '/api/admin/create-vip-account' && req.method === 'POST') {
       const body = await readBody(req);
       const { adminUsername, vipUsername, vipPassword, vipDays } = JSON.parse(body);
@@ -3544,7 +3695,6 @@ const server = http.createServer(async (req, res) => {
 
       jsonResponse(res, 200, { success: true, message: 'Akun VIP dihapus!' });
 
-    // ===== DELETE USER ACCOUNT =====
     } else if (parsedUrl.pathname === '/api/admin/delete-user' && req.method === 'POST') {
       const body = await readBody(req);
       const { adminUsername, targetUsername } = JSON.parse(body);
@@ -3584,7 +3734,6 @@ const server = http.createServer(async (req, res) => {
         deletedUser: cleanTarget
       });
 
-    // ===== CHUNKED UPLOAD ENDPOINTS =====
     } else if (parsedUrl.pathname === '/api/admin/upload-init' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, uploadId, filename, totalChunks, fileSize, fileType } = JSON.parse(body);
@@ -3644,7 +3793,6 @@ const server = http.createServer(async (req, res) => {
 
       jsonResponse(res, 200, { success: true, message: 'Video tersimpan', size: fullBuffer.length });
 
-    // ===== GET ALL USERS (ADMIN ONLY) =====
     } else if (parsedUrl.pathname === '/api/admin/get-all-users') {
       const username = parsedUrl.searchParams.get('username');
       const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
@@ -3697,7 +3845,6 @@ const server = http.createServer(async (req, res) => {
 
       jsonResponse(res, 200, { success: true, users: userList, stats });
 
-    // ===== OTHER ADMIN ENDPOINTS =====
     } else if (parsedUrl.pathname === '/api/user/username' && req.method === 'PUT') {
       const body = await readBody(req);
       const { currentUsername, newUsername } = JSON.parse(body);
@@ -3792,7 +3939,6 @@ const server = http.createServer(async (req, res) => {
       await removeAnnouncementFromDb(id);
       jsonResponse(res, 200, { success: true });
 
-    // ===== CREATE REDEEM (UPDATED) =====
     } else if (parsedUrl.pathname === '/api/admin/create-redeem' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, code, quotaPerUser, maxClaims } = JSON.parse(body);
@@ -3836,7 +3982,6 @@ const server = http.createServer(async (req, res) => {
       await removeRedeemFromDb(code);
       jsonResponse(res, 200, { success: true });
 
-    // ===== REDEEM CLAIM (UPDATED) =====
     } else if (parsedUrl.pathname === '/api/redeem' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, code } = JSON.parse(body);
@@ -4022,12 +4167,13 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\\n╔══════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v3.1                              ║');
+  console.log('║  🚀 AM Premium Banggus v3.2 (Kuota Hemat)                ║');
   console.log('║  📡 http://localhost:' + PORT + '                                  ║');
+  console.log('║  💾 Optimasi: Cache 30-60s, Lazy Load, Visibility API   ║');
   console.log('║  📦 Chunked Upload Ready (>200MB)                        ║');
   console.log('║  👥 User List Viewer + Delete Account                    ║');
   console.log('║  📧 Gmail History + Reset Countdown                      ║');
-  console.log('║  💬 Global Chat (Real-time)                              ║');
+  console.log('║  💬 Global Chat (Polling 15s, hemat kuota)               ║');
   console.log('║  🔐 Change Password + Create VIP Account                 ║');
   console.log('║  ⭐ VIP Account Generator                                ║');
   console.log('║  🎁 Redeem Code (Fixed Quota per User)                   ║');
