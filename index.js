@@ -7,8 +7,8 @@ const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, get, set, child } = require('firebase/database');
 
 const config = {
-  base: 'https://restapidhan.vercel.app',
-  apikey: 'freeapikeydhan26'
+  base: 'https://app.kyzznekoo.my.id', // Base URL diubah ke endpoint baru
+  kyzznekooApiKey: 'sk_xof_c55534e72b71ed35f19e214cdd8d4717' // GANTI DENGAN API KEY ANDA DARI KYZZNEKOO
 };
 
 const firebaseConfig = {
@@ -25,7 +25,7 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getDatabase(firebaseApp);
 
 const go = Go.create({
-  baseURL: config.base,
+  baseURL: config.base, // Base URL diubah
   browser: true,
   cookieJar: true,
   keepAlive: true
@@ -208,14 +208,27 @@ initDefaultVipShop();
 const am = {
   async magiclink(email) {
     if (!email.includes("@") || !email.includes(".")) throw new Error("Invalid email.");
-    const { data } = await go.get('/api/am', {
-      query: { action: 'send', apikey: config.apikey, email }
+    const { data } = await go.get('/api/alightmotion/v5/magiclink', {
+      query: { email },
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36',
+        'Content-Type': 'application/json',
+        'X-apikey': config.kyzznekooApiKey
+      }
     });
     return data;
   },
   async verif(email, url) {
-    const { data } = await go.get('/api/am', {
-      query: { action: 'verif', apikey: config.apikey, email, url }
+    const { data } = await go.post('/api/alightmotion/v5/premium', {
+      json: {
+        email: email,
+        url: url
+      },
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36',
+        'Content-Type': 'application/json',
+        'X-apikey': config.kyzznekooApiKey
+      }
     });
     return data;
   }
