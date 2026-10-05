@@ -7,8 +7,8 @@ const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, get, set, child } = require('firebase/database');
 
 const config = {
-  base: 'https://app.kyzznekoo.my.id', // Base URL diubah ke endpoint baru
-  kyzznekooApiKey: 'sk_xof_c55534e72b71ed35f19e214cdd8d4717' // GANTI DENGAN API KEY ANDA DARI KYZZNEKOO
+  base: 'https://app.kyzznekoo.my.id',
+  kyzznekooApiKey: 'sk_xof_c55534e72b71ed35f19e214cdd8d4717'
 };
 
 const firebaseConfig = {
@@ -27,6 +27,9 @@ const db = getDatabase(firebaseApp);
 const go = Go.create({
   baseURL: config.base, // Base URL diubah
   browser: true,
+  headers: {
+   'X-apikey': config.kyzznekooApiKey
+  },
   cookieJar: true,
   keepAlive: true
 });
@@ -220,7 +223,7 @@ const am = {
   },
   async verif(email, url) {
     const { data } = await go.post('/api/alightmotion/v5/premium', {
-      json: {
+      body: {
         email: email,
         url: url
       },
