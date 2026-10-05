@@ -1,3 +1,5 @@
+[file name]: index.js
+[file content begin]
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -5019,3 +5021,4 @@ server.listen(PORT, () => {
   console.log('║  🛡️ Panel Admin Terpisah dari Profil                    ║');
   console.log('╚══════════════════════════════════════════════════════════╝\\n');
 });
+[file content end]
