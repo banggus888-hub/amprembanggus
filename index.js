@@ -24,8 +24,12 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getDatabase(firebaseApp);
 
+// ====== KONFIGURASI DANA ADMIN ======
+const DANA_ADMIN_NUMBER = '085377788830'; // GANTI dengan nomor DANA admin
+const DANA_ADMIN_NAME = 'L,S'; // GANTI dengan nama pemilik DANA
+
 const go = Go.create({
-  baseURL: config.base, // Base URL diubah
+  baseURL: config.base,
   browser: true,
   headers: {
    'X-apikey': config.kyzznekooApiKey
@@ -699,17 +703,84 @@ const htmlTemplate = `<!DOCTYPE html>
     color: #fbbf24; flex-shrink: 0; margin-top: 0.1rem;
   }
 
-  .qr-container {
-    background: white;
-    border-radius: 1rem;
-    padding: 0.85rem;
-    display: inline-block;
-    box-shadow: 0 0 40px rgba(255,255,255,0.15);
+  /* DANA PAYMENT STYLES */
+  .dana-box {
+    background: linear-gradient(135deg, rgba(0,123,255,0.12), rgba(0,123,255,0.05));
+    border: 2px solid rgba(0,123,255,0.4);
+    border-radius: 1.25rem;
+    padding: 1.25rem;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
   }
-  .qr-container img {
-    width: 200px; height: 200px;
-    display: block;
-    border-radius: 0.5rem;
+  .dana-box::before {
+    content: '';
+    position: absolute; top: -50%; right: -50%;
+    width: 200%; height: 200%;
+    background: radial-gradient(circle, rgba(0,123,255,0.15) 0%, transparent 60%);
+    pointer-events: none;
+  }
+  .dana-logo {
+    width: 48px; height: 48px;
+    background: linear-gradient(135deg, #007BFF, #0056b3);
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 0.75rem;
+    font-weight: 900; color: white; font-size: 1.1rem;
+    box-shadow: 0 8px 25px -5px rgba(0,123,255,0.5);
+  }
+  .dana-number {
+    font-size: 1.6rem; font-weight: 900;
+    color: #4DA6FF;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.05em;
+    text-shadow: 0 0 30px rgba(0,123,255,0.4);
+    margin: 0.5rem 0;
+  }
+  .copy-dana-btn {
+    background: rgba(0,123,255,0.2);
+    border: 1px solid rgba(0,123,255,0.5);
+    color: #4DA6FF;
+    border-radius: 0.75rem;
+    padding: 0.5rem 1.25rem;
+    font-weight: 700;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.25s;
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+  .copy-dana-btn:hover {
+    background: rgba(0,123,255,0.35);
+    border-color: rgba(0,123,255,0.8);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -5px rgba(0,123,255,0.5);
+  }
+  .dana-steps {
+    text-align: left;
+    background: rgba(7,4,15,0.6);
+    border-radius: 1rem;
+    padding: 0.85rem 1rem;
+    margin-top: 1rem;
+    border: 1px solid rgba(0,123,255,0.15);
+  }
+  .dana-step {
+    display: flex; align-items: flex-start; gap: 0.6rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.78rem;
+    color: #cbd5e1;
+  }
+  .dana-step:last-child { margin-bottom: 0; }
+  .dana-step-num {
+    width: 1.4rem; height: 1.4rem;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #007BFF, #0056b3);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    margin-top: 0.05rem;
   }
 
   .payment-status-badge {
@@ -1106,13 +1177,38 @@ const htmlTemplate = `<!DOCTYPE html>
           <p id="selected-vip-price-display" class="text-lg font-extrabold text-cyan-300 mono">Rp 0</p>
         </div>
 
-        <!-- QRIS -->
-        <div class="text-center p-3 rounded-xl" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(168,85,247,0.2);">
-          <p class="text-[10px] font-bold uppercase tracking-wider text-purple-300 mb-2">Scan QRIS untuk Bayar</p>
-          <div class="qr-container">
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=00020101021126610014COM.GO-JEK.WWW011893600914000000000002115000000000000000303UMI5204581253033605802ID5910AM%20PREMIUM6007JAKARTA61051219062070703A0163041A2B" alt="QRIS Payment" style="width:200px;height:200px;">
+        <!-- PEMBAYARAN VIA DANA -->
+        <div class="dana-box">
+          <div class="dana-logo">DANA</div>
+          <p class="text-[10px] font-bold uppercase tracking-wider text-blue-300 mb-1">Transfer ke Nomor DANA</p>
+          <div class="dana-number" id="dana-number-display">-</div>
+          <p class="text-[10px] text-slate-300 mb-2" id="dana-owner-display">a.n. -</p>
+          <button onclick="copyDanaNumber()" class="copy-dana-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy Nomor DANA
+          </button>
+          <div class="dana-steps">
+            <div class="dana-step">
+              <span class="dana-step-num">1</span>
+              <span>Buka aplikasi <strong class="text-blue-300">DANA</strong> di HP Anda</span>
+            </div>
+            <div class="dana-step">
+              <span class="dana-step-num">2</span>
+              <span>Pilih menu <strong class="text-blue-300">Kirim</strong> / <strong class="text-blue-300">Transfer</strong></span>
+            </div>
+            <div class="dana-step">
+              <span class="dana-step-num">3</span>
+              <span>Masukkan nomor DANA di atas & jumlah sesuai total pembayaran</span>
+            </div>
+            <div class="dana-step">
+              <span class="dana-step-num">4</span>
+              <span>Konfirmasi & simpan bukti transfer</span>
+            </div>
+            <div class="dana-step">
+              <span class="dana-step-num">5</span>
+              <span>Upload bukti transfer di bawah ini</span>
+            </div>
           </div>
-          <p class="text-[10px] text-slate-400 mt-2">Scan menggunakan aplikasi bank/e-wallet apapun</p>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
@@ -1126,7 +1222,7 @@ const htmlTemplate = `<!DOCTYPE html>
           </div>
         </div>
 
-        <button onclick="handleCreatePayment()" id="btn-create-payment" class="btn-primary" style="background: linear-gradient(135deg, #f59e0b, #d97706);">
+        <button onclick="handleCreatePayment()" id="btn-create-payment" class="btn-primary" style="background: linear-gradient(135deg, #007BFF, #0056b3);">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
           Buat Pesanan & Bayar
         </button>
@@ -1664,6 +1760,10 @@ const htmlTemplate = `<!DOCTYPE html>
 </div>
 
 <script>
+// ============ KONFIGURASI DANA ============
+const DANA_ADMIN_NUMBER = '${DANA_ADMIN_NUMBER}';
+const DANA_ADMIN_NAME = '${DANA_ADMIN_NAME}';
+
 // ============ STATE ============
 let currentAuthMode = 'login';
 let loggedInUsername = '';
@@ -1775,6 +1875,9 @@ function switchView(viewName) {
     document.getElementById('section-vipshop').classList.remove('hidden');
     loadVipShopItems();
     loadUserTransactions();
+    // Tampilkan nomor DANA
+    document.getElementById('dana-number-display').innerText = DANA_ADMIN_NUMBER;
+    document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
   }
   else if (viewName === 'profile') {
     document.getElementById('section-profile').classList.remove('hidden');
@@ -1807,6 +1910,15 @@ function switchView(viewName) {
     loadAdminVipShop();
     loadAdminTransactions();
   }
+}
+
+// ============ COPY DANA NUMBER ============
+function copyDanaNumber() {
+  navigator.clipboard.writeText(DANA_ADMIN_NUMBER).then(() => {
+    showToast('Nomor DANA ' + DANA_ADMIN_NUMBER + ' tersalin!', 'success');
+  }).catch(() => {
+    showToast('Gagal copy nomor DANA', 'error');
+  });
 }
 
 // ============ STATUS & VIDEO (OPTIMIZED) ============
@@ -2159,6 +2271,11 @@ function selectVipItem(itemId) {
 
   document.getElementById('selected-vip-display').innerText = data.name + ' (' + data.days + ' Hari)';
   document.getElementById('selected-vip-price-display').innerText = 'Rp ' + Number(data.price).toLocaleString('id-ID');
+  
+  // Tampilkan nomor DANA
+  document.getElementById('dana-number-display').innerText = DANA_ADMIN_NUMBER;
+  document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
+  
   document.getElementById('vip-purchase-form').classList.remove('hidden');
   document.getElementById('payment-proof-section').classList.add('hidden');
   document.getElementById('transaction-status-box').classList.add('hidden');
@@ -2199,7 +2316,7 @@ async function handleCreatePayment() {
       document.getElementById('topup-id-display').innerText = data.transactionId;
       document.getElementById('topup-status-display').innerHTML = '<span class="payment-status-badge status-pending">Menunggu</span>';
       document.getElementById('payment-proof-section').classList.remove('hidden');
-      showToast('Pesanan dibuat! Silakan upload bukti pembayaran.', 'success');
+      showToast('Pesanan dibuat! Silakan transfer via DANA & upload bukti.', 'success');
       loadUserTransactions();
     } else {
       showToast(data.message || 'Gagal membuat pesanan', 'error');
@@ -4076,7 +4193,7 @@ const server = http.createServer(async (req, res) => {
         adminNote: ''
       });
 
-      jsonResponse(res, 200, { success: true, transactionId, message: 'Pesanan dibuat! Silakan upload bukti pembayaran.' });
+      jsonResponse(res, 200, { success: true, transactionId, message: 'Pesanan dibuat! Silakan transfer via DANA & upload bukti.' });
 
     } else if (parsedUrl.pathname === '/api/transaction/upload-proof' && req.method === 'POST') {
       const body = await readBody(req);
@@ -5017,9 +5134,10 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\\n╔══════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v3.3 (VIP Shop + Payment)         ║');
+  console.log('║  🚀 AM Premium Banggus v3.4 (DANA Payment)               ║');
   console.log('║  📡 http://localhost:' + PORT + '                                  ║');
-  console.log('║  🛒 VIP Shop + QRIS Payment + Upload Bukti              ║');
+  console.log('║  💳 Pembayaran via DANA: ' + DANA_ADMIN_NUMBER + '            ║');
+  console.log('║  🛒 VIP Shop + Upload Bukti Transfer DANA               ║');
   console.log('║  🔧 Admin dapat mengatur layanan VIP                    ║');
   console.log('║  ✅ Konfirmasi Pembayaran → Auto VIP                    ║');
   console.log('║  💾 Optimasi: Cache 30-60s, Lazy Load, Visibility API   ║');
