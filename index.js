@@ -110,15 +110,6 @@ async function saveVideoToDb(videoUrl) {
   await set(ref(db, `settings/featuredVideo`), videoUrl);
 }
 
-// ====== QR PAYMENT HELPERS ======
-async function getQrPaymentFromDb() {
-  const snapshot = await get(child(ref(db), `settings/qrPayment`));
-  return snapshot.exists() ? snapshot.val() : 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=00020101021126610014COM.GO-JEK.WWW011893600914000000000002115000000000000000303UMI5204581253033605802ID5910AM%20PREMIUM6007JAKARTA61051219062070703A0163041A2B';
-}
-async function saveQrPaymentToDb(qrUrl) {
-  await set(ref(db, `settings/qrPayment`), qrUrl);
-}
-
 // ====== GLOBAL CHAT HELPERS ======
 async function getGlobalChatFromDb() {
   const snapshot = await get(child(ref(db), `globalChat`));
@@ -1103,7 +1094,7 @@ const htmlTemplate = `<!DOCTYPE html>
         <div class="text-center p-3 rounded-xl" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(168,85,247,0.2);">
           <p class="text-[10px] font-bold uppercase tracking-wider text-purple-300 mb-2">Scan QRIS untuk Bayar</p>
           <div class="qr-container">
-            <img id="qr-payment-image" src="" alt="QRIS Payment" style="width:200px;height:200px;">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=00020101021126610014COM.GO-JEK.WWW011893600914000000000002115000000000000000303UMI5204581253033605802ID5910AM%20PREMIUM6007JAKARTA61051219062070703A0163041A2B" alt="QRIS Payment" style="width:200px;height:200px;">
           </div>
           <p class="text-[10px] text-slate-400 mt-2">Scan menggunakan aplikasi bank/e-wallet apapun</p>
         </div>
@@ -1386,33 +1377,6 @@ const htmlTemplate = `<!DOCTYPE html>
         </button>
       </div>
 
-      <!-- Upload QR Pembayaran -->
-      <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(6,182,212,0.06)); border: 1px solid rgba(16,185,129,0.35);">
-        <p class="section-title" style="color: #6ee7b7; margin-top: 0;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-          Ganti Foto QR Pembayaran
-        </p>
-        <p class="text-[10px] text-slate-400 mb-2">Upload gambar QRIS baru untuk pembayaran VIP</p>
-        <div class="file-drop" onclick="document.getElementById('admin-qr-file').click()">
-          <input type="file" id="admin-qr-file" accept="image/*" class="hidden" onchange="handleQrFileSelect(event)">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="1.5" style="margin: 0 auto 0.5rem; display: block;">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
-          </svg>
-          <p id="qr-file-info" class="text-xs font-bold text-slate-300">Klik untuk upload gambar QR</p>
-          <p class="text-[10px] text-slate-500 mt-1">Format: JPG, PNG (Max 2MB)</p>
-        </div>
-        <button onclick="handleUploadQr()" id="btn-upload-qr" class="btn-success mt-3" disabled>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          <span id="btn-upload-qr-text">Upload & Perbarui QR</span>
-        </button>
-        <div class="text-center mt-3">
-          <p class="text-[10px] font-bold uppercase tracking-wider text-emerald-300 mb-1.5">Preview QR Saat Ini</p>
-          <div class="qr-container" style="display:inline-block;">
-            <img id="admin-current-qr-preview" src="" alt="QR Preview" style="width:150px;height:150px;">
-          </div>
-        </div>
-      </div>
-
       <!-- Kelola VIP User -->
       <div>
         <p class="section-title" style="color: #fbbf24;">Kelola VIP User</p>
@@ -1690,7 +1654,6 @@ let loggedInUsername = '';
 let isAdminUser = false;
 let isVipUser = false;
 let selectedVideoFile = null;
-let selectedQrFile = null;
 let currentResultText = '';
 let cachedUserList = [];
 let currentUserFilter = 'all';
@@ -1705,7 +1668,6 @@ let claimedRedeemCodes = {};
 let selectedPaymentProofFile = null;
 let currentTransactionId = null;
 let cachedVipShopItems = [];
-let currentQrUrl = '';
 
 // ============ OPTIMASI KUOTA ============
 let isPageVisible = true;
@@ -1828,7 +1790,6 @@ function switchView(viewName) {
     loadAdminFeatureRequests();
     loadAdminVipShop();
     loadAdminTransactions();
-    loadAdminCurrentQr();
   }
 }
 
@@ -1872,20 +1833,6 @@ async function fetchFeaturedVideo(force = false) {
   } catch(e) {}
 }
 
-async function fetchQrPayment(force = false) {
-  try {
-    const res = await fetch('/api/qr-payment');
-    const data = await res.json();
-    if (data.success && data.qrUrl) {
-      currentQrUrl = data.qrUrl;
-      const qrImg = document.getElementById('qr-payment-image');
-      if (qrImg) qrImg.src = data.qrUrl;
-      const adminQrPreview = document.getElementById('admin-current-qr-preview');
-      if (adminQrPreview) adminQrPreview.src = data.qrUrl;
-    }
-  } catch(e) {}
-}
-
 function updateStatusUI(status) {
   const ind = document.getElementById('server-status-indicator');
   const dot = document.getElementById('server-dot');
@@ -1923,7 +1870,6 @@ function startPolling() {
 
 fetchServerStatus();
 fetchFeaturedVideo();
-fetchQrPayment();
 startPolling();
 
 // ============ AUTH ============
@@ -2015,7 +1961,6 @@ function applySession(data) {
   loadActiveRedeems();
   updateStatusUI(data.serverStatus);
   fetchFeaturedVideo(true);
-  fetchQrPayment(true);
 
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   loadGlobalChat();
@@ -2203,8 +2148,6 @@ function selectVipItem(itemId) {
   document.getElementById('transaction-status-box').classList.add('hidden');
   document.getElementById('topup-id-display').innerText = '-';
   document.getElementById('topup-status-display').innerHTML = '<span class="payment-status-badge status-pending">Menunggu</span>';
-  
-  fetchQrPayment(true);
   
   document.getElementById('vip-purchase-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
   showToast('Layanan dipilih: ' + data.name, 'info');
@@ -2694,75 +2637,6 @@ async function deleteTransaction(transactionId) {
       loadAdminTransactions();
     }
   } catch(e) {}
-}
-
-// ============ ADMIN: QR PAYMENT ============
-async function loadAdminCurrentQr() {
-  try {
-    const res = await fetch('/api/qr-payment');
-    const data = await res.json();
-    if (data.success && data.qrUrl) {
-      const preview = document.getElementById('admin-current-qr-preview');
-      if (preview) preview.src = data.qrUrl;
-    }
-  } catch(e) {}
-}
-
-function handleQrFileSelect(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  if (!file.type.startsWith('image/')) {
-    showToast('File harus berupa gambar!', 'error');
-    return;
-  }
-  if (file.size > 2 * 1024 * 1024) {
-    showToast('File terlalu besar! Maksimal 2MB', 'error');
-    return;
-  }
-  selectedQrFile = file;
-  document.getElementById('qr-file-info').innerText = '📎 ' + file.name + ' (' + (file.size / 1024).toFixed(0) + ' KB)';
-  document.getElementById('btn-upload-qr').disabled = false;
-  showToast('Gambar QR siap diupload', 'info');
-}
-
-async function handleUploadQr() {
-  if (!isAdminUser) return showToast('Akses ditolak!', 'error');
-  if (!selectedQrFile) return showToast('Pilih gambar QR terlebih dahulu!', 'error');
-
-  const btn = document.getElementById('btn-upload-qr');
-  const btnText = document.getElementById('btn-upload-qr-text');
-  btn.disabled = true;
-  btnText.innerText = 'Mengunggah...';
-
-  try {
-    const base64 = await blobToBase64(selectedQrFile);
-    const res = await fetch('/api/admin/upload-qr', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        adminUsername: loggedInUsername,
-        qrImage: base64,
-        fileName: selectedQrFile.name
-      })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('QR Pembayaran berhasil diperbarui!', 'success');
-      selectedQrFile = null;
-      document.getElementById('admin-qr-file').value = '';
-      document.getElementById('qr-file-info').innerText = 'Klik untuk upload gambar QR';
-      document.getElementById('btn-upload-qr').disabled = true;
-      loadAdminCurrentQr();
-      fetchQrPayment(true);
-    } else {
-      showToast(data.message || 'Gagal upload QR', 'error');
-    }
-  } catch(e) {
-    showToast('Gagal upload QR: ' + e.message, 'error');
-  } finally {
-    btn.disabled = false;
-    btnText.innerText = 'Upload & Perbarui QR';
-  }
 }
 
 // ============ GANTI PASSWORD ============
@@ -4155,10 +4029,6 @@ const server = http.createServer(async (req, res) => {
       const videoUrl = await getVideoFromDb();
       jsonResponse(res, 200, { success: true, videoUrl });
 
-    } else if (parsedUrl.pathname === '/api/qr-payment') {
-      const qrUrl = await getQrPaymentFromDb();
-      jsonResponse(res, 200, { success: true, qrUrl });
-
     } else if (parsedUrl.pathname === '/api/announcements') {
       const announcements = await getAllAnnouncementsFromDb();
       jsonResponse(res, 200, { success: true, announcements });
@@ -4304,19 +4174,6 @@ const server = http.createServer(async (req, res) => {
       if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
       await removeVipShopFromDb(id);
       jsonResponse(res, 200, { success: true, message: 'Layanan VIP dihapus' });
-
-    } else if (parsedUrl.pathname === '/api/admin/upload-qr' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { adminUsername, qrImage, fileName } = JSON.parse(body);
-      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
-      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-
-      if (!qrImage || !qrImage.startsWith('data:image/')) {
-        return jsonResponse(res, 400, { success: false, message: 'Format gambar tidak valid!' });
-      }
-
-      await saveQrPaymentToDb(qrImage);
-      jsonResponse(res, 200, { success: true, message: 'QR Pembayaran berhasil diperbarui!' });
 
     } else if (parsedUrl.pathname === '/api/redeems/active' && req.method === 'GET') {
       const allRedeems = await getAllRedeemsFromDb();
@@ -5143,10 +5000,9 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log('\n╔══════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v3.4 (QR Payment Upload)          ║');
+  console.log('\\n╔══════════════════════════════════════════════════════════╗');
+  console.log('║  🚀 AM Premium Banggus v3.3 (VIP Shop + Payment)         ║');
   console.log('║  📡 http://localhost:' + PORT + '                                  ║');
-  console.log('║  📷 Ganti Foto QR Pembayaran VIP                         ║');
   console.log('║  🛒 VIP Shop + QRIS Payment + Upload Bukti              ║');
   console.log('║  🔧 Admin dapat mengatur layanan VIP                    ║');
   console.log('║  ✅ Konfirmasi Pembayaran → Auto VIP                    ║');
@@ -5161,5 +5017,5 @@ server.listen(PORT, () => {
   console.log('║  ✅ Cek Kode Sudah Diklaim (Centang)                     ║');
   console.log('║  💡 Request Fitur Baru (User → Admin)                    ║');
   console.log('║  🛡️ Panel Admin Terpisah dari Profil                    ║');
-  console.log('╚══════════════════════════════════════════════════════════╝\n');
+  console.log('╚══════════════════════════════════════════════════════════╝\\n');
 });
