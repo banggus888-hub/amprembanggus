@@ -1,11 +1,186 @@
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const tls = require('tls');
 const Go = require('@xof/fetch');
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, get, set, child } = require('firebase/database');
 
+// ====== KONFIGURASI NETFLIX GENERATOR ======
+const NETFLIX_BASE = 'https://nftools.aroshi.my.id';
+const NETFLIX_HOST = new URL(NETFLIX_BASE).host;
+
+const COUNTRY = {
+  US:'UNITED STATES',GB:'UNITED KINGDOM',DE:'GERMANY',FR:'FRANCE',JP:'JAPAN',
+  KR:'SOUTH KOREA',IN:'INDIA',BR:'BRAZIL',CA:'CANADA',AU:'AUSTRALIA',
+  IT:'ITALY',ES:'SPAIN',MX:'MEXICO',PH:'PHILIPPINES',ID:'INDONESIA',
+  MY:'MALAYSIA',TH:'THAILAND',SG:'SINGAPORE',TR:'TURKEY',PL:'POLAND',
+  NL:'NETHERLANDS',SE:'SWEDEN',NO:'NORWAY',DK:'DENMARK',FI:'FINLAND',
+  PT:'PORTUGAL',AR:'ARGENTINA',CL:'CHILE',CO:'COLOMBIA',PK:'PAKISTAN',
+  BD:'BANGLADESH',NG:'NIGERIA',EG:'EGYPT',ZA:'SOUTH AFRICA',VN:'VIETNAM',
+  RU:'RUSSIA',UA:'UKRAINE',
+};
+
+function formatCountryName(code) {
+  if (!code || code === 'Unknown' || code === 'NA') return code || 'Unknown';
+  return `${code} (${COUNTRY[code] || code})`;
+}
+
+// ====== NETFLIX GENERATOR (Puppeteer-based) ======
+let puppeteer = null;
+let StealthPlugin = null;
+
+try {
+  puppeteer = require('puppeteer-extra');
+  StealthPlugin = require('puppeteer-extra-plugin-stealth');
+  puppeteer.use(StealthPlugin());
+} catch (e) {
+  console.log('⚠️ Puppeteer not installed. Netflix generator will not work.');
+}
+
+async function launchBrowser(proxy) {
+  if (!puppeteer) throw new Error('Puppeteer not available');
+  
+  const args = [
+    '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
+    '--disable-gpu', '--disable-extensions', '--disable-background-networking',
+    '--ignore-certificate-errors', '--window-size=360,640', '--single-process',
+  ];
+  if (proxy) args.push(`--proxy-server=http://${proxy}`);
+  
+  return puppeteer.launch({
+    headless: 'new',
+    executablePath: `${process.env.HOME}/chromium/chrome`,
+    args,
+  });
+}
+
+function testProxy(proxy) {
+  return new Promise((resolve) => {
+    const [host, port] = proxy.split(':');
+    const opts = {
+      host, port: parseInt(port),
+      method: 'CONNECT',
+      path: `${host}:443`,
+      timeout: 4000,
+    };
+    const req = http.request(opts);
+    req.on('connect', (res, socket) => {
+      if (res.statusCode === 200) {
+        const tlsSocket = tls.connect({ socket, servername: host, rejectUnauthorized: false });
+        tlsSocket.on('secureConnect', () => { tlsSocket.destroy(); resolve(proxy); });
+        tlsSocket.on('error', () => resolve(null));
+        setTimeout(() => { tlsSocket.destroy(); resolve(null); }, 3000);
+      } else resolve(null);
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.end();
+  });
+}
+
+async function getHttpProxies() {
+  const url = 'https://api.kyzznekoo.my.id/assets/proxy.json';
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error(`Status ${r.status}`);
+    const data = await r.json();
+    const proxies = data.data.filter(p => p.protocol === 'http').map(p => `${p.ip}:${p.port}`).filter(p => /^\d+\.\d+\.\d+\.\d+:\d+$/.test(p));
+    return proxies;
+  } catch (e) {
+    console.error('Failed to fetch proxies:', e.message);
+    return [];
+  }
+}
+
+async function findWorkingProxies(proxyList, count) {
+  const shuffled = [...proxyList].sort(() => Math.random() - 0.5);
+  const batchSize = Math.min(shuffled.length, 100);
+  const batch = shuffled.slice(0, batchSize);
+  const results = await Promise.allSettled(batch.map(p => testProxy(p)));
+  return results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
+}
+
+async function generateNetflixToken(plan, proxy, retries = 2) {
+  let browser;
+  try {
+    browser = await launchBrowser(proxy);
+    const pages = await browser.pages();
+    const page = pages[0] || await browser.newPage();
+    await page.setViewport({ width: 360, height: 640 });
+    await page.goto(NETFLIX_BASE + '/nftoken', { waitUntil: 'load', timeout: 35000 });
+    
+    const title = await page.title();
+    if (title.includes('Just a moment') || title.includes('Attention Required')) {
+      await new Promise(r => setTimeout(r, 10000));
+      await page.waitForFunction(() => !document.title.includes('Just a moment'), { timeout: 15000 }).catch(() => {});
+    }
+    await new Promise(r => setTimeout(r, 100));
+    
+    const result = await page.evaluate(async (plan) => {
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      function head(s) { return { 'Content-Type': 'application/json', ...(s ? { 'X-NFToken-Session': s } : {}) }; }
+      async function solve(ch) {
+        const enc = new TextEncoder();
+        for (let n = 0; n < 2000000; n++) {
+          const h = await crypto.subtle.digest('SHA-256', enc.encode(ch + n));
+          const hex = Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, '0')).join('');
+          if (hex.startsWith('0000')) return ch + ':' + n;
+        }
+        return null;
+      }
+      
+      async function getToken(token) {
+        const r1 = await fetch('/api/random', { method: 'POST', headers: head(token), body: JSON.stringify({ plan }) });
+        const d1 = await r1.json();
+        if (d1.powChallenge) {
+          const proof = await solve(d1.powChallenge);
+          if (!proof) return { error: 'pow_failed' };
+          const h = head(token);
+          h['X-PoW-Proof'] = proof;
+          const r2 = await fetch('/api/random', { method: 'POST', headers: h, body: JSON.stringify({ plan }) });
+          return await r2.json();
+        }
+        return d1;
+      }
+
+      const s = await fetch('/api/session', { method: 'POST', headers: head() });
+      const sd = await s.json();
+      if (!sd.success) return { success: false, error: sd.error || 'session_failed' };
+      const token = sd.token;
+
+      let data = await getToken(token);
+      if (data.error && data.error.includes('Session')) {
+        const s2 = await fetch('/api/session', { method: 'POST', headers: head() });
+        const sd2 = await s2.json();
+        if (sd2.success) data = await getToken(sd2.token);
+      }
+       
+      if (data.success && data.url) {
+        return {
+          success: true, plan: data.plan || plan,
+          quality: data.quality || '—', country: data.country || 'Unknown',
+          url: data.url, expires: data.expires || null, pool: data.pool || null,
+        };
+      }
+      return { success: false, error: data.error || 'unknown' };
+    }, plan);
+
+    return result;
+  } catch (e) {
+    if (retries > 0) {
+      await new Promise(r => setTimeout(r, 2000));
+      return generateNetflixToken(plan, proxy, retries - 1);
+    }
+    return { success: false, error: e.message };
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+  }
+}
+
+// ====== KONFIGURASI UTAMA ======
 const config = {
   base: 'https://app.kyzznekoo.my.id',
   kyzznekooApiKey: 'sk_xof_c55534e72b71ed35f19e214cdd8d4717'
@@ -25,8 +200,8 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getDatabase(firebaseApp);
 
 // ====== KONFIGURASI DANA ADMIN ======
-const DANA_ADMIN_NUMBER = '085377788830'; // GANTI dengan nomor DANA admin
-const DANA_ADMIN_NAME = 'L,S'; // GANTI dengan nama pemilik DANA
+const DANA_ADMIN_NUMBER = '085377788830';
+const DANA_ADMIN_NAME = 'L,S';
 
 const go = Go.create({
   baseURL: config.base,
@@ -181,6 +356,25 @@ async function removeTransactionFromDb(id) {
   await set(ref(db, `transactions/${id}`), null);
 }
 
+// ====== NETFLIX HISTORY HELPERS ======
+async function getNetflixHistoryFromDb(username) {
+  const snapshot = await get(child(ref(db), `netflixHistory/${username}`));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+async function saveNetflixHistoryToDb(username, id, data) {
+  await set(ref(db, `netflixHistory/${username}/${id}`), data);
+}
+async function deleteNetflixHistoryFromDb(username, id) {
+  await set(ref(db, `netflixHistory/${username}/${id}`), null);
+}
+async function getUserNetflixQuotaFromDb(username) {
+  const snapshot = await get(child(ref(db), `netflixQuota/${username}`));
+  return snapshot.exists() ? snapshot.val() : { used: 0, limit: 3, lastReset: Date.now() };
+}
+async function saveUserNetflixQuotaToDb(username, data) {
+  await set(ref(db, `netflixQuota/${username}`), data);
+}
+
 async function initAdmin() {
   const adminData = await getUserFromDb('adminbaguss');
   if (!adminData) {
@@ -262,6 +456,7 @@ const htmlTemplate = `<!DOCTYPE html>
     --emerald: #10b981;
     --rose: #f43f5e;
     --amber: #f59e0b;
+    --netflix-red: #e50914;
   }
   * { -webkit-tap-highlight-color: transparent; }
   html, body {
@@ -368,6 +563,18 @@ const htmlTemplate = `<!DOCTYPE html>
   }
   .btn-danger:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(244,63,94,0.7); }
 
+  .btn-netflix {
+    background: linear-gradient(135deg, #e50914 0%, #b20710 100%);
+    box-shadow: 0 12px 30px -10px rgba(229,9,20,0.6), inset 0 1px 0 rgba(255,255,255,0.2);
+    border-radius: 1rem; padding: 0.95rem 1rem;
+    font-weight: 700; color: white; width: 100%; border: none;
+    cursor: pointer; font-size: 0.92rem;
+    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+    transition: all 0.25s ease;
+  }
+  .btn-netflix:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(229,9,20,0.8); }
+  .btn-netflix:disabled { opacity: 0.6; cursor: not-allowed; }
+
   .btn-secondary {
     background: rgba(168,85,247,0.1);
     border: 1px solid rgba(168,85,247,0.25);
@@ -408,6 +615,11 @@ const htmlTemplate = `<!DOCTYPE html>
     color: #e9d5ff;
     border-color: rgba(168,85,247,0.35);
   }
+  .nav-item.netflix-active {
+    background: linear-gradient(135deg, rgba(229,9,20,0.18), rgba(178,7,16,0.1));
+    color: #ff6b6b;
+    border-color: rgba(229,9,20,0.35);
+  }
 
   @keyframes pulse-glow {
     0%, 100% { opacity: 0.4; transform: scale(1); }
@@ -425,8 +637,13 @@ const htmlTemplate = `<!DOCTYPE html>
     0% { transform: scale(0.95); opacity: 1; }
     100% { transform: scale(1.3); opacity: 0; }
   }
+  @keyframes netflix-glow {
+    0%, 100% { box-shadow: 0 0 20px rgba(229,9,20,0.3); }
+    50% { box-shadow: 0 0 40px rgba(229,9,20,0.6); }
+  }
   .animate-slide-up { animation: slide-up 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
   .pulse-ring { animation: pulse-ring 1.5s ease-out infinite; }
+  .netflix-glow { animation: netflix-glow 2s ease-in-out infinite; }
   
   .toast {
     position: fixed; top: 1.25rem; left: 50%; transform: translateX(-50%) translateY(-120%);
@@ -441,6 +658,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .toast-success { background: rgba(16,185,129,0.95); color: #031a12; }
   .toast-error { background: rgba(244,63,94,0.95); color: white; }
   .toast-info { background: rgba(168,85,247,0.95); color: white; }
+  .toast-netflix { background: rgba(229,9,20,0.95); color: white; }
 
   .progress-bar {
     width: 100%; height: 8px; background: rgba(168,85,247,0.1);
@@ -467,6 +685,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .badge-admin { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.4); color: #fbbf24; }
   .badge-vip { background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.4); color: #d8b4fe; }
   .badge-user { background: rgba(148,163,184,0.1); border-color: rgba(148,163,184,0.3); color: #cbd5e1; }
+  .badge-netflix { background: rgba(229,9,20,0.15); border-color: rgba(229,9,20,0.4); color: #ff6b6b; }
 
   .divider {
     height: 1px;
@@ -639,6 +858,47 @@ const htmlTemplate = `<!DOCTYPE html>
     animation: slide-up 0.3s ease;
   }
 
+  .netflix-card {
+    background: linear-gradient(145deg, rgba(30,10,15,0.9), rgba(20,5,10,0.8));
+    border: 1px solid rgba(229,9,20,0.3);
+    border-radius: 1.25rem;
+    padding: 1.15rem;
+    animation: slide-up 0.4s ease;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+  .netflix-card:hover {
+    border-color: rgba(229,9,20,0.7);
+    transform: translateY(-3px);
+    box-shadow: 0 20px 40px -15px rgba(229,9,20,0.4);
+  }
+  .netflix-card::before {
+    content: '';
+    position: absolute; top: -50%; right: -50%;
+    width: 200%; height: 200%;
+    background: radial-gradient(circle, rgba(229,9,20,0.1) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .netflix-result-card {
+    background: linear-gradient(145deg, rgba(30,10,15,0.95), rgba(20,5,10,0.9));
+    border: 1px solid rgba(229,9,20,0.4);
+    border-radius: 1rem;
+    padding: 1rem;
+    animation: slide-up 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .netflix-result-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #e50914, #b20710, #e50914);
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+  }
+
   .delete-btn {
     background: rgba(244,63,94,0.15);
     border: 1px solid rgba(244,63,94,0.3);
@@ -794,6 +1054,38 @@ const htmlTemplate = `<!DOCTYPE html>
   .status-success { background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.4); color: #6ee7b7; }
   .status-failed { background: rgba(244,63,94,0.15); border: 1px solid rgba(244,63,94,0.4); color: #fda4af; }
 
+  /* NETFLIX SPECIFIC */
+  .netflix-logo {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    font-weight: 900; font-size: 1.1rem;
+    color: #e50914;
+    letter-spacing: 0.05em;
+  }
+  .netflix-plan-badge {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.65rem; font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .netflix-plan-premium { background: linear-gradient(135deg, #e50914, #b20710); color: white; }
+  .netflix-plan-standard { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; }
+  .netflix-plan-basic { background: linear-gradient(135deg, #10b981, #059669); color: white; }
+
+  .netflix-quota-bar {
+    height: 6px;
+    background: rgba(229,9,20,0.15);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .netflix-quota-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #e50914, #b20710);
+    border-radius: 999px;
+    transition: width 0.3s ease;
+  }
+
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(168,85,247,0.3); border-radius: 999px; }
@@ -852,7 +1144,14 @@ const htmlTemplate = `<!DOCTYPE html>
       <nav class="space-y-1.5">
         <button onclick="switchView('generator')" data-nav="generator" class="nav-item active">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-          Generator Utama
+          Generator AM
+        </button>
+        <button onclick="switchView('netflix')" data-nav="netflix" class="nav-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 2v20l7-5 7 5V2z"/>
+          </svg>
+          Generator Netflix
+          <span class="ml-auto text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(229,9,20,0.2); color: #ff6b6b;">NEW</span>
         </button>
         <button onclick="switchView('vipshop')" data-nav="vipshop" class="nav-item">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
@@ -1104,6 +1403,97 @@ const htmlTemplate = `<!DOCTYPE html>
             </button>
           </div>
           <pre id="result-text" class="mono text-[11px] text-purple-300 whitespace-pre-wrap break-all" style="max-height: 200px; overflow-y: auto;"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: NETFLIX GENERATOR -->
+    <div id="netflix-view" class="space-y-3 hidden">
+
+      <!-- Netflix Header -->
+      <div class="netflix-card netflix-glow">
+        <div class="flex items-center justify-between mb-3">
+          <div class="netflix-logo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="#e50914">
+              <path d="M4 2v20l7-5 7 5V2z"/>
+            </svg>
+            NETFLIX GENERATOR
+          </div>
+          <span class="badge badge-netflix">PREMIUM</span>
+        </div>
+        <p class="text-xs text-slate-300 mb-3">Generate link Netflix premium secara gratis dengan berbagai pilihan plan dan kualitas.</p>
+        
+        <!-- Kuota Netflix -->
+        <div class="p-3 rounded-xl mb-3" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(229,9,20,0.25);">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-red-300">Kuota Netflix Anda</span>
+            <span id="netflix-quota-text" class="text-xs font-extrabold text-red-400 mono">0/3</span>
+          </div>
+          <div class="netflix-quota-bar">
+            <div id="netflix-quota-fill" class="netflix-quota-fill" style="width: 0%;"></div>
+          </div>
+          <p class="text-[9px] text-slate-500 mt-1.5">Kuota direset setiap 24 jam</p>
+        </div>
+
+        <!-- Pilih Plan -->
+        <div class="mb-3">
+          <p class="section-title" style="color: #ff6b6b; margin-bottom: 0.5rem;">Pilih Plan</p>
+          <div class="grid grid-cols-3 gap-2">
+            <button onclick="selectNetflixPlan('premium')" id="plan-premium" class="p-2.5 rounded-xl text-center transition netflix-plan-btn active-plan" style="background: linear-gradient(135deg, rgba(229,9,20,0.2), rgba(178,7,16,0.1)); border: 2px solid rgba(229,9,20,0.6);">
+              <p class="text-[10px] font-extrabold text-white">PREMIUM</p>
+              <p class="text-[9px] text-red-300">4K + HDR</p>
+            </button>
+            <button onclick="selectNetflixPlan('standard')" id="plan-standard" class="p-2.5 rounded-xl text-center transition netflix-plan-btn" style="background: rgba(7,4,15,0.6); border: 2px solid rgba(148,163,184,0.2);">
+              <p class="text-[10px] font-extrabold text-slate-300">STANDARD</p>
+              <p class="text-[9px] text-slate-500">1080p</p>
+            </button>
+            <button onclick="selectNetflixPlan('basic')" id="plan-basic" class="p-2.5 rounded-xl text-center transition netflix-plan-btn" style="background: rgba(7,4,15,0.6); border: 2px solid rgba(148,163,184,0.2);">
+              <p class="text-[10px] font-extrabold text-slate-300">BASIC</p>
+              <p class="text-[9px] text-slate-500">720p</p>
+            </button>
+          </div>
+        </div>
+
+        <!-- Opsi Proxy -->
+        <div class="flex items-center gap-2 mb-3">
+          <input type="checkbox" id="netflix-use-proxy" class="w-4 h-4 rounded" style="accent-color: #e50914;">
+          <label for="netflix-use-proxy" class="text-xs text-slate-300 font-semibold">Gunakan Proxy (Rekomendasi)</label>
+        </div>
+
+        <!-- Tombol Generate -->
+        <button onclick="handleGenerateNetflix()" id="btn-generate-netflix" class="btn-netflix">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+          <span id="netflix-btn-text">Generate Netflix Premium</span>
+        </button>
+      </div>
+
+      <!-- Hasil Generate -->
+      <div id="netflix-result-box" class="hidden">
+        <div class="netflix-result-card">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-red-300">Hasil Generate</span>
+            <button onclick="copyNetflixResult()" class="btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.68rem; border-color: rgba(229,9,20,0.3); color: #ff6b6b;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy Link
+            </button>
+          </div>
+          <div id="netflix-result-content"></div>
+        </div>
+      </div>
+
+      <!-- Riwayat Netflix -->
+      <div class="glass-panel space-y-3">
+        <div class="flex justify-between items-center">
+          <p class="section-title" style="color: #ff6b6b; margin: 0;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Riwayat Generate
+          </p>
+          <button onclick="loadNetflixHistory()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+        </div>
+        <div id="netflix-history-list" class="space-y-2 max-h-64 overflow-y-auto">
+          <p class="text-slate-500 italic text-xs text-center py-2">Memuat riwayat...</p>
         </div>
       </div>
     </div>
@@ -1692,15 +2082,16 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
 
       <div class="space-y-2.5">
-        ${[1,2,3,4,5,6,7].map((n, i) => {
+        ${[1,2,3,4,5,6,7,8].map((n, i) => {
           const steps = [
             'Pastikan Anda sudah login ke sistem dengan akun Anda.',
-            'Beralih ke menu Generator Utama untuk mulai memproses.',
+            'Beralih ke menu Generator AM untuk mulai memproses.',
             'Masukkan email target Google/Gmail pada kolom yang tersedia.',
             'Klik tombol Kirim Magic Link untuk memicu token verifikasi.',
             'Salin tautan Magic Link dari email, paste di kolom URL.',
             'Klik Verifikasi Sekarang — proses selesai!',
-            'Klaim kode redeem di Generator Utama untuk dapat kuota bonus.'
+            'Klaim kode redeem di Generator Utama untuk dapat kuota bonus.',
+            'Gunakan menu Generator Netflix untuk generate link Netflix premium!'
           ];
           return `
           <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
@@ -1785,6 +2176,12 @@ let selectedPaymentProofFile = null;
 let currentTransactionId = null;
 let cachedVipShopItems = [];
 
+// ============ NETFLIX STATE ============
+let selectedNetflixPlan = 'premium';
+let currentNetflixResult = null;
+let netflixQuota = { used: 0, limit: 3, lastReset: Date.now() };
+let netflixGenerating = false;
+
 // ============ OPTIMASI KUOTA ============
 let isPageVisible = true;
 let statusPollInterval = null;
@@ -1833,6 +2230,10 @@ document.addEventListener('visibilitychange', () => {
     if (currentView === 'vipshop') {
       loadUserTransactions();
     }
+    if (currentView === 'netflix') {
+      loadNetflixQuota();
+      loadNetflixHistory();
+    }
   }
 });
 
@@ -1844,7 +2245,8 @@ function showToast(message, type = 'info', duration = 3000) {
   const icons = {
     success: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>',
     error: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
-    info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+    info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+    netflix: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M4 2v20l7-5 7 5V2z"/></svg>'
   };
   toast.innerHTML = (icons[type] || icons.info) + '<span>' + message + '</span>';
   container.appendChild(toast);
@@ -1865,17 +2267,25 @@ function switchView(viewName) {
   currentView = viewName;
   document.querySelectorAll('[data-nav]').forEach(el => {
     el.classList.toggle('active', el.dataset.nav === viewName);
+    if (el.dataset.nav === 'netflix') {
+      el.classList.toggle('netflix-active', viewName === 'netflix');
+      el.classList.toggle('active', false);
+    }
   });
   toggleMenu();
-  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request', 'section-vipshop'].forEach(id => {
+  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request', 'section-vipshop', 'netflix-view'].forEach(id => {
     document.getElementById(id).classList.add('hidden');
   });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hidden');
+  else if (viewName === 'netflix') {
+    document.getElementById('netflix-view').classList.remove('hidden');
+    loadNetflixQuota();
+    loadNetflixHistory();
+  }
   else if (viewName === 'vipshop') {
     document.getElementById('section-vipshop').classList.remove('hidden');
     loadVipShopItems();
     loadUserTransactions();
-    // Tampilkan nomor DANA
     document.getElementById('dana-number-display').innerText = DANA_ADMIN_NUMBER;
     document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
   }
@@ -1910,6 +2320,205 @@ function switchView(viewName) {
     loadAdminVipShop();
     loadAdminTransactions();
   }
+}
+
+// ============ NETFLIX FUNCTIONS ============
+function selectNetflixPlan(plan) {
+  selectedNetflixPlan = plan;
+  document.querySelectorAll('.netflix-plan-btn').forEach(btn => {
+    btn.style.background = 'rgba(7,4,15,0.6)';
+    btn.style.borderColor = 'rgba(148,163,184,0.2)';
+    btn.querySelector('p:first-child').style.color = '#cbd5e1';
+  });
+  const selectedBtn = document.getElementById('plan-' + plan);
+  if (selectedBtn) {
+    if (plan === 'premium') {
+      selectedBtn.style.background = 'linear-gradient(135deg, rgba(229,9,20,0.2), rgba(178,7,16,0.1))';
+      selectedBtn.style.borderColor = 'rgba(229,9,20,0.6)';
+    } else if (plan === 'standard') {
+      selectedBtn.style.background = 'linear-gradient(135deg, rgba(245,158,11,0.2), rgba(217,119,6,0.1))';
+      selectedBtn.style.borderColor = 'rgba(245,158,11,0.6)';
+    } else {
+      selectedBtn.style.background = 'linear-gradient(135deg, rgba(16,185,129,0.2), rgba(5,150,105,0.1))';
+      selectedBtn.style.borderColor = 'rgba(16,185,129,0.6)';
+    }
+    selectedBtn.querySelector('p:first-child').style.color = 'white';
+  }
+}
+
+async function loadNetflixQuota() {
+  if (!loggedInUsername) return;
+  try {
+    const res = await fetch('/api/netflix/quota?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+    if (data.success) {
+      netflixQuota = data.quota;
+      updateNetflixQuotaUI();
+    }
+  } catch(e) {}
+}
+
+function updateNetflixQuotaUI() {
+  const used = netflixQuota.used || 0;
+  const limit = netflixQuota.limit || 3;
+  const percent = Math.min(100, (used / limit) * 100);
+  
+  const textEl = document.getElementById('netflix-quota-text');
+  const fillEl = document.getElementById('netflix-quota-fill');
+  
+  if (textEl) textEl.innerText = used + '/' + limit;
+  if (fillEl) fillEl.style.width = percent + '%';
+}
+
+async function handleGenerateNetflix() {
+  if (netflixGenerating) return showToast('Sedang generate, tunggu sebentar...', 'info');
+  if (!loggedInUsername) return showToast('Harus login dulu!', 'error');
+  
+  // Cek kuota
+  if (!isAdminUser && !isVipUser && netflixQuota.used >= netflixQuota.limit) {
+    return showToast('Kuota Netflix habis! Tunggu reset atau upgrade VIP.', 'error');
+  }
+  
+  netflixGenerating = true;
+  const btn = document.getElementById('btn-generate-netflix');
+  const btnText = document.getElementById('netflix-btn-text');
+  btn.disabled = true;
+  btnText.innerText = 'Generating...';
+  
+  const useProxy = document.getElementById('netflix-use-proxy').checked;
+  
+  try {
+    const res = await fetch('/api/netflix/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: loggedInUsername,
+        plan: selectedNetflixPlan,
+        useProxy: useProxy
+      })
+    });
+    const data = await res.json();
+    
+    if (data.success && data.result && data.result.success) {
+      currentNetflixResult = data.result;
+      showNetflixResult(data.result);
+      showToast('Netflix link berhasil digenerate!', 'netflix');
+      loadNetflixQuota();
+      loadNetflixHistory();
+    } else {
+      const errMsg = data.result?.error || data.message || 'Gagal generate';
+      showToast(errMsg, 'error');
+    }
+  } catch(e) {
+    showToast('Kesalahan koneksi: ' + e.message, 'error');
+  } finally {
+    netflixGenerating = false;
+    btn.disabled = false;
+    btnText.innerText = 'Generate Netflix Premium';
+  }
+}
+
+function showNetflixResult(result) {
+  const box = document.getElementById('netflix-result-box');
+  const content = document.getElementById('netflix-result-content');
+  box.classList.remove('hidden');
+  
+  const planClass = result.plan === 'premium' ? 'netflix-plan-premium' : 
+                    result.plan === 'standard' ? 'netflix-plan-standard' : 'netflix-plan-basic';
+  
+  content.innerHTML = 
+    '<div class="flex items-center gap-2 mb-3">' +
+      '<span class="netflix-plan-badge ' + planClass + '">' + (result.plan || 'premium').toUpperCase() + '</span>' +
+      '<span class="badge badge-netflix">' + (result.quality || 'HD') + '</span>' +
+      '<span class="badge badge-user">' + (result.country || 'Unknown') + '</span>' +
+    '</div>' +
+    '<div class="p-2.5 rounded-lg mb-2" style="background: rgba(229,9,20,0.08); border: 1px solid rgba(229,9,20,0.25);">' +
+      '<p class="text-[9px] text-red-300 uppercase font-bold mb-1">Link Netflix</p>' +
+      '<p class="text-[11px] text-white mono break-all" id="netflix-link-text">' + escapeHtml(result.url) + '</p>' +
+    '</div>' +
+    '<div class="grid grid-cols-2 gap-2 text-[10px]">' +
+      '<div class="p-2 rounded" style="background: rgba(7,4,15,0.6);">' +
+        '<p class="text-slate-500 uppercase font-bold text-[9px]">Expires</p>' +
+        '<p class="text-white font-bold mono">' + (result.expires || '—') + '</p>' +
+      '</div>' +
+      '<div class="p-2 rounded" style="background: rgba(7,4,15,0.6);">' +
+        '<p class="text-slate-500 uppercase font-bold text-[9px]">Pool</p>' +
+        '<p class="text-white font-bold mono">' + (result.pool ? result.pool.available + ' available' : '—') + '</p>' +
+      '</div>' +
+    '</div>' +
+    '<a href="' + escapeHtml(result.url) + '" target="_blank" class="btn-netflix mt-3" style="text-decoration: none;">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
+      ' Buka Link Netflix' +
+    '</a>';
+}
+
+function copyNetflixResult() {
+  if (!currentNetflixResult || !currentNetflixResult.url) return showToast('Tidak ada link untuk dicopy', 'error');
+  navigator.clipboard.writeText(currentNetflixResult.url).then(() => {
+    showToast('Link Netflix tersalin!', 'success');
+  }).catch(() => {
+    showToast('Gagal copy link', 'error');
+  });
+}
+
+async function loadNetflixHistory() {
+  if (!loggedInUsername) return;
+  const container = document.getElementById('netflix-history-list');
+  if (!container) return;
+  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Memuat riwayat...</p>';
+  
+  try {
+    const res = await fetch('/api/netflix/history?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+    
+    if (data.success && data.history && Object.keys(data.history).length > 0) {
+      const entries = Object.entries(data.history).sort((a, b) => b[1].timestamp - a[1].timestamp);
+      container.innerHTML = entries.map(([id, item]) => {
+        const planClass = item.plan === 'premium' ? 'netflix-plan-premium' : 
+                          item.plan === 'standard' ? 'netflix-plan-standard' : 'netflix-plan-basic';
+        return '<div class="netflix-result-card">' +
+          '<div class="flex items-center justify-between mb-2">' +
+            '<span class="netflix-plan-badge ' + planClass + '">' + (item.plan || 'premium').toUpperCase() + '</span>' +
+            '<span class="text-[9px] text-slate-500">' + new Date(item.timestamp).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) + '</span>' +
+          '</div>' +
+          '<p class="text-[10px] text-slate-300 mono break-all mb-2">' + escapeHtml(item.url) + '</p>' +
+          '<div class="flex gap-1.5">' +
+            '<button onclick="copyHistoryLink(\\'' + escapeHtml(item.url) + '\\')" class="flex-1 py-1 rounded text-[10px] font-bold" style="background: rgba(229,9,20,0.15); color: #ff6b6b; border: 1px solid rgba(229,9,20,0.3);">📋 Copy</button>' +
+            '<a href="' + escapeHtml(item.url) + '" target="_blank" class="flex-1 py-1 rounded text-[10px] font-bold text-center" style="background: rgba(16,185,129,0.15); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.3); text-decoration: none;">🔗 Buka</a>' +
+            '<button onclick="deleteNetflixHistoryItem(\\'' + id + '\\')" class="px-2 py-1 rounded text-[10px] font-bold" style="background: rgba(244,63,94,0.15); color: #fda4af; border: 1px solid rgba(244,63,94,0.3);">🗑</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    } else {
+      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada riwayat generate</p>';
+    }
+  } catch(e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-2">Gagal memuat riwayat</p>';
+  }
+}
+
+function copyHistoryLink(url) {
+  navigator.clipboard.writeText(url).then(() => {
+    showToast('Link tersalin!', 'success');
+  }).catch(() => {
+    showToast('Gagal copy', 'error');
+  });
+}
+
+async function deleteNetflixHistoryItem(id) {
+  if (!confirm('Hapus riwayat ini?')) return;
+  try {
+    const res = await fetch('/api/netflix/history/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername, id })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Riwayat dihapus', 'success');
+      loadNetflixHistory();
+    }
+  } catch(e) {}
 }
 
 // ============ COPY DANA NUMBER ============
@@ -2089,6 +2698,10 @@ function applySession(data) {
   loadActiveRedeems();
   updateStatusUI(data.serverStatus);
   fetchFeaturedVideo(true);
+
+  // Load Netflix quota
+  loadNetflixQuota();
+  loadNetflixHistory();
 
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   loadGlobalChat();
@@ -2272,7 +2885,6 @@ function selectVipItem(itemId) {
   document.getElementById('selected-vip-display').innerText = data.name + ' (' + data.days + ' Hari)';
   document.getElementById('selected-vip-price-display').innerText = 'Rp ' + Number(data.price).toLocaleString('id-ID');
   
-  // Tampilkan nomor DANA
   document.getElementById('dana-number-display').innerText = DANA_ADMIN_NUMBER;
   document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
   
@@ -4166,6 +4778,129 @@ const server = http.createServer(async (req, res) => {
       const announcements = await getAllAnnouncementsFromDb();
       jsonResponse(res, 200, { success: true, announcements });
 
+    // ====== NETFLIX ENDPOINTS ======
+    } else if (parsedUrl.pathname === '/api/netflix/quota' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+      
+      const cleanUser = username.toLowerCase();
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
+      
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      let quota = await getUserNetflixQuotaFromDb(cleanUser);
+      
+      // Reset kuota setiap 24 jam
+      if (now - quota.lastReset >= twentyFourHours) {
+        quota = { used: 0, limit: isAdminUser ? 999 : (userObj.vipUntil > now ? 999 : 3), lastReset: now };
+        await saveUserNetflixQuotaToDb(cleanUser, quota);
+      }
+      
+      // Update limit berdasarkan status user
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+      const limit = userObj.isAdmin ? 999 : (isVipActive ? 999 : 3);
+      if (quota.limit !== limit) {
+        quota.limit = limit;
+        await saveUserNetflixQuotaToDb(cleanUser, quota);
+      }
+      
+      jsonResponse(res, 200, { success: true, quota });
+
+    } else if (parsedUrl.pathname === '/api/netflix/generate' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, plan, useProxy } = JSON.parse(body);
+      
+      const cleanUser = username ? username.toLowerCase() : '';
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
+
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+      const isAdmin = !!userObj.isAdmin;
+      
+      // Cek kuota
+      let quota = await getUserNetflixQuotaFromDb(cleanUser);
+      if (now - quota.lastReset >= twentyFourHours) {
+        quota = { used: 0, limit: isAdmin ? 999 : (isVipActive ? 999 : 3), lastReset: now };
+      }
+      
+      const limit = isAdmin ? 999 : (isVipActive ? 999 : 3);
+      quota.limit = limit;
+      
+      if (quota.used >= quota.limit && !isAdmin && !isVipActive) {
+        return jsonResponse(res, 403, { success: false, message: 'Kuota Netflix habis! Tunggu reset atau upgrade VIP.' });
+      }
+
+      // Generate Netflix token
+      let proxy = null;
+      if (useProxy) {
+        try {
+          const proxyList = await getHttpProxies();
+          if (proxyList.length > 0) {
+            const workingProxies = await findWorkingProxies(proxyList, 1);
+            if (workingProxies.length > 0) {
+              proxy = workingProxies[0];
+            }
+          }
+        } catch(e) {
+          console.error('Proxy error:', e.message);
+        }
+      }
+
+      const result = await generateNetflixToken(plan || 'premium', proxy);
+      
+      if (result.success) {
+        // Kurangi kuota
+        quota.used += 1;
+        await saveUserNetflixQuotaToDb(cleanUser, quota);
+        
+        // Simpan ke history
+        const historyId = 'nf_' + now + '_' + Math.random().toString(36).substring(2, 8);
+        await saveNetflixHistoryToDb(cleanUser, historyId, {
+          id: historyId,
+          plan: result.plan,
+          quality: result.quality,
+          country: result.country,
+          url: result.url,
+          expires: result.expires,
+          pool: result.pool,
+          timestamp: now
+        });
+        
+        jsonResponse(res, 200, { 
+          success: true, 
+          result,
+          quota: { used: quota.used, limit: quota.limit }
+        });
+      } else {
+        jsonResponse(res, 200, { 
+          success: false, 
+          message: result.error || 'Gagal generate Netflix',
+          result 
+        });
+      }
+
+    } else if (parsedUrl.pathname === '/api/netflix/history' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+      
+      const cleanUser = username.toLowerCase();
+      const history = await getNetflixHistoryFromDb(cleanUser);
+      jsonResponse(res, 200, { success: true, history });
+
+    } else if (parsedUrl.pathname === '/api/netflix/history/delete' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, id } = JSON.parse(body);
+      const cleanUser = username ? username.toLowerCase() : '';
+      
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
+      
+      await deleteNetflixHistoryFromDb(cleanUser, id);
+      jsonResponse(res, 200, { success: true, message: 'Riwayat dihapus' });
+
     } else if (parsedUrl.pathname === '/api/vip-shop' && req.method === 'GET') {
       const items = await getVipShopFromDb();
       jsonResponse(res, 200, { success: true, items });
@@ -5133,10 +5868,11 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log('\\n╔══════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v3.4 (DANA Payment)               ║');
+  console.log('\n╔══════════════════════════════════════════════════════════╗');
+  console.log('║  🚀 AM Premium Banggus v4.0 (Netflix + DANA Payment)     ║');
   console.log('║  📡 http://localhost:' + PORT + '                                  ║');
   console.log('║  💳 Pembayaran via DANA: ' + DANA_ADMIN_NUMBER + '            ║');
+  console.log('║  🎬 Generator Netflix Premium (NEW!)                    ║');
   console.log('║  🛒 VIP Shop + Upload Bukti Transfer DANA               ║');
   console.log('║  🔧 Admin dapat mengatur layanan VIP                    ║');
   console.log('║  ✅ Konfirmasi Pembayaran → Auto VIP                    ║');
@@ -5151,5 +5887,6 @@ server.listen(PORT, () => {
   console.log('║  ✅ Cek Kode Sudah Diklaim (Centang)                     ║');
   console.log('║  💡 Request Fitur Baru (User → Admin)                    ║');
   console.log('║  🛡️ Panel Admin Terpisah dari Profil                    ║');
-  console.log('╚══════════════════════════════════════════════════════════╝\\n');
+  console.log('║  🎬 Netflix History + Quota Management                   ║');
+  console.log('╚══════════════════════════════════════════════════════════╝\n');
 });
