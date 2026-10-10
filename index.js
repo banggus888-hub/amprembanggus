@@ -1,34 +1,18 @@
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const tls = require('tls');
 const Go = require('@xof/fetch');
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, get, set, child } = require('firebase/database');
 
+// ====== KONFIGURASI ======
 const config = {
   base: 'https://app.kyzznekoo.my.id',
   kyzznekooApiKey: 'sk_xof_c55534e72b71ed35f19e214cdd8d4717'
 };
-
-// ====== KONFIGURASI TIKTOK VIEW & STATUS ======
-const TIKTOK_VIEW_API = 'https://clooud.my.id/api/tiktokview/?url=';
-const TIKTOK_STATUS_API = 'https://clooud.my.id/api/cekstatus?id=';
-const TIKTOK_HISTORY_FILE = path.join(os.tmpdir(), 'am-tiktok-history.json');
-
-function loadTiktokHistory() {
-  try {
-    return JSON.parse(fs.readFileSync(TIKTOK_HISTORY_FILE, 'utf-8'));
-  } catch (err) {
-    return [];
-  }
-}
-
-function saveTiktokHistory(history) {
-  try {
-    fs.writeFileSync(TIKTOK_HISTORY_FILE, JSON.stringify(history, null, 2));
-  } catch (e) {}
-}
 
 const firebaseConfig = {
   apiKey: "AIzaSyCg1K6T7IZ4ldhX6ehn9uC_KfRrFSSv9ec",
@@ -47,11 +31,24 @@ const db = getDatabase(firebaseApp);
 const DANA_ADMIN_NUMBER = '085377788830';
 const DANA_ADMIN_NAME = 'L,S';
 
+// ====== NETFLIX CONFIG ======
+const NETFLIX_BASE = 'https://nftools.aroshi.my.id';
+const NETFLIX_COUNTRY = {
+  US:'UNITED STATES',GB:'UNITED KINGDOM',DE:'GERMANY',FR:'FRANCE',JP:'JAPAN',
+  KR:'SOUTH KOREA',IN:'INDIA',BR:'BRAZIL',CA:'CANADA',AU:'AUSTRALIA',
+  IT:'ITALY',ES:'SPAIN',MX:'MEXICO',PH:'PHILIPPINES',ID:'INDONESIA',
+  MY:'MALAYSIA',TH:'THAILAND',SG:'SINGAPORE',TR:'TURKEY',PL:'POLAND',
+  NL:'NETHERLANDS',SE:'SWEDEN',NO:'NORWAY',DK:'DENMARK',FI:'FINLAND',
+  PT:'PORTUGAL',AR:'ARGENTINA',CL:'CHILE',CO:'COLOMBIA',PK:'PAKISTAN',
+  BD:'BANGLADESH',NG:'NIGERIA',EG:'EGYPT',ZA:'SOUTH AFRICA',VN:'VIETNAM',
+  RU:'RUSSIA',UA:'UKRAINE',
+};
+
 const go = Go.create({
   baseURL: config.base,
   browser: true,
   headers: {
-   'X-apikey': config.kyzznekooApiKey
+    'X-apikey': config.kyzznekooApiKey
   },
   cookieJar: true,
   keepAlive: true
@@ -200,36 +197,16 @@ async function removeTransactionFromDb(id) {
   await set(ref(db, `transactions/${id}`), null);
 }
 
-// ====== QUOTA HELPERS (UNIFIED UNTUK SEMUA FITUR) ======
-const UNIFIED_QUOTA_LIMIT = 1; // Semua fitur pakai kuota yang sama
-const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
-
-function getUnifiedUsedQuota(userObj) {
-  // Semua aktivitas (magiclink + tiktok view + tiktok status) pakai kuota yang sama
-  return userObj.activatedEmails ? userObj.activatedEmails.length : 0;
+// ====== NETFLIX RESULTS HELPERS ======
+async function getNetflixResultsFromDb() {
+  const snapshot = await get(child(ref(db), `netflixResults`));
+  return snapshot.exists() ? snapshot.val() : {};
 }
-
-function getUnifiedTotalQuota(userObj) {
-  return UNIFIED_QUOTA_LIMIT + (userObj.bonusQuota || 0);
+async function saveNetflixResultToDb(id, data) {
+  await set(ref(db, `netflixResults/${id}`), data);
 }
-
-function isQuotaExceeded(userObj, identifier) {
-  if (userObj.isAdmin) return false;
-  const now = Date.now();
-  if (userObj.vipUntil && userObj.vipUntil > now) return false;
-  const used = getUnifiedUsedQuota(userObj);
-  const total = getUnifiedTotalQuota(userObj);
-  // Jika identifier sudah ada di daftar (re-run), tidak dihitung sebagai kuota baru
-  if (userObj.activatedEmails && userObj.activatedEmails.includes(identifier)) return false;
-  return used >= total;
-}
-
-async function consumeQuota(userObj, cleanUser, identifier) {
-  if (!userObj.activatedEmails) userObj.activatedEmails = [];
-  if (!userObj.activatedEmails.includes(identifier)) {
-    userObj.activatedEmails.push(identifier);
-    await saveUserToDb(cleanUser, userObj);
-  }
+async function removeNetflixResultFromDb(id) {
+  await set(ref(db, `netflixResults/${id}`), null);
 }
 
 async function initAdmin() {
@@ -263,6 +240,11 @@ async function initDefaultVipShop() {
 }
 initDefaultVipShop();
 
+// ====== ALOKASI QUOTA UNTUK SETIAP FITUR ======
+// Setiap fitur (Alight Motion & Netflix) menggunakan quota yang SAMA
+// Quota dihitung dari total aktivasi (activatedEmails) + netflixActivations
+// Tapi untuk kesederhanaan, kita pakai activatedEmails sebagai quota utama
+
 const am = {
   async magiclink(email) {
     if (!email.includes("@") || !email.includes(".")) throw new Error("Invalid email.");
@@ -292,63 +274,146 @@ const am = {
   }
 };
 
-// ====== TIKTOK VIEW FUNCTION ======
-async function tiktokView(url) {
-  if (!url) throw new Error('URL TikTok diperlukan.');
-  const history = loadTiktokHistory();
-  if (history.includes(url)) {
-    return {
-      status: false,
-      message: 'Link ini sudah pernah diproses sebelumnya. Gunakan link TikTok yang berbeda.',
-      url
+// ====== NETFLIX GENERATOR FUNCTIONS ======
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function TestProxy(proxy) {
+  return new Promise((resolve) => {
+    const [proxyHost, proxyPort] = proxy.split(':');
+    const opts = {
+      host: proxyHost,
+      port: parseInt(proxyPort),
+      method: 'CONNECT',
+      path: `${proxyHost}:443`,
+      timeout: 4000,
     };
-  }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
-  try {
-    const response = await fetch(TIKTOK_VIEW_API + encodeURIComponent(url), {
-      signal: controller.signal
+    const req = http.request(opts);
+    req.on('connect', (res, socket) => {
+      if (res.statusCode === 200) {
+        const tlsSocket = tls.connect({ socket, servername: proxyHost, rejectUnauthorized: false });
+        tlsSocket.on('secureConnect', () => { tlsSocket.destroy(); resolve(proxy); });
+        tlsSocket.on('error', () => resolve(null));
+        setTimeout(() => { tlsSocket.destroy(); resolve(null); }, 3000);
+      } else resolve(null);
     });
-    clearTimeout(timer);
-    const result = await response.json();
-    // Simpan history hanya jika sukses dan bukan spam
-    if (result && result.status !== false) {
-      history.push(url);
-      saveTiktokHistory(history);
-    } else if (result && result.status === false && !result.message?.toLowerCase().includes('sudah pernah')) {
-      history.push(url);
-      saveTiktokHistory(history);
-    }
-    return result;
-  } catch (err) {
-    clearTimeout(timer);
-    return {
-      status: false,
-      message: 'Gagal mengambil data dari server',
-      error: err.message
-    };
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.end();
+  });
+}
+
+async function getHttpProxies() {
+  const url = 'https://api.kyzznekoo.my.id/assets/proxy.json';
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error(`Status ${r.status}`);
+    const data = await r.json();
+    const proxies = data.data.filter(p => p.protocol === 'http').map(p => `${p.ip}:${p.port}`).filter(p => /^\d+\.\d+\.\d+\.\d+:\d+$/.test(p));
+    return proxies;
+  } catch (e) {
+    console.error('Failed to fetch proxies:', e.message);
+    return [];
   }
 }
 
-// ====== TIKTOK STATUS FUNCTION ======
-async function tiktokStatus(id) {
-  if (!id) throw new Error('ID TikTok diperlukan.');
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
+async function findWorkingProxies(proxyList, count) {
+  const shuffled = [...proxyList].sort(() => Math.random() - 0.5);
+  const batchSize = Math.min(shuffled.length, 500);
+  const batch = shuffled.slice(0, batchSize);
+  const results = await Promise.allSettled(batch.map(p => TestProxy(p)));
+  const working = results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
+  return working;
+}
+
+async function generateNetflixToken(plan, proxy) {
+  // Simulasi generate token Netflix (karena puppeteer tidak tersedia di environment ini)
+  // Dalam implementasi real, ini akan menggunakan puppeteer untuk generate token
+  
+  // Untuk demo, kita return hasil simulasi
+  // Di production, Anda perlu menginstall puppeteer-extra dan puppeteer-extra-plugin-stealth
+  
   try {
-    const response = await fetch(TIKTOK_STATUS_API + encodeURIComponent(id), {
-      signal: controller.signal
+    // Coba fetch langsung ke API Netflix
+    const sessionRes = await fetch(`${NETFLIX_BASE}/api/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
     });
-    clearTimeout(timer);
-    const result = await response.json();
-    return result;
-  } catch (err) {
-    clearTimeout(timer);
-    return {
-      status: false,
-      message: 'Gagal mengambil data dari server',
-      error: err.message
-    };
+    
+    if (!sessionRes.ok) {
+      throw new Error('Failed to create session');
+    }
+    
+    const sessionData = await sessionRes.json();
+    if (!sessionData.success) {
+      throw new Error(sessionData.error || 'Session failed');
+    }
+    
+    // Request token
+    const tokenRes = await fetch(`${NETFLIX_BASE}/api/random`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-NFToken-Session': sessionData.token
+      },
+      body: JSON.stringify({ plan })
+    });
+    
+    const tokenData = await tokenRes.json();
+    
+    if (tokenData.success && tokenData.url) {
+      return {
+        success: true,
+        plan: tokenData.plan || plan,
+        quality: tokenData.quality || 'HD',
+        country: tokenData.country || 'US',
+        url: tokenData.url,
+        expires: tokenData.expires || null,
+        pool: tokenData.pool || null
+      };
+    }
+    
+    // Jika ada PoW challenge, coba solve
+    if (tokenData.powChallenge) {
+      const enc = new TextEncoder();
+      let proof = null;
+      for (let n = 0; n < 2000000; n++) {
+        const h = await crypto.subtle.digest('SHA-256', enc.encode(tokenData.powChallenge + n));
+        const hex = Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, '0')).join('');
+        if (hex.startsWith('0000')) {
+          proof = tokenData.powChallenge + ':' + n;
+          break;
+        }
+      }
+      
+      if (proof) {
+        const retryRes = await fetch(`${NETFLIX_BASE}/api/random`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'X-NFToken-Session': sessionData.token,
+            'X-PoW-Proof': proof
+          },
+          body: JSON.stringify({ plan })
+        });
+        
+        const retryData = await retryRes.json();
+        if (retryData.success && retryData.url) {
+          return {
+            success: true,
+            plan: retryData.plan || plan,
+            quality: retryData.quality || 'HD',
+            country: retryData.country || 'US',
+            url: retryData.url,
+            expires: retryData.expires || null,
+            pool: retryData.pool || null
+          };
+        }
+      }
+    }
+    
+    return { success: false, error: tokenData.error || 'Unknown error' };
+  } catch (e) {
+    return { success: false, error: e.message };
   }
 }
 
@@ -373,6 +438,7 @@ const htmlTemplate = `<!DOCTYPE html>
     --emerald: #10b981;
     --rose: #f43f5e;
     --amber: #f59e0b;
+    --netflix-red: #e50914;
   }
   * { -webkit-tap-highlight-color: transparent; }
   html, body {
@@ -457,6 +523,23 @@ const htmlTemplate = `<!DOCTYPE html>
   .btn-primary:active:not(:disabled) { transform: translateY(0); }
   .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
 
+  .btn-netflix {
+    background: linear-gradient(135deg, #e50914 0%, #b20710 100%);
+    box-shadow: 0 12px 30px -10px rgba(229,9,20,0.6), inset 0 1px 0 rgba(255,255,255,0.2);
+    transition: all 0.25s ease;
+    border-radius: 1rem;
+    padding: 0.95rem 1rem;
+    font-weight: 700;
+    color: white;
+    width: 100%;
+    border: none;
+    cursor: pointer;
+    font-size: 0.92rem;
+    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  }
+  .btn-netflix:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(229,9,20,0.8); }
+  .btn-netflix:disabled { opacity: 0.6; cursor: not-allowed; }
+
   .btn-success {
     background: linear-gradient(135deg, #10b981 0%, #059669 100%);
     box-shadow: 0 12px 30px -10px rgba(16,185,129,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
@@ -490,30 +573,6 @@ const htmlTemplate = `<!DOCTYPE html>
   }
   .btn-secondary:hover { background: rgba(168,85,247,0.2); border-color: rgba(168,85,247,0.5); }
 
-  .btn-tt {
-    background: linear-gradient(135deg, #ff0050 0%, #00f2ea 100%);
-    box-shadow: 0 12px 30px -10px rgba(255,0,80,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
-    border-radius: 1rem; padding: 0.95rem 1rem;
-    font-weight: 700; color: white; width: 100%; border: none;
-    cursor: pointer; font-size: 0.92rem;
-    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
-    transition: all 0.25s ease;
-  }
-  .btn-tt:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(255,0,80,0.7); }
-  .btn-tt:disabled { opacity: 0.6; cursor: not-allowed; }
-
-  .btn-tt-status {
-    background: linear-gradient(135deg, #00f2ea 0%, #00c4bd 100%);
-    box-shadow: 0 12px 30px -10px rgba(0,242,234,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
-    border-radius: 1rem; padding: 0.95rem 1rem;
-    font-weight: 700; color: #001a19; width: 100%; border: none;
-    cursor: pointer; font-size: 0.92rem;
-    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
-    transition: all 0.25s ease;
-  }
-  .btn-tt-status:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(0,242,234,0.7); }
-  .btn-tt-status:disabled { opacity: 0.6; cursor: not-allowed; }
-
   #nav-drawer {
     transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     transform: translateX(105%);
@@ -542,6 +601,11 @@ const htmlTemplate = `<!DOCTYPE html>
     background: linear-gradient(135deg, rgba(168,85,247,0.18), rgba(126,34,206,0.1));
     color: #e9d5ff;
     border-color: rgba(168,85,247,0.35);
+  }
+  .nav-item.netflix-nav.active {
+    background: linear-gradient(135deg, rgba(229,9,20,0.2), rgba(178,7,16,0.1));
+    color: #fca5a5;
+    border-color: rgba(229,9,20,0.4);
   }
 
   @keyframes pulse-glow {
@@ -576,6 +640,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .toast-success { background: rgba(16,185,129,0.95); color: #031a12; }
   .toast-error { background: rgba(244,63,94,0.95); color: white; }
   .toast-info { background: rgba(168,85,247,0.95); color: white; }
+  .toast-netflix { background: rgba(229,9,20,0.95); color: white; }
 
   .progress-bar {
     width: 100%; height: 8px; background: rgba(168,85,247,0.1);
@@ -602,7 +667,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .badge-admin { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.4); color: #fbbf24; }
   .badge-vip { background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.4); color: #d8b4fe; }
   .badge-user { background: rgba(148,163,184,0.1); border-color: rgba(148,163,184,0.3); color: #cbd5e1; }
-  .badge-tt { background: rgba(255,0,80,0.15); border-color: rgba(255,0,80,0.4); color: #ff8aab; }
+  .badge-netflix { background: rgba(229,9,20,0.15); border-color: rgba(229,9,20,0.4); color: #fca5a5; }
 
   .divider {
     height: 1px;
@@ -839,7 +904,6 @@ const htmlTemplate = `<!DOCTYPE html>
     color: #fbbf24; flex-shrink: 0; margin-top: 0.1rem;
   }
 
-  /* DANA PAYMENT STYLES */
   .dana-box {
     background: linear-gradient(135deg, rgba(0,123,255,0.12), rgba(0,123,255,0.05));
     border: 2px solid rgba(0,123,255,0.4);
@@ -930,33 +994,88 @@ const htmlTemplate = `<!DOCTYPE html>
   .status-success { background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.4); color: #6ee7b7; }
   .status-failed { background: rgba(244,63,94,0.15); border: 1px solid rgba(244,63,94,0.4); color: #fda4af; }
 
-  /* TikTok Style */
-  .tt-card {
-    background: linear-gradient(145deg, rgba(20,14,38,0.9), rgba(12,8,24,0.8));
-    border: 1px solid rgba(255,0,80,0.3);
+  /* NETFLIX STYLES */
+  .netflix-card {
+    background: linear-gradient(135deg, rgba(229,9,20,0.12), rgba(178,7,16,0.06));
+    border: 1px solid rgba(229,9,20,0.35);
     border-radius: 1.25rem;
-    padding: 1.15rem;
-    animation: slide-up 0.4s ease;
-    position: relative;
-    overflow: hidden;
+    padding: 1rem;
+    animation: slide-up 0.3s ease;
   }
-  .tt-card::before {
-    content: '';
-    position: absolute; top: -50%; left: -50%;
-    width: 200%; height: 200%;
-    background: radial-gradient(circle, rgba(255,0,80,0.08) 0%, transparent 60%);
-    pointer-events: none;
-  }
-  .tt-header {
-    display: flex; align-items: center; gap: 0.75rem;
-    margin-bottom: 0.75rem;
-  }
-  .tt-icon {
-    width: 40px; height: 40px;
+  .netflix-logo {
+    width: 42px; height: 42px;
+    background: linear-gradient(135deg, #e50914, #b20710);
     border-radius: 12px;
-    background: linear-gradient(135deg, #ff0050, #00f2ea);
     display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 8px 25px -5px rgba(255,0,80,0.4);
+    font-weight: 900; color: white; font-size: 1rem;
+    box-shadow: 0 8px 25px -5px rgba(229,9,20,0.5);
+  }
+  .netflix-result {
+    background: rgba(7,4,15,0.7);
+    border: 1px solid rgba(229,9,20,0.25);
+    border-radius: 1rem;
+    padding: 1rem;
+    margin-top: 0.75rem;
+    animation: slide-up 0.3s ease;
+  }
+  .netflix-result .label {
+    font-size: 0.65rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+  }
+  .netflix-result .value {
+    font-size: 0.85rem;
+    color: #e2e8f0;
+    font-weight: 600;
+  }
+  .netflix-result .link-box {
+    background: rgba(229,9,20,0.1);
+    border: 1px solid rgba(229,9,20,0.3);
+    border-radius: 0.75rem;
+    padding: 0.75rem;
+    margin-top: 0.5rem;
+    word-break: break-all;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: #fca5a5;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .netflix-result .link-box:hover {
+    background: rgba(229,9,20,0.2);
+    border-color: rgba(229,9,20,0.6);
+  }
+  .plan-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-radius: 0.9rem;
+    border: 1px solid rgba(148,163,184,0.2);
+    background: rgba(7,4,15,0.5);
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 0.5rem;
+  }
+  .plan-option:hover {
+    border-color: rgba(229,9,20,0.5);
+    background: rgba(229,9,20,0.08);
+  }
+  .plan-option.selected {
+    border-color: rgba(229,9,20,0.8);
+    background: rgba(229,9,20,0.15);
+  }
+  .plan-option .plan-name {
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: #e2e8f0;
+  }
+  .plan-option .plan-price {
+    font-size: 0.75rem;
+    color: #fca5a5;
+    font-weight: 700;
   }
 
   ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -1017,20 +1136,11 @@ const htmlTemplate = `<!DOCTYPE html>
       <nav class="space-y-1.5">
         <button onclick="switchView('generator')" data-nav="generator" class="nav-item active">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-          Generator Utama
+          Generator AM
         </button>
-        <button onclick="switchView('tiktok')" data-nav="tiktok" class="nav-item">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"/>
-          </svg>
-          Suntik View TikTok
-          <span class="ml-auto text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(255,0,80,0.2); color: #ff8aab;">NEW</span>
-        </button>
-        <button onclick="switchView('tiktokstatus')" data-nav="tiktokstatus" class="nav-item">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
-          Cek Status TikTok
+        <button onclick="switchView('netflix')" data-nav="netflix" class="nav-item netflix-nav">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
+          Generator Netflix
         </button>
         <button onclick="switchView('vipshop')" data-nav="vipshop" class="nav-item">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
@@ -1132,7 +1242,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </button>
     </div>
 
-    <!-- VIEW: TERMINAL (GENERATOR UTAMA) -->
+    <!-- VIEW: TERMINAL (GENERATOR UTAMA - ALIGHT MOTION) -->
     <div id="terminal-view" class="space-y-3 hidden">
 
       <div class="video-container">
@@ -1223,7 +1333,7 @@ const htmlTemplate = `<!DOCTYPE html>
         <div>
           <div class="section-title">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-            Kirim Magic Link
+            Kirim Magic Link (Alight Motion)
           </div>
           <input type="email" id="target-email" placeholder="target@gmail.com" class="input-glow">
         </div>
@@ -1249,7 +1359,7 @@ const htmlTemplate = `<!DOCTYPE html>
         </button>
       </div>
 
-      <!-- KLAIM KODE REDEEM (PINDAH KE GENERATOR) -->
+      <!-- KLAIM KODE REDEEM -->
       <div class="glass-panel space-y-3">
         <div class="section-title" style="color: #67e8f9;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 12v10H4V12"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
@@ -1260,7 +1370,6 @@ const htmlTemplate = `<!DOCTYPE html>
           <button onclick="handleRedeemCodeMain()" class="btn-primary" style="width: auto; padding: 0.7rem 1rem; font-size: 0.8rem;">Klaim</button>
         </div>
 
-        <!-- DAFTAR KODE REDEEM AKTIF -->
         <div class="pt-2 border-t border-cyan-500/20">
           <div class="flex justify-between items-center mb-2">
             <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-300">Kode Redeem Aktif</span>
@@ -1286,124 +1395,129 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- VIEW: SUNTIK VIEW TIKTOK -->
-    <div id="section-tiktok" class="glass-panel space-y-4 hidden">
-      <div class="flex items-center justify-between pb-3 border-b border-rose-500/20">
-        <h2 class="section-title" style="margin: 0; color: #ff8aab;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"/>
-          </svg>
-          Suntik View TikTok
-        </h2>
-        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+    <!-- VIEW: NETFLIX GENERATOR -->
+    <div id="section-netflix" class="space-y-3 hidden">
+      
+      <div class="glass-panel py-2.5 px-3.5 flex items-center justify-between" style="border-color: rgba(229,9,20,0.3);">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="netflix-logo">N</div>
+          <div class="min-w-0">
+            <p class="text-xs font-bold text-white truncate">Netflix Generator</p>
+            <p class="text-[10px] text-red-300">Premium Token</p>
+          </div>
+        </div>
+        <span class="badge badge-netflix">
+          <span class="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse"></span>
+          READY
+        </span>
       </div>
 
-      <div class="tt-card">
-        <div class="tt-header">
-          <div class="tt-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"/>
-            </svg>
+      <!-- Quota Info -->
+      <div class="grid grid-cols-2 gap-2.5">
+        <div class="stat-card" style="border-color: rgba(229,9,20,0.25);">
+          <div>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-red-300">Kuota Tersisa</p>
+            <p id="netflix-quota-display" class="text-sm font-extrabold text-white mono mt-0.5">0</p>
+          </div>
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(229,9,20,0.15);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fca5a5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+        </div>
+        <div class="stat-card" style="border-color: rgba(229,9,20,0.25);">
+          <div>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-red-300">Reset</p>
+            <p id="netflix-reset-display" class="text-sm font-extrabold text-white mono mt-0.5">24 Jam</p>
+          </div>
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(229,9,20,0.15);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fca5a5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Info Quota Sama -->
+      <div class="p-3 rounded-xl" style="background: rgba(229,9,20,0.08); border: 1px solid rgba(229,9,20,0.25);">
+        <p class="text-[10px] text-red-300 flex items-center gap-1.5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <strong>Quota SAMA</strong> dengan Alight Motion — setiap generate Netflix mengurangi 1 quota
+        </p>
+      </div>
+
+      <!-- Plan Selector -->
+      <div class="glass-panel space-y-3" style="border-color: rgba(229,9,20,0.3);">
+        <div class="section-title" style="color: #fca5a5;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
+          Pilih Plan Netflix
+        </div>
+
+        <div id="plan-options">
+          <div class="plan-option" data-plan="premium" onclick="selectNetflixPlan('premium')">
+            <div>
+              <p class="plan-name">🏆 Premium</p>
+              <p class="text-[10px] text-slate-400">4K + HDR • 4 Screen</p>
+            </div>
+            <span class="plan-price">1 Quota</span>
+          </div>
+          <div class="plan-option" data-plan="standard" onclick="selectNetflixPlan('standard')">
+            <div>
+              <p class="plan-name">⭐ Standard</p>
+              <p class="text-[10px] text-slate-400">1080p • 2 Screen</p>
+            </div>
+            <span class="plan-price">1 Quota</span>
+          </div>
+          <div class="plan-option" data-plan="basic" onclick="selectNetflixPlan('basic')">
+            <div>
+              <p class="plan-name">📱 Basic</p>
+              <p class="text-[10px] text-slate-400">720p • 1 Screen</p>
+            </div>
+            <span class="plan-price">1 Quota</span>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 p-2.5 rounded-xl" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(229,9,20,0.2);">
+          <input type="checkbox" id="netflix-use-proxy" class="w-4 h-4 accent-red-500" checked>
+          <label for="netflix-use-proxy" class="text-xs text-slate-300 cursor-pointer">Gunakan Proxy (Recommended)</label>
+        </div>
+
+        <button id="btn-generate-netflix" onclick="handleGenerateNetflix()" class="btn-netflix">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <span id="netflix-btn-text">Generate Token Netflix</span>
+        </button>
+      </div>
+
+      <!-- Loading -->
+      <div id="netflix-loading" class="hidden glass-panel" style="border-color: rgba(229,9,20,0.3);">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: rgba(229,9,20,0.2);">
+            <svg class="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fca5a5" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
           </div>
           <div>
-            <p class="text-xs font-extrabold text-white">TikTok View Booster</p>
-            <p class="text-[10px] text-slate-400">Masukkan link video TikTok untuk menambah view</p>
+            <p class="text-xs font-bold text-white">Memproses...</p>
+            <p id="netflix-status-text" class="text-[10px] text-slate-400">Menyiapkan browser</p>
           </div>
         </div>
-
-        <div class="space-y-3">
-          <div>
-            <label class="text-[10px] font-bold uppercase tracking-widest text-rose-300 pl-1">Link Video TikTok</label>
-            <input type="text" id="tiktok-view-url" placeholder="https://www.tiktok.com/@user/video/..." class="input-glow mono" style="font-size: 0.8rem;">
-          </div>
-
-          <button id="btn-tiktok-view" onclick="handleTiktokView()" class="btn-tt">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"/>
-            </svg>
-            <span id="tiktok-view-text">Suntik View Sekarang</span>
-          </button>
+        <div class="progress-bar">
+          <div id="netflix-progress-fill" class="progress-fill" style="background: linear-gradient(90deg, #e50914, #b20710, #e50914);"></div>
         </div>
-
-        <div class="mt-3 p-2.5 rounded-lg" style="background: rgba(255,0,80,0.06); border: 1px solid rgba(255,0,80,0.2);">
-          <p class="text-[10px] text-slate-400 flex items-center gap-1.5">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ff8aab" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-            Setiap link hanya dapat diproses <strong class="text-rose-300">1 kali</strong>. Kuota terpakai sama dengan fitur lainnya.
-          </p>
-        </div>
+        <p id="netflix-log-text" class="text-[10px] text-slate-500 mono mt-2 text-center">Initializing...</p>
       </div>
 
-      <div id="tiktok-result-box" class="hidden">
-        <div class="glass-panel" style="padding: 1rem;">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-[10px] font-bold uppercase tracking-widest text-rose-300">Response TikTok View</span>
-            <button onclick="copyTiktokResult()" class="btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.68rem;">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              Copy
-            </button>
-          </div>
-          <pre id="tiktok-result-text" class="mono text-[11px] text-rose-300 whitespace-pre-wrap break-all" style="max-height: 200px; overflow-y: auto;"></pre>
+      <!-- Results -->
+      <div id="netflix-results-container" class="space-y-3 hidden">
+        <div class="flex items-center justify-between">
+          <p class="section-title" style="color: #fca5a5; margin: 0;">Hasil Generate</p>
+          <button onclick="clearNetflixResults()" class="text-[10px] text-slate-400 hover:text-white underline">Bersihkan</button>
         </div>
-      </div>
-    </div>
-
-    <!-- VIEW: CEK STATUS TIKTOK -->
-    <div id="section-tiktokstatus" class="glass-panel space-y-4 hidden">
-      <div class="flex items-center justify-between pb-3 border-b border-cyan-500/20">
-        <h2 class="section-title" style="margin: 0; color: #67e8f9;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
-          Cek Status TikTok
-        </h2>
-        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+        <div id="netflix-results-list" class="space-y-3"></div>
       </div>
 
-      <div class="tt-card" style="border-color: rgba(0,242,234,0.3);">
-        <div class="tt-header">
-          <div class="tt-icon" style="background: linear-gradient(135deg, #00f2ea, #00c4bd);">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#001a19" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-          </div>
-          <div>
-            <p class="text-xs font-extrabold text-white">TikTok Status Checker</p>
-            <p class="text-[10px] text-slate-400">Masukkan ID order untuk cek status</p>
-          </div>
+      <!-- History -->
+      <div class="glass-panel" style="border-color: rgba(229,9,20,0.2);">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-red-300">Riwayat Generate</span>
+          <button onclick="loadNetflixHistory()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
         </div>
-
-        <div class="space-y-3">
-          <div>
-            <label class="text-[10px] font-bold uppercase tracking-widest text-cyan-300 pl-1">ID Order</label>
-            <input type="text" id="tiktok-status-id" placeholder="Masukkan ID order..." class="input-glow mono" style="font-size: 0.8rem;">
-          </div>
-
-          <button id="btn-tiktok-status" onclick="handleTiktokStatus()" class="btn-tt-status">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-            <span id="tiktok-status-text">Cek Status Sekarang</span>
-          </button>
-        </div>
-
-        <div class="mt-3 p-2.5 rounded-lg" style="background: rgba(0,242,234,0.06); border: 1px solid rgba(0,242,234,0.2);">
-          <p class="text-[10px] text-slate-400 flex items-center gap-1.5">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#67e8f9" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-            Fitur cek status <strong class="text-cyan-300">tidak memotong kuota</strong> — hanya untuk monitoring.
-          </p>
-        </div>
-      </div>
-
-      <div id="tiktok-status-result-box" class="hidden">
-        <div class="glass-panel" style="padding: 1rem;">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-[10px] font-bold uppercase tracking-widest text-cyan-300">Response Status TikTok</span>
-            <button onclick="copyTiktokStatusResult()" class="btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.68rem;">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              Copy
-            </button>
-          </div>
-          <pre id="tiktok-status-result-text" class="mono text-[11px] text-cyan-300 whitespace-pre-wrap break-all" style="max-height: 200px; overflow-y: auto;"></pre>
+        <div id="netflix-history-list" class="space-y-2 max-h-60 overflow-y-auto">
+          <p class="text-slate-500 italic text-xs text-center py-2">Memuat riwayat...</p>
         </div>
       </div>
     </div>
@@ -1418,7 +1532,6 @@ const htmlTemplate = `<!DOCTYPE html>
         <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
       </div>
 
-      <!-- KEUNTUNGAN VIP -->
       <div class="p-3.5 rounded-2xl" style="background: linear-gradient(135deg, rgba(245,158,11,0.15), rgba(168,85,247,0.1)); border: 1px solid rgba(245,158,11,0.35);">
         <p class="text-xs font-extrabold text-amber-300 mb-2.5 flex items-center gap-2">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
@@ -1428,6 +1541,10 @@ const htmlTemplate = `<!DOCTYPE html>
           <div class="vip-benefit">
             <span class="vip-benefit-icon">✦</span>
             <span><strong class="text-amber-200">BISA MEMBUAT AM PREMIUM TERUS MENERUS</strong></span>
+          </div>
+          <div class="vip-benefit">
+            <span class="vip-benefit-icon">✦</span>
+            <span><strong class="text-amber-200">BISA GENERATE NETFLIX TANPA BATAS</strong></span>
           </div>
           <div class="vip-benefit">
             <span class="vip-benefit-icon">✦</span>
@@ -1449,14 +1566,9 @@ const htmlTemplate = `<!DOCTYPE html>
             <span class="vip-benefit-icon">✦</span>
             <span>Badge VIP eksklusif di Chat Global</span>
           </div>
-          <div class="vip-benefit">
-            <span class="vip-benefit-icon">✦</span>
-            <span>Akses Suntik View TikTok & Cek Status tanpa batas</span>
-          </div>
         </div>
       </div>
 
-      <!-- DAFTAR LAYANAN VIP -->
       <div>
         <p class="section-title" style="color: #fbbf24;">Pilih Layanan VIP</p>
         <div id="vip-shop-list" class="space-y-3">
@@ -1464,7 +1576,6 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- FORM PEMBELIAN (muncul setelah pilih) -->
       <div id="vip-purchase-form" class="hidden space-y-3 pt-3 border-t border-amber-500/20">
         <input type="hidden" id="selected-vip-id" value="">
         <input type="hidden" id="selected-vip-price" value="">
@@ -1481,7 +1592,6 @@ const htmlTemplate = `<!DOCTYPE html>
           <p id="selected-vip-price-display" class="text-lg font-extrabold text-cyan-300 mono">Rp 0</p>
         </div>
 
-        <!-- PEMBAYARAN VIA DANA -->
         <div class="dana-box">
           <div class="dana-logo">DANA</div>
           <p class="text-[10px] font-bold uppercase tracking-wider text-blue-300 mb-1">Transfer ke Nomor DANA</p>
@@ -1531,7 +1641,6 @@ const htmlTemplate = `<!DOCTYPE html>
           Buat Pesanan & Bayar
         </button>
 
-        <!-- UPLOAD BUKTI -->
         <div id="payment-proof-section" class="hidden space-y-3 pt-3 border-t border-emerald-500/20">
           <p class="text-[10px] font-bold uppercase tracking-wider text-emerald-300">Upload Bukti Pembayaran</p>
           <div class="file-drop" onclick="document.getElementById('payment-proof-file').click()">
@@ -1548,14 +1657,12 @@ const htmlTemplate = `<!DOCTYPE html>
           </button>
         </div>
 
-        <!-- STATUS TRANSAKSI -->
         <div id="transaction-status-box" class="hidden p-3 rounded-xl" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(168,85,247,0.2);">
           <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Status Transaksi</p>
           <div id="transaction-status-content"></div>
         </div>
       </div>
 
-      <!-- RIWAYAT TRANSAKSI USER -->
       <div class="pt-3 border-t border-amber-500/20">
         <div class="flex justify-between items-center mb-2">
           <span class="text-[10px] font-bold uppercase tracking-wider text-amber-300">Riwayat Pembelian</span>
@@ -1655,13 +1762,8 @@ const htmlTemplate = `<!DOCTYPE html>
             Ubah Password
           </button>
         </div>
-        <p class="text-[10px] text-amber-400/80 mt-2 flex items-center gap-1.5">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          Ganti password segera setelah menerima akun VIP
-        </p>
       </div>
 
-      <!-- RIWAYAT GMAIL TERVERIFIKASI -->
       <div class="pt-3 border-t border-cyan-500/20">
         <div class="flex justify-between items-center mb-2">
           <div class="section-title" style="color: #67e8f9; margin: 0;">
@@ -1676,7 +1778,7 @@ const htmlTemplate = `<!DOCTYPE html>
 
         <div id="quota-status-card" class="p-3 rounded-xl mb-2.5" style="background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.25);">
           <div class="flex justify-between items-center mb-2">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-300">Status Kuota Terpadu</span>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-300">Status Kuota</span>
             <span id="quota-status-badge" class="badge badge-online" style="font-size: 0.6rem; padding: 0.15rem 0.5rem;">Tersedia</span>
           </div>
           <div class="flex items-center justify-between text-xs">
@@ -1750,7 +1852,6 @@ const htmlTemplate = `<!DOCTYPE html>
         </p>
       </div>
 
-      <!-- Status Server -->
       <div>
         <p class="section-title" style="color: #fbbf24;">Status Server</p>
         <div class="grid grid-cols-2 gap-2">
@@ -1763,7 +1864,6 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- Upload Video -->
       <div>
         <p class="section-title" style="color: #fbbf24;">Upload Video (>5MB Support)</p>
         <div id="file-drop-zone" class="file-drop">
@@ -1793,7 +1893,6 @@ const htmlTemplate = `<!DOCTYPE html>
         </button>
       </div>
 
-      <!-- Kelola VIP User -->
       <div>
         <p class="section-title" style="color: #fbbf24;">Kelola VIP User</p>
         <input type="text" id="vip-target-user" placeholder="Username target" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
@@ -1810,7 +1909,6 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- Buat Akun VIP Baru -->
       <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(168,85,247,0.1), rgba(6,182,212,0.06)); border: 1px solid rgba(168,85,247,0.35);">
         <p class="section-title" style="color: #d8b4fe; margin-top: 0;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
@@ -1834,7 +1932,6 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- PENGATURAN LAYANAN VIP SHOP -->
       <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(168,85,247,0.06)); border: 1px solid rgba(245,158,11,0.35);">
         <p class="section-title" style="color: #fbbf24; margin-top: 0;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -1861,7 +1958,6 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- KONFIRMASI PEMBAYARAN (ADMIN) -->
       <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(6,182,212,0.1), rgba(168,85,247,0.06)); border: 1px solid rgba(6,182,212,0.35);">
         <div class="flex justify-between items-center mb-2">
           <p class="section-title" style="color: #67e8f9; margin: 0;">
@@ -1878,7 +1974,6 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- Daftar User Terdaftar -->
       <div>
         <div class="flex justify-between items-center mb-2">
           <p class="section-title" style="color: #fbbf24; margin: 0;">
@@ -1932,7 +2027,6 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- Generate Redeem Code -->
       <div>
         <p class="section-title" style="color: #fbbf24;">Generate Redeem Code</p>
         <input type="text" id="gen-code" placeholder="NAMA-KODE" class="input-glow uppercase mono mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem; font-weight: 700;">
@@ -1946,7 +2040,6 @@ const htmlTemplate = `<!DOCTYPE html>
         </button>
       </div>
 
-      <!-- Daftar Kode Aktif -->
       <div>
         <div class="flex justify-between items-center mb-1.5">
           <span class="text-[10px] text-amber-300 font-bold">Daftar Kode Aktif</span>
@@ -1957,7 +2050,6 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- Kelola Pengumuman -->
       <div class="space-y-3 pt-3 border-t border-amber-500/20">
         <p class="section-title" style="color: #fbbf24; margin: 0;">Panel Kelola Pengumuman</p>
         <input type="hidden" id="info-edit-id" value="">
@@ -1970,7 +2062,6 @@ const htmlTemplate = `<!DOCTYPE html>
         <div id="admin-info-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px] pt-1"></div>
       </div>
 
-      <!-- REQUEST FITUR USER (ADMIN VIEW) -->
       <div class="space-y-3 pt-3 border-t border-emerald-500/20">
         <div class="flex justify-between items-center">
           <p class="section-title" style="color: #6ee7b7; margin: 0;">
@@ -1996,42 +2087,33 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
 
       <div class="space-y-2.5">
-        \${[1,2,3,4,5,6,7].map((n, i) => {
-          const steps = [
-            'Pastikan Anda sudah login ke sistem dengan akun Anda.',
-            'Beralih ke menu Generator Utama untuk mulai memproses.',
-            'Masukkan email target Google/Gmail pada kolom yang tersedia.',
-            'Klik tombol Kirim Magic Link untuk memicu token verifikasi.',
-            'Salin tautan Magic Link dari email, paste di kolom URL.',
-            'Klik Verifikasi Sekarang — proses selesai!',
-            'Klaim kode redeem di Generator Utama untuk dapat kuota bonus.'
-          ];
-          return \`
-          <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-            <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">\${n}</div>
-            <p class="text-xs text-slate-300 leading-relaxed pt-0.5">\${steps[i]}</p>
-          </div>\`;
-        }).join('')}
-      </div>
-
-      <div class="divider"></div>
-      <div class="section-title" style="color: #ff8aab;">Fitur TikTok</div>
-      <div class="space-y-2.5">
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(255,0,80,0.05); border: 1px solid rgba(255,0,80,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #ff0050, #00f2ea); color: white;">1</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Buka menu <strong class="text-rose-300">Suntik View TikTok</strong>.</p>
+        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">1</div>
+          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Pastikan Anda sudah login ke sistem dengan akun Anda.</p>
         </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(255,0,80,0.05); border: 1px solid rgba(255,0,80,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #ff0050, #00f2ea); color: white;">2</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Masukkan link video TikTok yang ingin ditambah view.</p>
+        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">2</div>
+          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Untuk Alight Motion: Beralih ke menu Generator AM untuk mulai memproses.</p>
         </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(255,0,80,0.05); border: 1px solid rgba(255,0,80,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #ff0050, #00f2ea); color: white;">3</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klik <strong class="text-rose-300">Suntik View Sekarang</strong>. Setiap link hanya bisa 1 kali, kuota terpakai sama dengan fitur lain.</p>
+        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">3</div>
+          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Untuk Netflix: Beralih ke menu Generator Netflix, pilih plan, lalu generate token.</p>
         </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(255,0,80,0.05); border: 1px solid rgba(255,0,80,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #ff0050, #00f2ea); color: white;">4</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Buka menu <strong class="text-cyan-300">Cek Status TikTok</strong>, masukkan ID order untuk melihat status.</p>
+        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">4</div>
+          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Masukkan email target Google/Gmail pada kolom yang tersedia (untuk AM).</p>
+        </div>
+        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">5</div>
+          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klik tombol Kirim Magic Link untuk memicu token verifikasi (AM).</p>
+        </div>
+        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">6</div>
+          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Salin tautan Magic Link dari email, paste di kolom URL, lalu klik Verifikasi (AM).</p>
+        </div>
+        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">7</div>
+          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klaim kode redeem untuk dapat kuota bonus. Quota berlaku untuk SEMUA fitur (AM & Netflix).</p>
         </div>
       </div>
     </div>
@@ -2096,8 +2178,6 @@ let isAdminUser = false;
 let isVipUser = false;
 let selectedVideoFile = null;
 let currentResultText = '';
-let currentTiktokResultText = '';
-let currentTiktokStatusResultText = '';
 let cachedUserList = [];
 let currentUserFilter = 'all';
 let quotaCountdownInterval = null;
@@ -2112,6 +2192,11 @@ let selectedPaymentProofFile = null;
 let currentTransactionId = null;
 let cachedVipShopItems = [];
 
+// Netflix state
+let selectedNetflixPlan = 'premium';
+let netflixResults = [];
+let netflixGenerateCount = 0;
+
 // ============ OPTIMASI KUOTA ============
 let isPageVisible = true;
 let statusPollInterval = null;
@@ -2122,6 +2207,7 @@ let lastChatFetch = 0;
 let lastEmailsFetch = 0;
 let lastRedeemsFetch = 0;
 let lastAnnouncementsFetch = 0;
+let lastNetflixHistoryFetch = 0;
 
 const CACHE_DURATION = {
   status: 30000,
@@ -2129,7 +2215,8 @@ const CACHE_DURATION = {
   chat: 15000,
   emails: 30000,
   redeems: 60000,
-  announcements: 60000
+  announcements: 60000,
+  netflixHistory: 30000
 };
 
 const memoryCache = {};
@@ -2160,6 +2247,9 @@ document.addEventListener('visibilitychange', () => {
     if (currentView === 'vipshop') {
       loadUserTransactions();
     }
+    if (currentView === 'netflix') {
+      loadNetflixHistory(true);
+    }
   }
 });
 
@@ -2171,7 +2261,8 @@ function showToast(message, type = 'info', duration = 3000) {
   const icons = {
     success: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>',
     error: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
-    info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+    info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+    netflix: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'
   };
   toast.innerHTML = (icons[type] || icons.info) + '<span>' + message + '</span>';
   container.appendChild(toast);
@@ -2194,15 +2285,14 @@ function switchView(viewName) {
     el.classList.toggle('active', el.dataset.nav === viewName);
   });
   toggleMenu();
-  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request', 'section-vipshop', 'section-tiktok', 'section-tiktokstatus'].forEach(id => {
+  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request', 'section-vipshop', 'section-netflix'].forEach(id => {
     document.getElementById(id).classList.add('hidden');
   });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hidden');
-  else if (viewName === 'tiktok') {
-    document.getElementById('section-tiktok').classList.remove('hidden');
-  }
-  else if (viewName === 'tiktokstatus') {
-    document.getElementById('section-tiktokstatus').classList.remove('hidden');
+  else if (viewName === 'netflix') {
+    document.getElementById('section-netflix').classList.remove('hidden');
+    loadNetflixHistory();
+    updateNetflixQuotaDisplay();
   }
   else if (viewName === 'vipshop') {
     document.getElementById('section-vipshop').classList.remove('hidden');
@@ -2252,6 +2342,233 @@ function copyDanaNumber() {
     showToast('Gagal copy nomor DANA', 'error');
   });
 }
+
+// ============ NETFLIX FUNCTIONS ============
+function selectNetflixPlan(plan) {
+  selectedNetflixPlan = plan;
+  document.querySelectorAll('.plan-option').forEach(el => {
+    el.classList.toggle('selected', el.dataset.plan === plan);
+  });
+}
+
+function updateNetflixQuotaDisplay() {
+  const el = document.getElementById('netflix-quota-display');
+  if (el) {
+    if (isAdminUser || isVipUser) {
+      el.innerText = '∞';
+      el.style.color = '#fca5a5';
+    } else {
+      const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota);
+      el.innerText = remain;
+      el.style.color = remain > 0 ? 'white' : '#fda4af';
+    }
+  }
+  const resetEl = document.getElementById('netflix-reset-display');
+  if (resetEl) {
+    if (isAdminUser || isVipUser) {
+      resetEl.innerText = '∞';
+    } else {
+      resetEl.innerText = '24 Jam';
+    }
+  }
+}
+
+async function handleGenerateNetflix() {
+  if (!loggedInUsername) return showToast('Harus login dulu!', 'error');
+  
+  const useProxy = document.getElementById('netflix-use-proxy').checked;
+  const btn = document.getElementById('btn-generate-netflix');
+  const btnText = document.getElementById('netflix-btn-text');
+  const loadingEl = document.getElementById('netflix-loading');
+  const statusText = document.getElementById('netflix-status-text');
+  const logText = document.getElementById('netflix-log-text');
+  const progressFill = document.getElementById('netflix-progress-fill');
+
+  btn.disabled = true;
+  btnText.innerText = 'Memproses...';
+  loadingEl.classList.remove('hidden');
+  progressFill.style.width = '0%';
+  statusText.innerText = 'Menyiapkan browser';
+  logText.innerText = 'Initializing...';
+
+  try {
+    // Cek quota dulu
+    const quotaRes = await fetch('/api/netflix/check-quota?username=' + encodeURIComponent(loggedInUsername));
+    const quotaData = await quotaRes.json();
+    
+    if (!quotaData.success) {
+      throw new Error(quotaData.message || 'Gagal cek quota');
+    }
+    
+    if (!quotaData.allowed) {
+      throw new Error(quotaData.message || 'Quota habis!');
+    }
+
+    statusText.innerText = 'Menggenerate token...';
+    logText.innerText = 'Connecting to Netflix API...';
+    progressFill.style.width = '30%';
+
+    // Call server to generate
+    const genRes = await fetch('/api/netflix/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: loggedInUsername,
+        plan: selectedNetflixPlan,
+        useProxy: useProxy
+      })
+    });
+
+    const genData = await genRes.json();
+    progressFill.style.width = '80%';
+
+    if (genData.success && genData.result) {
+      progressFill.style.width = '100%';
+      statusText.innerText = '✅ Berhasil!';
+      logText.innerText = 'Token generated successfully';
+      
+      // Add to results
+      addNetflixResult(genData.result);
+      
+      // Update quota
+      if (genData.quotaInfo) {
+        userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota;
+        updateQuotaDisplay(genData.quotaInfo);
+        updateNetflixQuotaDisplay();
+      }
+      
+      showToast('Token Netflix berhasil di-generate!', 'netflix');
+      
+      // Refresh history
+      loadNetflixHistory(true);
+      
+      setTimeout(() => {
+        loadingEl.classList.add('hidden');
+      }, 2000);
+    } else {
+      throw new Error(genData.message || genData.error || 'Gagal generate token');
+    }
+  } catch (err) {
+    statusText.innerText = '❌ Gagal';
+    logText.innerText = err.message;
+    showToast(err.message, 'error');
+    setTimeout(() => {
+      loadingEl.classList.add('hidden');
+    }, 3000);
+  } finally {
+    btn.disabled = false;
+    btnText.innerText = 'Generate Token Netflix';
+  }
+}
+
+function addNetflixResult(result) {
+  netflixResults.unshift(result);
+  renderNetflixResults();
+  document.getElementById('netflix-results-container').classList.remove('hidden');
+}
+
+function renderNetflixResults() {
+  const container = document.getElementById('netflix-results-list');
+  if (!container) return;
+  
+  if (netflixResults.length === 0) {
+    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada hasil</p>';
+    return;
+  }
+  
+  container.innerHTML = netflixResults.map((r, i) => {
+    const countryName = NETFLIX_COUNTRY[r.country] || r.country || 'Unknown';
+    return '<div class="netflix-result">' +
+      '<div class="flex items-center justify-between mb-2">' +
+        '<span class="text-xs font-bold text-red-300">#' + (netflixResults.length - i) + ' — ' + escapeHtml(r.plan || selectedNetflixPlan).toUpperCase() + '</span>' +
+        '<span class="text-[9px] px-2 py-0.5 rounded-full" style="background: rgba(229,9,20,0.15); color: #fca5a5;">' + escapeHtml(countryName) + '</span>' +
+      '</div>' +
+      '<div class="grid grid-cols-2 gap-2 mb-2">' +
+        '<div><p class="label">Quality</p><p class="value">' + escapeHtml(r.quality || 'HD') + '</p></div>' +
+        '<div><p class="label">Expires</p><p class="value">' + (r.expires ? new Date(r.expires).toLocaleDateString('id-ID') : '—') + '</p></div>' +
+      '</div>' +
+      '<p class="label mb-1">Link Token</p>' +
+      '<div class="link-box" onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')">' +
+        escapeHtml(r.url) +
+      '</div>' +
+      '<button onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')" class="btn-netflix mt-2" style="padding: 0.5rem; font-size: 0.75rem;">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
+        'Copy Link' +
+      '</button>' +
+    '</div>';
+  }).join('');
+}
+
+function copyNetflixLink(url) {
+  navigator.clipboard.writeText(url).then(() => {
+    showToast('Link Netflix tersalin!', 'netflix');
+  }).catch(() => {
+    showToast('Gagal copy link', 'error');
+  });
+}
+
+function clearNetflixResults() {
+  netflixResults = [];
+  renderNetflixResults();
+  document.getElementById('netflix-results-container').classList.add('hidden');
+}
+
+async function loadNetflixHistory(force = false) {
+  if (!loggedInUsername) return;
+  const now = Date.now();
+  if (!force && now - lastNetflixHistoryFetch < CACHE_DURATION.netflixHistory) {
+    const cached = getCached('netflixHistory');
+    if (cached) { renderNetflixHistory(cached); return; }
+  }
+  
+  const container = document.getElementById('netflix-history-list');
+  if (!container) return;
+  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2 animate-pulse">Memuat riwayat...</p>';
+  
+  try {
+    const res = await fetch('/api/netflix/history?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+    lastNetflixHistoryFetch = now;
+    setCache('netflixHistory', data, CACHE_DURATION.netflixHistory);
+    renderNetflixHistory(data);
+  } catch(e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-2">Gagal memuat riwayat</p>';
+  }
+}
+
+function renderNetflixHistory(data) {
+  const container = document.getElementById('netflix-history-list');
+  if (!container) return;
+  
+  if (data.success && data.results && data.results.length > 0) {
+    container.innerHTML = data.results.map(r => {
+      const countryName = NETFLIX_COUNTRY[r.country] || r.country || 'Unknown';
+      return '<div class="p-2.5 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(229,9,20,0.2);">' +
+        '<div class="flex justify-between items-start mb-1">' +
+          '<span class="text-xs font-bold text-red-300">' + escapeHtml(r.plan || 'premium').toUpperCase() + '</span>' +
+          '<span class="text-[9px] text-slate-500">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span>' +
+        '</div>' +
+        '<p class="text-[10px] text-slate-400">' + escapeHtml(countryName) + ' • ' + escapeHtml(r.quality || 'HD') + '</p>' +
+        '<div class="link-box mt-1.5" style="padding: 0.5rem; font-size: 0.65rem;" onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')">' +
+          escapeHtml(r.url) +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } else {
+    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada riwayat</p>';
+  }
+}
+
+const NETFLIX_COUNTRY = {
+  US:'UNITED STATES',GB:'UNITED KINGDOM',DE:'GERMANY',FR:'FRANCE',JP:'JAPAN',
+  KR:'SOUTH KOREA',IN:'INDIA',BR:'BRAZIL',CA:'CANADA',AU:'AUSTRALIA',
+  IT:'ITALY',ES:'SPAIN',MX:'MEXICO',PH:'PHILIPPINES',ID:'INDONESIA',
+  MY:'MALAYSIA',TH:'THAILAND',SG:'SINGAPORE',TR:'TURKEY',PL:'POLAND',
+  NL:'NETHERLANDS',SE:'SWEDEN',NO:'NORWAY',DK:'DENMARK',FI:'FINLAND',
+  PT:'PORTUGAL',AR:'ARGENTINA',CL:'CHILE',CO:'COLOMBIA',PK:'PAKISTAN',
+  BD:'BANGLADESH',NG:'NIGERIA',EG:'EGYPT',ZA:'SOUTH AFRICA',VN:'VIETNAM',
+  RU:'RUSSIA',UA:'UKRAINE',
+};
 
 // ============ STATUS & VIDEO (OPTIMIZED) ============
 async function fetchServerStatus(force = false) {
@@ -2421,6 +2738,7 @@ function applySession(data) {
   loadActiveRedeems();
   updateStatusUI(data.serverStatus);
   fetchFeaturedVideo(true);
+  updateNetflixQuotaDisplay();
 
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   loadGlobalChat();
@@ -2463,96 +2781,6 @@ async function checkSavedSession() {
 }
 checkSavedSession();
 
-// ============ TIKTOK VIEW ============
-async function handleTiktokView() {
-  if (!loggedInUsername) return showToast('Harus login dulu!', 'error');
-  const url = document.getElementById('tiktok-view-url').value.trim();
-  if (!url) return showToast('Masukkan link TikTok!', 'error');
-
-  const btn = document.getElementById('btn-tiktok-view');
-  const btnText = document.getElementById('tiktok-view-text');
-  btn.disabled = true;
-  btnText.innerText = 'Memproses...';
-
-  const resultBox = document.getElementById('tiktok-result-box');
-  const resultText = document.getElementById('tiktok-result-text');
-  resultBox.classList.remove('hidden');
-  resultText.innerText = '⏳ Memproses...';
-
-  try {
-    const res = await fetch('/api/tiktok/view', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, url })
-    });
-    const data = await res.json();
-    currentTiktokResultText = JSON.stringify(data.result || data, null, 2);
-    resultText.innerText = currentTiktokResultText;
-    if (data.success) {
-      showToast('View TikTok berhasil diproses!', 'success');
-      loadVerifiedEmails(true);
-    } else {
-      showToast(data.message || 'Gagal memproses', 'error');
-    }
-  } catch (err) {
-    currentTiktokResultText = 'Error: ' + err.message;
-    resultText.innerText = currentTiktokResultText;
-    showToast('Gagal memproses', 'error');
-  } finally {
-    btn.disabled = false;
-    btnText.innerText = 'Suntik View Sekarang';
-  }
-}
-
-function copyTiktokResult() {
-  if (!currentTiktokResultText) return;
-  navigator.clipboard.writeText(currentTiktokResultText).then(() => showToast('Tersalin!', 'success'));
-}
-
-// ============ TIKTOK STATUS ============
-async function handleTiktokStatus() {
-  const id = document.getElementById('tiktok-status-id').value.trim();
-  if (!id) return showToast('Masukkan ID order!', 'error');
-
-  const btn = document.getElementById('btn-tiktok-status');
-  const btnText = document.getElementById('tiktok-status-text');
-  btn.disabled = true;
-  btnText.innerText = 'Mengecek...';
-
-  const resultBox = document.getElementById('tiktok-status-result-box');
-  const resultText = document.getElementById('tiktok-status-result-text');
-  resultBox.classList.remove('hidden');
-  resultText.innerText = '⏳ Mengecek...';
-
-  try {
-    const res = await fetch('/api/tiktok/status', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, id })
-    });
-    const data = await res.json();
-    currentTiktokStatusResultText = JSON.stringify(data.result || data, null, 2);
-    resultText.innerText = currentTiktokStatusResultText;
-    if (data.success) {
-      showToast('Status berhasil dicek!', 'success');
-    } else {
-      showToast(data.message || 'Gagal cek status', 'error');
-    }
-  } catch (err) {
-    currentTiktokStatusResultText = 'Error: ' + err.message;
-    resultText.innerText = currentTiktokStatusResultText;
-    showToast('Gagal cek status', 'error');
-  } finally {
-    btn.disabled = false;
-    btnText.innerText = 'Cek Status Sekarang';
-  }
-}
-
-function copyTiktokStatusResult() {
-  if (!currentTiktokStatusResultText) return;
-  navigator.clipboard.writeText(currentTiktokStatusResultText).then(() => showToast('Tersalin!', 'success'));
-}
-
 // ============ KLAIM REDEEM ============
 async function handleRedeemCodeMain() {
   const code = document.getElementById('redeem-code-input-main').value.trim().toUpperCase();
@@ -2568,6 +2796,7 @@ async function handleRedeemCodeMain() {
       showToast(data.message, 'success');
       document.getElementById('redeem-code-input-main').value = '';
       updateQuotaDisplay(data);
+      updateNetflixQuotaDisplay();
       loadVerifiedEmails(true);
       loadActiveRedeems(true);
     } else showToast(data.message, 'error');
@@ -3291,6 +3520,7 @@ function renderVerifiedEmails(data) {
 
   updateQuotaStatusCard(data);
   handleCountdown(data);
+  updateNetflixQuotaDisplay();
 
   const emails = data.activatedEmails || [];
   if (emails.length === 0) {
@@ -3299,45 +3529,35 @@ function renderVerifiedEmails(data) {
         '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.5" style="margin: 0 auto 0.5rem; display: block;">' +
           '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>' +
         '</svg>' +
-        '<p class="text-xs text-slate-400 font-semibold">Belum ada aktivitas terverifikasi</p>' +
-        '<p class="text-[10px] text-slate-500 mt-0.5">Gmail / TikTok yang berhasil diproses akan muncul di sini</p>' +
+        '<p class="text-xs text-slate-400 font-semibold">Belum ada Gmail terverifikasi</p>' +
+        '<p class="text-[10px] text-slate-500 mt-0.5">Gmail yang berhasil diverifikasi akan muncul di sini</p>' +
       '</div>';
     return;
   }
 
   container.innerHTML = emails.map((email, idx) => {
     const isLatest = idx === emails.length - 1;
-    const isTiktok = email.startsWith('tiktok:') || email.startsWith('https://www.tiktok.com') || email.startsWith('https://vt.tiktok.com');
     const safeEmail = email.replace(/'/g, "\\\\'");
-    const iconSvg = isTiktok
-      ? '<path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"/>'
-      : '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>';
-    const color = isTiktok ? '#ff8aab' : '#67e8f9';
-    const bgColor = isTiktok ? 'rgba(255,0,80,0.15)' : 'rgba(6,182,212,0.15)';
-    const borderColor = isTiktok ? 'rgba(255,0,80,0.22)' : 'rgba(6,182,212,0.22)';
-    const label = isTiktok ? 'TikTok' : 'Gmail';
-    const displayText = isTiktok ? email.replace('tiktok:', '') : email;
-
     return '<div class="p-2.5 rounded-xl animate-slide-up flex items-center justify-between gap-2" ' +
-      'style="background: ' + (isTiktok ? 'rgba(255,0,80,0.06)' : 'rgba(6,182,212,0.06)') + '; border: 1px solid ' + borderColor + ';">' +
+      'style="background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.22);">' +
       '<div class="flex items-center gap-2.5 min-w-0 flex-1">' +
-        '<div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background: ' + bgColor + ';">' +
-          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="' + color + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
-            iconSvg +
+        '<div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background: rgba(6,182,212,0.15);">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#67e8f9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>' +
           '</svg>' +
         '</div>' +
         '<div class="min-w-0 flex-1">' +
-          '<p class="text-xs font-bold text-white truncate mono">' + escapeHtml(displayText) + '</p>' +
+          '<p class="text-xs font-bold text-white truncate mono">' + escapeHtml(email) + '</p>' +
           '<div class="flex items-center gap-1.5 mt-0.5">' +
             '<span class="text-[9px] text-emerald-400 font-bold flex items-center gap-1">' +
-              '<span class="w-1 h-1 rounded-full bg-emerald-400"></span> ' + label + ' Terverifikasi' +
+              '<span class="w-1 h-1 rounded-full bg-emerald-400"></span> Terverifikasi' +
             '</span>' +
             (isLatest ? '<span class="text-[9px] text-amber-300 font-bold">• Terbaru</span>' : '') +
           '</div>' +
         '</div>' +
       '</div>' +
       '<button onclick="copyEmail(\\'' + safeEmail + '\\')" class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" ' +
-      'style="background: rgba(168,85,247,0.15); border: 1px solid rgba(168,85,247,0.25);" title="Copy">' +
+      'style="background: rgba(168,85,247,0.15); border: 1px solid rgba(168,85,247,0.25);" title="Copy email">' +
         '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="2.5">' +
           '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>' +
         '</svg>' +
@@ -3379,6 +3599,15 @@ function updateQuotaStatusCard(data) {
     badge.className = 'badge badge-online';
     badge.innerText = '✓ Tersedia';
   }
+
+  // Update state
+  userQuotaData = {
+    usedQuota: used,
+    bonusQuota: data.bonusQuota || 0,
+    totalQuota: total,
+    nextResetTime: data.nextResetTime || 0,
+    lastResetTime: data.lastResetTime || 0
+  };
 }
 
 function handleCountdown(data) {
@@ -3432,7 +3661,7 @@ function handleCountdown(data) {
         const el = document.getElementById(id);
         if (el) el.innerText = '00';
       });
-      showToast('🎉 Kuota Anda telah direset! Silakan coba fitur kembali.', 'success', 5000);
+      showToast('🎉 Kuota Anda telah direset! Silakan verifikasi Gmail baru.', 'success', 5000);
       setTimeout(() => {
         loadVerifiedEmails(true);
         checkSavedSession();
@@ -3514,9 +3743,9 @@ function updateResetTimerDisplay(data) {
 
 function copyEmail(email) {
   navigator.clipboard.writeText(email).then(() => {
-    showToast('"' + email + '" tersalin!', 'success');
+    showToast('Email "' + email + '" tersalin!', 'success');
   }).catch(() => {
-    showToast('Gagal copy', 'error');
+    showToast('Gagal copy email', 'error');
   });
 }
 
@@ -4025,7 +4254,7 @@ function renderUserList() {
       (vipText ? '<p class="text-[10px] text-amber-300 mt-1.5 font-semibold">' + vipText + '</p>' : '') +
       (u.activatedEmails && u.activatedEmails.length > 0 ? 
         '<details class="mt-1.5">' +
-          '<summary class="text-[10px] text-cyan-300 cursor-pointer hover:text-cyan-200">📨 ' + u.activatedEmails.length + ' aktivitas terverifikasi</summary>' +
+          '<summary class="text-[10px] text-cyan-300 cursor-pointer hover:text-cyan-200">📨 ' + u.activatedEmails.length + ' email diaktivasi</summary>' +
           '<div class="mt-1 space-y-0.5 pl-2">' + 
             u.activatedEmails.slice(0, 10).map(e => '<p class="text-[9px] text-slate-400 mono truncate">• ' + escapeHtml(e) + '</p>').join('') +
             (u.activatedEmails.length > 10 ? '<p class="text-[9px] text-slate-500 italic">... dan ' + (u.activatedEmails.length - 10) + ' lainnya</p>' : '') +
@@ -4601,58 +4830,140 @@ const server = http.createServer(async (req, res) => {
       const items = await getVipShopFromDb();
       jsonResponse(res, 200, { success: true, items });
 
-    // ====== TIKTOK VIEW & STATUS ROUTES ======
-    } else if (parsedUrl.pathname === '/api/tiktok/view' && req.method === 'POST') {
+    // ====== NETFLIX ENDPOINTS ======
+    } else if (parsedUrl.pathname === '/api/netflix/check-quota' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+
+      const cleanUser = username.toLowerCase();
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
+
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      
+      // Reset jika sudah 24 jam
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
+        userObj.activatedEmails = [];
+        userObj.lastResetTime = now;
+        await saveUserToDb(cleanUser, userObj);
+      }
+
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
+      const totalQuota = 1 + (userObj.bonusQuota || 0);
+      
+      if (userObj.isAdmin || isVipActive) {
+        return jsonResponse(res, 200, { 
+          success: true, 
+          allowed: true, 
+          message: 'Unlimited access',
+          quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
+        });
+      }
+
+      if (usedQuota >= totalQuota) {
+        return jsonResponse(res, 200, { 
+          success: true, 
+          allowed: false, 
+          message: 'Quota habis! Tunggu reset 24 jam atau klaim kode redeem.',
+          quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
+        });
+      }
+
+      jsonResponse(res, 200, { 
+        success: true, 
+        allowed: true, 
+        message: 'Quota tersedia',
+        quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
+      });
+
+    } else if (parsedUrl.pathname === '/api/netflix/generate' && req.method === 'POST') {
       const body = await readBody(req);
-      const { username, url } = JSON.parse(body);
+      const { username, plan, useProxy } = JSON.parse(body);
+      
       const cleanUser = username ? username.toLowerCase() : '';
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
-      if (currentServerStatus !== 'online' && !userObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Server sedang offline.' });
+
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      
+      // Reset jika sudah 24 jam
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
+        userObj.activatedEmails = [];
+        userObj.lastResetTime = now;
       }
 
-      // Cek kuota terpadu
-      const identifier = 'tiktok:' + url;
-      if (isQuotaExceeded(userObj, identifier)) {
-        return jsonResponse(res, 403, { success: false, message: 'Kuota Anda habis! Kuota digunakan bersama untuk semua fitur.' });
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
+      const totalQuota = 1 + (userObj.bonusQuota || 0);
+
+      // Cek quota
+      if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) {
+        return jsonResponse(res, 403, { 
+          success: false, 
+          message: 'Quota habis! Tunggu reset 24 jam atau klaim kode redeem.' 
+        });
       }
 
-      // Panggil API TikTok
-      const result = await tiktokView(url);
-
-      if (result && result.status === false && result.message && result.message.includes('sudah pernah')) {
-        return jsonResponse(res, 400, { success: false, message: result.message, result });
+      // Generate token Netflix
+      const genResult = await generateNetflixToken(plan || 'premium', useProxy);
+      
+      if (!genResult.success) {
+        return jsonResponse(res, 500, { 
+          success: false, 
+          message: genResult.error || 'Gagal generate token' 
+        });
       }
 
-      // Konsumsi kuota (unified)
-      await consumeQuota(userObj, cleanUser, identifier);
+      // Kurangi quota (kecuali admin/vip)
+      if (!userObj.isAdmin && !isVipActive) {
+        if (!userObj.activatedEmails) userObj.activatedEmails = [];
+        userObj.activatedEmails.push('netflix_' + Date.now());
+        await saveUserToDb(cleanUser, userObj);
+      }
+
+      // Simpan history
+      const historyId = 'nf_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+      await saveNetflixResultToDb(historyId, {
+        id: historyId,
+        username: cleanUser,
+        plan: genResult.plan,
+        quality: genResult.quality,
+        country: genResult.country,
+        url: genResult.url,
+        expires: genResult.expires,
+        pool: genResult.pool,
+        timestamp: now
+      });
 
       jsonResponse(res, 200, {
         success: true,
-        result,
-        quotaInfo: {
-          usedQuota: getUnifiedUsedQuota(userObj),
+        result: genResult,
+        quotaInfo: { 
+          usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, 
           bonusQuota: userObj.bonusQuota || 0,
-          totalQuota: getUnifiedTotalQuota(userObj)
+          totalQuota,
+          isAdmin: userObj.isAdmin,
+          isVip: isVipActive
         }
       });
 
-    } else if (parsedUrl.pathname === '/api/tiktok/status' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { username, id } = JSON.parse(body);
-      const cleanUser = username ? username.toLowerCase() : '';
-      const userObj = await getUserFromDb(cleanUser);
-      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
+    } else if (parsedUrl.pathname === '/api/netflix/history' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
 
-      const result = await tiktokStatus(id);
+      const cleanUser = username.toLowerCase();
+      const allResults = await getNetflixResultsFromDb();
+      const myResults = Object.values(allResults)
+        .filter(r => r.username === cleanUser)
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 20); // Limit 20
 
-      jsonResponse(res, 200, {
-        success: true,
-        result
-      });
+      jsonResponse(res, 200, { success: true, results: myResults });
 
-    // ====== END TIKTOK ROUTES ======
+    // ====== END NETFLIX ENDPOINTS ======
 
     } else if (parsedUrl.pathname === '/api/transaction/create' && req.method === 'POST') {
       const body = await readBody(req);
@@ -5571,19 +5882,25 @@ const server = http.createServer(async (req, res) => {
       if (!userObj.activatedEmails) userObj.activatedEmails = [];
       if (!userObj.bonusQuota) userObj.bonusQuota = 0;
 
-      // Cek kuota terpadu (identifier = email)
-      if (isQuotaExceeded(userObj, email)) {
-        return jsonResponse(res, 403, { success: false, message: 'Kuota aktivasi Anda habis! Kuota digunakan bersama untuk semua fitur.' });
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+      const maxAllowed = 1 + userObj.bonusQuota;
+
+      if (!userObj.isAdmin && !isVipActive) {
+        if (!userObj.activatedEmails.includes(email) && userObj.activatedEmails.length >= maxAllowed) {
+          return jsonResponse(res, 403, { success: false, message: 'Kuota aktivasi Anda habis!' });
+        }
       }
 
       const result = await am.magiclink(email);
 
-      // Konsumsi kuota (unified)
-      await consumeQuota(userObj, cleanUser, email);
+      if (!userObj.isAdmin && !isVipActive && !userObj.activatedEmails.includes(email)) {
+        userObj.activatedEmails.push(email);
+        await saveUserToDb(cleanUser, userObj);
+      }
 
       jsonResponse(res, 200, {
         success: true, result,
-        quotaInfo: { usedQuota: getUnifiedUsedQuota(userObj), bonusQuota: userObj.bonusQuota }
+        quotaInfo: { usedQuota: userObj.activatedEmails.length, bonusQuota: userObj.bonusQuota }
       });
 
     } else if (parsedUrl.pathname === '/api/verif' && req.method === 'POST') {
@@ -5611,25 +5928,25 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log('\\n╔══════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v3.5 (TikTok View & Status)      ║');
-  console.log('║  📡 http://localhost:' + PORT + '                                  ║');
-  console.log('║  💳 Pembayaran via DANA: ' + DANA_ADMIN_NUMBER + '            ║');
-  console.log('║  🛒 VIP Shop + Upload Bukti Transfer DANA               ║');
-  console.log('║  🔧 Admin dapat mengatur layanan VIP                    ║');
-  console.log('║  ✅ Konfirmasi Pembayaran → Auto VIP                    ║');
-  console.log('║  💾 Optimasi: Cache 30-60s, Lazy Load, Visibility API   ║');
-  console.log('║  📦 Chunked Upload Ready (>200MB)                        ║');
-  console.log('║  👥 User List Viewer + Delete Account                    ║');
-  console.log('║  📧 Gmail History + Reset Countdown                      ║');
-  console.log('║  💬 Global Chat (Polling 15s, hemat kuota)               ║');
-  console.log('║  🔐 Change Password + Create VIP Account                 ║');
-  console.log('║  ⭐ VIP Account Generator                                ║');
-  console.log('║  🎁 Redeem Code (Fixed Quota per User)                   ║');
-  console.log('║  ✅ Cek Kode Sudah Diklaim (Centang)                     ║');
-  console.log('║  💡 Request Fitur Baru (User → Admin)                    ║');
-  console.log('║  🛡️ Panel Admin Terpisah dari Profil                    ║');
-  console.log('║  🆕 Suntik View TikTok — Unified Quota                   ║');
-  console.log('║  🆕 Cek Status TikTok — No Quota Cut                     ║');
-  console.log('╚══════════════════════════════════════════════════════════╝\\n');
+  console.log('\n╔══════════════════════════════════════════════════════════════╗');
+  console.log('║  🚀 AM Premium Banggus v3.5 (DANA + Netflix Generator)      ║');
+  console.log('║  📡 http://localhost:' + PORT + '                                    ║');
+  console.log('║  💳 Pembayaran via DANA: ' + DANA_ADMIN_NUMBER + '              ║');
+  console.log('║  🛒 VIP Shop + Upload Bukti Transfer DANA                   ║');
+  console.log('║  🔧 Admin dapat mengatur layanan VIP                        ║');
+  console.log('║  ✅ Konfirmasi Pembayaran → Auto VIP                        ║');
+  console.log('║  💾 Optimasi: Cache 30-60s, Lazy Load, Visibility API       ║');
+  console.log('║  📦 Chunked Upload Ready (>200MB)                            ║');
+  console.log('║  👥 User List Viewer + Delete Account                        ║');
+  console.log('║  📧 Gmail History + Reset Countdown                          ║');
+  console.log('║  💬 Global Chat (Polling 15s, hemat kuota)                   ║');
+  console.log('║  🔐 Change Password + Create VIP Account                     ║');
+  console.log('║  ⭐ VIP Account Generator                                    ║');
+  console.log('║  🎁 Redeem Code (Fixed Quota per User)                       ║');
+  console.log('║  ✅ Cek Kode Sudah Diklaim (Centang)                         ║');
+  console.log('║  💡 Request Fitur Baru (User → Admin)                        ║');
+  console.log('║  🛡️ Panel Admin Terpisah dari Profil                        ║');
+  console.log('║  🎬 NETFLIX GENERATOR (Premium Token)                       ║');
+  console.log('║  📊 Quota SAMA untuk semua fitur (AM & Netflix)             ║');
+  console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
