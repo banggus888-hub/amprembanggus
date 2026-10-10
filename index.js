@@ -4,15 +4,6 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const tls = require('tls');
-const crypto = require('node:crypto');
-const fsp = require('node:fs/promises');
-
-// Wink dependencies
-const axios = require('axios');
-const FormData = require('form-data');
-const { CookieJar } = require('tough-cookie');
-const { wrapper } = require('axios-cookiejar-support');
-
 const Go = require('@xof/fetch');
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, get, set, child } = require('firebase/database');
@@ -67,29 +58,22 @@ const go = Go.create({
 const UPLOAD_DIR = path.join(os.tmpdir(), 'am-uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// ====== WINK TEMP STORAGE ======
-const WINK_TEMP_DIR = path.join(os.tmpdir(), 'wink-temp');
-if (!fs.existsSync(WINK_TEMP_DIR)) fs.mkdirSync(WINK_TEMP_DIR, { recursive: true });
-
 setInterval(() => {
   try {
-    const dirs = [UPLOAD_DIR, WINK_TEMP_DIR];
-    dirs.forEach(dir => {
-      const files = fs.readdirSync(dir);
-      const now = Date.now();
-      files.forEach(f => {
-        const fp = path.join(dir, f);
-        try {
-          const stat = fs.statSync(fp);
-          if (now - stat.mtimeMs > 3600000) {
-            if (stat.isDirectory()) {
-              fs.rmSync(fp, { recursive: true, force: true });
-            } else {
-              fs.unlinkSync(fp);
-            }
+    const files = fs.readdirSync(UPLOAD_DIR);
+    const now = Date.now();
+    files.forEach(f => {
+      const fp = path.join(UPLOAD_DIR, f);
+      try {
+        const stat = fs.statSync(fp);
+        if (now - stat.mtimeMs > 3600000) {
+          if (fs.statSync(fp).isDirectory()) {
+            fs.rmSync(fp, { recursive: true, force: true });
+          } else {
+            fs.unlinkSync(fp);
           }
-        } catch (e) {}
-      });
+        }
+      } catch (e) {}
     });
   } catch (e) {}
 }, 3600000);
@@ -225,18 +209,6 @@ async function removeNetflixResultFromDb(id) {
   await set(ref(db, `netflixResults/${id}`), null);
 }
 
-// ====== WINK RESULTS HELPERS ======
-async function getWinkResultsFromDb() {
-  const snapshot = await get(child(ref(db), `winkResults`));
-  return snapshot.exists() ? snapshot.val() : {};
-}
-async function saveWinkResultToDb(id, data) {
-  await set(ref(db, `winkResults/${id}`), data);
-}
-async function removeWinkResultFromDb(id) {
-  await set(ref(db, `winkResults/${id}`), null);
-}
-
 async function initAdmin() {
   const adminData = await getUserFromDb('adminbaguss');
   if (!adminData) {
@@ -268,503 +240,10 @@ async function initDefaultVipShop() {
 }
 initDefaultVipShop();
 
-// ==========================================
-// WINK ENHANCER CLASS
-// ==========================================
-class WinkEnhancer {
-  constructor(options = {}) {
-    this.baseUrl = "https://wink.ai"
-    this.strategyUrl = "https://strategy.app.meitudata.com"
-
-    this.imagePath = options.imagePath
-
-    this.client = {
-      id: "1189857605",
-      version: "5.1.2",
-      countryCode: "ID",
-      language: "en_US",
-      timezone: "Asia/Jakarta"
-    }
-
-    this.task = {
-      type: "12",
-      contentType: "1",
-      extValue: "2",
-      name: `Enhancer-Ultra HD-${path.parse(this.imagePath).name}`
-    }
-
-    this.userAgent =
-      "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36"
-
-    this.gnum = crypto.randomUUID()
-    this.jar = new CookieJar()
-
-    this.api = wrapper(
-      axios.create({
-        baseURL: this.baseUrl,
-        jar: this.jar,
-        withCredentials: true,
-        validateStatus: () => true,
-        headers: {
-          accept: "*/*",
-          origin: this.baseUrl,
-          referer: `${this.baseUrl}/image-enhancer/upload`,
-          "user-agent": this.userAgent,
-          "sec-ch-ua":
-            "\"Google Chrome\";v=\"147\", \"Not.A/Brand\";v=\"8\", \"Chromium\";v=\"147\"",
-          "sec-ch-ua-mobile": "?1",
-          "sec-ch-ua-platform": "\"Android\"",
-          ab_info: JSON.stringify({
-            ab_codes: [],
-            version: "1.4.4"
-          })
-        }
-      })
-    )
-  }
-
-  async init() {
-    await this.jar.setCookie(
-      `_sm=${this.gnum}; Path=/; Domain=wink.ai`,
-      this.baseUrl
-    )
-
-    await this.jar.setCookie(
-      `meitustat=${encodeURIComponent(
-        JSON.stringify({
-          wgid: this.gnum
-        })
-      )}; Path=/; Domain=wink.ai`,
-      this.baseUrl
-    )
-  }
-
-  sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms))
-  }
-
-  getMimeType(filePath) {
-    const ext = path.extname(filePath).toLowerCase()
-
-    const mimeTypes = {
-      ".jpg": "image/jpeg",
-      ".jpeg": "image/jpeg",
-      ".png": "image/png",
-      ".webp": "image/webp"
-    }
-
-    return mimeTypes[ext] || "application/octet-stream"
-  }
-
-  getFileSuffix(filePath) {
-    const ext = path.extname(filePath).toLowerCase()
-
-    if (!ext) {
-      return ".jpg"
-    }
-
-    return ext === ".jpeg"
-      ? ".jpg"
-      : ext
-  }
-
-  generateTrace() {
-    return [
-      crypto.randomBytes(16).toString("hex"),
-      crypto.randomBytes(8).toString("hex"),
-      "1"
-    ].join("-")
-  }
-
-  createTraceHeaders(
-    transaction = "GET%20%2F%5Blocale%5D%2Fimage-enhancer%2Fupload"
-  ) {
-    const trace = this.generateTrace()
-
-    return {
-      "sentry-trace": trace,
-      baggage: [
-        "sentry-environment=release",
-        "sentry-release=5.1.2%20(b60d25c477f43c6dfac4107810f26d442320f4f1)",
-        "sentry-public_key=e1bf914f3448d9bc8a10c7e499d17d54",
-        `sentry-trace_id=${trace.split("-")[0]}`,
-        `sentry-transaction=${transaction}`,
-        "sentry-sampled=true",
-        "sentry-sample_rate=0.75"
-      ].join(",")
-    }
-  }
-
-  createBaseParams(extra = {}) {
-    return new URLSearchParams({
-      client_id: this.client.id,
-      version: this.client.version,
-      country_code: this.client.countryCode,
-      gnum: this.gnum,
-      client_language: this.client.language,
-      client_channel_id: "",
-      client_timezone: this.client.timezone,
-      ...extra
-    })
-  }
-
-  async getMaatSign() {
-    const params = this.createBaseParams({
-      suffix: this.getFileSuffix(this.imagePath),
-      type: "temp",
-      count: "1"
-    })
-
-    const response = await this.api.get(
-      `/api/file/get_maat_sign.json?${params.toString()}`,
-      {
-        headers: this.createTraceHeaders()
-      }
-    )
-
-    if (response.status >= 400 || response.data?.code !== 0) {
-      throw new Error(
-        `Failed to get maat sign: ${JSON.stringify(response.data)}`
-      )
-    }
-
-    return response.data.data
-  }
-
-  async getUploadPolicy(sign) {
-    const params = new URLSearchParams({
-      app: sign.app,
-      count: String(sign.count),
-      sig: sign.sig,
-      sigTime: sign.sig_time,
-      sigVersion: sign.sig_version,
-      suffix: sign.suffix,
-      type: sign.type
-    })
-
-    const response = await axios.get(
-      `${this.strategyUrl}/upload/policy?${params.toString()}`,
-      {
-        headers: {
-          accept: "*/*",
-          origin: this.baseUrl,
-          referer: `${this.baseUrl}/`,
-          "user-agent": this.userAgent,
-          "sec-ch-ua":
-            "\"Google Chrome\";v=\"147\", \"Not.A/Brand\";v=\"8\", \"Chromium\";v=\"147\"",
-          "sec-ch-ua-mobile": "?1",
-          "sec-ch-ua-platform": "\"Android\""
-        },
-        validateStatus: () => true
-      }
-    )
-
-    if (
-      response.status >= 400 ||
-      !Array.isArray(response.data) ||
-      !response.data[0]?.qiniu
-    ) {
-      throw new Error(
-        `Failed to get upload policy: ${JSON.stringify(response.data)}`
-      )
-    }
-
-    return response.data[0].qiniu
-  }
-
-  async uploadToQiniu(policy) {
-    const form = new FormData()
-
-    form.append(
-      "file",
-      fs.createReadStream(this.imagePath),
-      {
-        filename: path.basename(this.imagePath),
-        contentType: this.getMimeType(this.imagePath)
-      }
-    )
-
-    form.append("token", policy.token)
-    form.append("key", policy.key)
-    form.append("fname", path.basename(this.imagePath))
-
-    const response = await axios.post(
-      policy.url,
-      form,
-      {
-        headers: form.getHeaders({
-          origin: this.baseUrl,
-          referer: `${this.baseUrl}/`,
-          "user-agent": this.userAgent,
-          accept: "*/*"
-        }),
-        maxBodyLength: Infinity,
-        maxContentLength: Infinity,
-        validateStatus: () => true
-      }
-    )
-
-    if (response.status >= 400) {
-      throw new Error(
-        `Qiniu upload failed (${response.status})`
-      )
-    }
-
-    return {
-      fileKey: policy.key,
-      sourceUrl:
-        response.data.url ||
-        response.data.data ||
-        policy.data
-    }
-  }
-
-  async getMetaInfo(fileKey) {
-    const body = this.createBaseParams({
-      file_key: fileKey
-    })
-
-    const response = await this.api.post(
-      "/api/file/meta_info.json",
-      body.toString(),
-      {
-        headers: {
-          ...this.createTraceHeaders(),
-          "content-type":
-            "application/x-www-form-urlencoded;charset=UTF-8"
-        }
-      }
-    )
-
-    if (response.status >= 400 || response.data?.code !== 0) {
-      throw new Error(
-        `Failed to get meta info: ${JSON.stringify(response.data)}`
-      )
-    }
-
-    return response.data.data
-  }
-
-  async calculateBeans() {
-    const body = this.createBaseParams({
-      item_list: JSON.stringify([
-        {
-          type: Number(this.task.type),
-          ext_value: this.task.extValue,
-          content_type: Number(this.task.contentType),
-          duration: 0,
-          type_params: JSON.stringify({
-            is_mirror: 0,
-            orientation_tag: 1,
-            j_420_trans: "1",
-            return_ext: "2"
-          }),
-          right_detail: JSON.stringify({
-            source: "1",
-            touch_type: "4",
-            function_id: "630",
-            material_id: "63011",
-            url: "https://wink.ai/image-enhancer/upload"
-          })
-        }
-      ])
-    })
-
-    const response = await this.api.post(
-      "/api/subscribe/batch_calc_need_beans.json",
-      body.toString(),
-      {
-        headers: {
-          ...this.createTraceHeaders(),
-          "content-type":
-            "application/x-www-form-urlencoded;charset=UTF-8"
-        }
-      }
-    )
-
-    if (response.status >= 400 || response.data?.code !== 0) {
-      throw new Error(
-        `Failed to calculate beans: ${JSON.stringify(response.data)}`
-      )
-    }
-
-    return response.data.data
-  }
-
-  async createTask(sourceUrl) {
-    const body = this.createBaseParams({
-      type: this.task.type,
-      content_type: this.task.contentType,
-      source_url: sourceUrl,
-      type_params: JSON.stringify({
-        is_mirror: 0,
-        orientation_tag: 1,
-        j_420_trans: "1",
-        return_ext: "2"
-      }),
-      right_detail: JSON.stringify({
-        source: "1",
-        touch_type: "4",
-        function_id: "630",
-        material_id: "63011",
-        url: "https://wink.ai/image-enhancer/upload"
-      }),
-      ext_params: JSON.stringify({
-        task_name: this.task.name,
-        records: this.task.type
-      }),
-      with_prepare: "1"
-    })
-
-    const response = await this.api.post(
-      "/api/meitu_ai/delivery.json",
-      body.toString(),
-      {
-        headers: {
-          ...this.createTraceHeaders(),
-          "content-type":
-            "application/x-www-form-urlencoded;charset=UTF-8"
-        }
-      }
-    )
-
-    if (response.status >= 400 || response.data?.code !== 0) {
-      throw new Error(
-        `Failed to create task: ${JSON.stringify(response.data)}`
-      )
-    }
-
-    const data = response.data.data || {}
-
-    return data.msg_id || data.prepare_msg_id
-  }
-
-  async queryTask(msgId) {
-    const params = this.createBaseParams({
-      msg_ids: msgId
-    })
-
-    const response = await this.api.get(
-      `/api/meitu_ai/query_batch.json?${params.toString()}`,
-      {
-        headers: {
-          ...this.createTraceHeaders(
-            "%2F%3Alocale%2Feditor%2Frecent-task"
-          )
-        }
-      }
-    )
-
-    if (response.status >= 400 || response.data?.code !== 0) {
-      throw new Error(
-        `Failed to query task: ${JSON.stringify(response.data)}`
-      )
-    }
-
-    return response.data.data
-  }
-
-  extractResultUrl(data) {
-    return (
-      data?.item_list?.[0]?.result?.media_info_list?.[0]
-        ?.media_data || ""
-    )
-  }
-
-  extractNextMessageId(data, currentId) {
-    const item = data?.item_list?.[0]
-    const result = item?.result?.result || ""
-    const msgId =
-      item?.result?.msg_id ||
-      item?.msg_id ||
-      ""
-
-    if (result && result !== currentId && !result.startsWith("http")) {
-      return result
-    }
-
-    if (msgId && msgId !== currentId && !msgId.startsWith("wpr_")) {
-      return msgId
-    }
-
-    return null
-  }
-
-  async waitForResult(msgId, maxAttempts = 80, delay = 3000) {
-    let currentId = msgId
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const data = await this.queryTask(currentId)
-
-      const nextId = this.extractNextMessageId(data, currentId)
-
-      if (nextId) {
-        currentId = nextId
-        await this.sleep(1000)
-        continue
-      }
-
-      const resultUrl = this.extractResultUrl(data)
-
-      const errorCode = data?.item_list?.[0]?.result?.error_code
-      const errorMessage = data?.item_list?.[0]?.result?.error_msg
-
-      if (
-        resultUrl &&
-        resultUrl.startsWith("http") &&
-        errorCode === 0
-      ) {
-        return resultUrl
-      }
-
-      if (errorCode && errorCode !== 0 && errorCode !== 29901) {
-        throw new Error(
-          `Task failed (${errorCode}): ${errorMessage}`
-        )
-      }
-
-      await this.sleep(delay)
-    }
-
-    throw new Error("Task timeout")
-  }
-
-  async enhance() {
-    if (!fs.existsSync(this.imagePath)) {
-      throw new Error(`Image not found: ${this.imagePath}`)
-    }
-
-    await fsp.stat(this.imagePath)
-    await this.init()
-
-    const sign = await this.getMaatSign()
-    const policy = await this.getUploadPolicy(sign)
-    const uploaded = await this.uploadToQiniu(policy)
-
-    await this.getMetaInfo(uploaded.fileKey)
-    await this.calculateBeans()
-
-    const taskId = await this.createTask(uploaded.sourceUrl)
-
-    if (!taskId) {
-      throw new Error("Task ID not received")
-    }
-
-    const resultUrl = await this.waitForResult(taskId)
-
-    return {
-      status: true,
-      code: 200,
-      input: this.imagePath,
-      result_url: resultUrl
-    }
-  }
-}
-
 // ====== ALOKASI QUOTA UNTUK SETIAP FITUR ======
-// Setiap fitur (Alight Motion, Netflix, Wink) menggunakan quota yang SAMA
-// Quota dihitung dari total aktivasi (activatedEmails)
-// Semua fitur mengurangi 1 quota yang sama
+// Setiap fitur (Alight Motion & Netflix) menggunakan quota yang SAMA
+// Quota dihitung dari total aktivasi (activatedEmails) + netflixActivations
+// Tapi untuk kesederhanaan, kita pakai activatedEmails sebagai quota utama
 
 const am = {
   async magiclink(email) {
@@ -847,7 +326,14 @@ async function findWorkingProxies(proxyList, count) {
 }
 
 async function generateNetflixToken(plan, proxy) {
+  // Simulasi generate token Netflix (karena puppeteer tidak tersedia di environment ini)
+  // Dalam implementasi real, ini akan menggunakan puppeteer untuk generate token
+  
+  // Untuk demo, kita return hasil simulasi
+  // Di production, Anda perlu menginstall puppeteer-extra dan puppeteer-extra-plugin-stealth
+  
   try {
+    // Coba fetch langsung ke API Netflix
     const sessionRes = await fetch(`${NETFLIX_BASE}/api/session`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
@@ -862,6 +348,7 @@ async function generateNetflixToken(plan, proxy) {
       throw new Error(sessionData.error || 'Session failed');
     }
     
+    // Request token
     const tokenRes = await fetch(`${NETFLIX_BASE}/api/random`, {
       method: 'POST',
       headers: { 
@@ -885,6 +372,7 @@ async function generateNetflixToken(plan, proxy) {
       };
     }
     
+    // Jika ada PoW challenge, coba solve
     if (tokenData.powChallenge) {
       const enc = new TextEncoder();
       let proof = null;
@@ -951,7 +439,6 @@ const htmlTemplate = `<!DOCTYPE html>
     --rose: #f43f5e;
     --amber: #f59e0b;
     --netflix-red: #e50914;
-    --wink-blue: #3b82f6;
   }
   * { -webkit-tap-highlight-color: transparent; }
   html, body {
@@ -1053,23 +540,6 @@ const htmlTemplate = `<!DOCTYPE html>
   .btn-netflix:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(229,9,20,0.8); }
   .btn-netflix:disabled { opacity: 0.6; cursor: not-allowed; }
 
-  .btn-wink {
-    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-    box-shadow: 0 12px 30px -10px rgba(59,130,246,0.6), inset 0 1px 0 rgba(255,255,255,0.2);
-    transition: all 0.25s ease;
-    border-radius: 1rem;
-    padding: 0.95rem 1rem;
-    font-weight: 700;
-    color: white;
-    width: 100%;
-    border: none;
-    cursor: pointer;
-    font-size: 0.92rem;
-    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
-  }
-  .btn-wink:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(59,130,246,0.8); }
-  .btn-wink:disabled { opacity: 0.6; cursor: not-allowed; }
-
   .btn-success {
     background: linear-gradient(135deg, #10b981 0%, #059669 100%);
     box-shadow: 0 12px 30px -10px rgba(16,185,129,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
@@ -1137,11 +607,6 @@ const htmlTemplate = `<!DOCTYPE html>
     color: #fca5a5;
     border-color: rgba(229,9,20,0.4);
   }
-  .nav-item.wink-nav.active {
-    background: linear-gradient(135deg, rgba(59,130,246,0.2), rgba(29,78,216,0.1));
-    color: #93c5fd;
-    border-color: rgba(59,130,246,0.4);
-  }
 
   @keyframes pulse-glow {
     0%, 100% { opacity: 0.4; transform: scale(1); }
@@ -1176,7 +641,6 @@ const htmlTemplate = `<!DOCTYPE html>
   .toast-error { background: rgba(244,63,94,0.95); color: white; }
   .toast-info { background: rgba(168,85,247,0.95); color: white; }
   .toast-netflix { background: rgba(229,9,20,0.95); color: white; }
-  .toast-wink { background: rgba(59,130,246,0.95); color: white; }
 
   .progress-bar {
     width: 100%; height: 8px; background: rgba(168,85,247,0.1);
@@ -1204,7 +668,6 @@ const htmlTemplate = `<!DOCTYPE html>
   .badge-vip { background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.4); color: #d8b4fe; }
   .badge-user { background: rgba(148,163,184,0.1); border-color: rgba(148,163,184,0.3); color: #cbd5e1; }
   .badge-netflix { background: rgba(229,9,20,0.15); border-color: rgba(229,9,20,0.4); color: #fca5a5; }
-  .badge-wink { background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.4); color: #93c5fd; }
 
   .divider {
     height: 1px;
@@ -1615,55 +1078,6 @@ const htmlTemplate = `<!DOCTYPE html>
     font-weight: 700;
   }
 
-  /* WINK STYLES */
-  .wink-card {
-    background: linear-gradient(135deg, rgba(59,130,246,0.12), rgba(29,78,216,0.06));
-    border: 1px solid rgba(59,130,246,0.35);
-    border-radius: 1.25rem;
-    padding: 1rem;
-    animation: slide-up 0.3s ease;
-  }
-  .wink-logo {
-    width: 42px; height: 42px;
-    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-    border-radius: 12px;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 900; color: white; font-size: 1rem;
-    box-shadow: 0 8px 25px -5px rgba(59,130,246,0.5);
-  }
-  .wink-result {
-    background: rgba(7,4,15,0.7);
-    border: 1px solid rgba(59,130,246,0.25);
-    border-radius: 1rem;
-    padding: 1rem;
-    margin-top: 0.75rem;
-    animation: slide-up 0.3s ease;
-  }
-  .wink-result .label {
-    font-size: 0.65rem;
-    color: #94a3b8;
-    text-transform: uppercase;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-  }
-  .wink-result .link-box {
-    background: rgba(59,130,246,0.1);
-    border: 1px solid rgba(59,130,246,0.3);
-    border-radius: 0.75rem;
-    padding: 0.75rem;
-    margin-top: 0.5rem;
-    word-break: break-all;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    color: #93c5fd;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  .wink-result .link-box:hover {
-    background: rgba(59,130,246,0.2);
-    border-color: rgba(59,130,246,0.6);
-  }
-
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(168,85,247,0.3); border-radius: 999px; }
@@ -1727,10 +1141,6 @@ const htmlTemplate = `<!DOCTYPE html>
         <button onclick="switchView('netflix')" data-nav="netflix" class="nav-item netflix-nav">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
           Generator Netflix
-        </button>
-        <button onclick="switchView('wink')" data-nav="wink" class="nav-item wink-nav">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-          Wink Generator
         </button>
         <button onclick="switchView('vipshop')" data-nav="vipshop" class="nav-item">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
@@ -2028,7 +1438,7 @@ const htmlTemplate = `<!DOCTYPE html>
       <div class="p-3 rounded-xl" style="background: rgba(229,9,20,0.08); border: 1px solid rgba(229,9,20,0.25);">
         <p class="text-[10px] text-red-300 flex items-center gap-1.5">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          <strong>Quota SAMA</strong> dengan Alight Motion & Wink — setiap generate mengurangi 1 quota
+          <strong>Quota SAMA</strong> dengan Alight Motion — setiap generate Netflix mengurangi 1 quota
         </p>
       </div>
 
@@ -2112,118 +1522,6 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- VIEW: WINK GENERATOR -->
-    <div id="section-wink" class="space-y-3 hidden">
-      
-      <div class="glass-panel py-2.5 px-3.5 flex items-center justify-between" style="border-color: rgba(59,130,246,0.3);">
-        <div class="flex items-center gap-2.5 min-w-0">
-          <div class="wink-logo">W</div>
-          <div class="min-w-0">
-            <p class="text-xs font-bold text-white truncate">Wink AI Enhancer</p>
-            <p class="text-[10px] text-blue-300">Ultra HD Image Enhancement</p>
-          </div>
-        </div>
-        <span class="badge badge-wink">
-          <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
-          READY
-        </span>
-      </div>
-
-      <!-- Quota Info -->
-      <div class="grid grid-cols-2 gap-2.5">
-        <div class="stat-card" style="border-color: rgba(59,130,246,0.25);">
-          <div>
-            <p class="text-[10px] font-bold uppercase tracking-wider text-blue-300">Kuota Tersisa</p>
-            <p id="wink-quota-display" class="text-sm font-extrabold text-white mono mt-0.5">0</p>
-          </div>
-          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(59,130,246,0.15);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-          </div>
-        </div>
-        <div class="stat-card" style="border-color: rgba(59,130,246,0.25);">
-          <div>
-            <p class="text-[10px] font-bold uppercase tracking-wider text-blue-300">Reset</p>
-            <p id="wink-reset-display" class="text-sm font-extrabold text-white mono mt-0.5">24 Jam</p>
-          </div>
-          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(59,130,246,0.15);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          </div>
-        </div>
-      </div>
-
-      <!-- Info Quota Sama -->
-      <div class="p-3 rounded-xl" style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25);">
-        <p class="text-[10px] text-blue-300 flex items-center gap-1.5">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          <strong>Quota SAMA</strong> dengan Alight Motion & Netflix — setiap enhance mengurangi 1 quota
-        </p>
-      </div>
-
-      <!-- Upload Image -->
-      <div class="glass-panel space-y-3" style="border-color: rgba(59,130,246,0.3);">
-        <div class="section-title" style="color: #93c5fd;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-          Upload Gambar untuk Enhance
-        </div>
-
-        <div class="file-drop" id="wink-file-drop" onclick="document.getElementById('wink-image-file').click()">
-          <input type="file" id="wink-image-file" accept="image/jpeg,image/png,image/webp" class="hidden" onchange="handleWinkFileSelect(event)">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.5" style="margin: 0 auto 0.5rem; display: block;">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
-          </svg>
-          <p id="wink-file-info" class="text-xs font-bold text-slate-300">Klik untuk upload gambar</p>
-          <p class="text-[10px] text-slate-500 mt-1">Format: JPG, PNG, WEBP (Max 10MB)</p>
-        </div>
-
-        <div id="wink-preview-container" class="hidden">
-          <p class="text-[10px] font-bold uppercase tracking-wider text-blue-300 mb-1.5">Preview</p>
-          <img id="wink-preview-image" src="" alt="Preview" style="max-width:100%; max-height:200px; border-radius:1rem; border:1px solid rgba(59,130,246,0.3);">
-        </div>
-
-        <button id="btn-generate-wink" onclick="handleGenerateWink()" class="btn-wink" disabled>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-          <span id="wink-btn-text">Enhance ke Ultra HD</span>
-        </button>
-      </div>
-
-      <!-- Loading -->
-      <div id="wink-loading" class="hidden glass-panel" style="border-color: rgba(59,130,246,0.3);">
-        <div class="flex items-center gap-3 mb-3">
-          <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: rgba(59,130,246,0.2);">
-            <svg class="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
-          </div>
-          <div>
-            <p class="text-xs font-bold text-white">Memproses...</p>
-            <p id="wink-status-text" class="text-[10px] text-slate-400">Mengupload gambar</p>
-          </div>
-        </div>
-        <div class="progress-bar">
-          <div id="wink-progress-fill" class="progress-fill" style="background: linear-gradient(90deg, #3b82f6, #1d4ed8, #3b82f6);"></div>
-        </div>
-        <p id="wink-log-text" class="text-[10px] text-slate-500 mono mt-2 text-center">Initializing...</p>
-      </div>
-
-      <!-- Results -->
-      <div id="wink-results-container" class="space-y-3 hidden">
-        <div class="flex items-center justify-between">
-          <p class="section-title" style="color: #93c5fd; margin: 0;">Hasil Enhance</p>
-          <button onclick="clearWinkResults()" class="text-[10px] text-slate-400 hover:text-white underline">Bersihkan</button>
-        </div>
-        <div id="wink-results-list" class="space-y-3"></div>
-      </div>
-
-      <!-- History -->
-      <div class="glass-panel" style="border-color: rgba(59,130,246,0.2);">
-        <div class="flex justify-between items-center mb-2">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-blue-300">Riwayat Enhance</span>
-          <button onclick="loadWinkHistory()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
-        </div>
-        <div id="wink-history-list" class="space-y-2 max-h-60 overflow-y-auto">
-          <p class="text-slate-500 italic text-xs text-center py-2">Memuat riwayat...</p>
-        </div>
-      </div>
-    </div>
-
     <!-- VIEW: VIP SHOP -->
     <div id="section-vipshop" class="glass-panel space-y-4 hidden">
       <div class="flex items-center justify-between pb-3 border-b border-amber-500/20">
@@ -2247,10 +1545,6 @@ const htmlTemplate = `<!DOCTYPE html>
           <div class="vip-benefit">
             <span class="vip-benefit-icon">✦</span>
             <span><strong class="text-amber-200">BISA GENERATE NETFLIX TANPA BATAS</strong></span>
-          </div>
-          <div class="vip-benefit">
-            <span class="vip-benefit-icon">✦</span>
-            <span><strong class="text-amber-200">BISA ENHANCE GAMBAR WINK TANPA BATAS</strong></span>
           </div>
           <div class="vip-benefit">
             <span class="vip-benefit-icon">✦</span>
@@ -2807,23 +2101,19 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
           <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">4</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Untuk Wink: Beralih ke menu Wink Generator, upload gambar, lalu enhance ke Ultra HD.</p>
-        </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">5</div>
           <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Masukkan email target Google/Gmail pada kolom yang tersedia (untuk AM).</p>
         </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">6</div>
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">5</div>
           <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klik tombol Kirim Magic Link untuk memicu token verifikasi (AM).</p>
         </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">7</div>
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">6</div>
           <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Salin tautan Magic Link dari email, paste di kolom URL, lalu klik Verifikasi (AM).</p>
         </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">8</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klaim kode redeem untuk dapat kuota bonus. Quota berlaku untuk SEMUA fitur (AM, Netflix & Wink).</p>
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">7</div>
+          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klaim kode redeem untuk dapat kuota bonus. Quota berlaku untuk SEMUA fitur (AM & Netflix).</p>
         </div>
       </div>
     </div>
@@ -2907,10 +2197,6 @@ let selectedNetflixPlan = 'premium';
 let netflixResults = [];
 let netflixGenerateCount = 0;
 
-// Wink state
-let selectedWinkFile = null;
-let winkResults = [];
-
 // ============ OPTIMASI KUOTA ============
 let isPageVisible = true;
 let statusPollInterval = null;
@@ -2922,7 +2208,6 @@ let lastEmailsFetch = 0;
 let lastRedeemsFetch = 0;
 let lastAnnouncementsFetch = 0;
 let lastNetflixHistoryFetch = 0;
-let lastWinkHistoryFetch = 0;
 
 const CACHE_DURATION = {
   status: 30000,
@@ -2931,8 +2216,7 @@ const CACHE_DURATION = {
   emails: 30000,
   redeems: 60000,
   announcements: 60000,
-  netflixHistory: 30000,
-  winkHistory: 30000
+  netflixHistory: 30000
 };
 
 const memoryCache = {};
@@ -2966,9 +2250,6 @@ document.addEventListener('visibilitychange', () => {
     if (currentView === 'netflix') {
       loadNetflixHistory(true);
     }
-    if (currentView === 'wink') {
-      loadWinkHistory(true);
-    }
   }
 });
 
@@ -2981,8 +2262,7 @@ function showToast(message, type = 'info', duration = 3000) {
     success: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>',
     error: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
     info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
-    netflix: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
-    wink: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'
+    netflix: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'
   };
   toast.innerHTML = (icons[type] || icons.info) + '<span>' + message + '</span>';
   container.appendChild(toast);
@@ -3005,20 +2285,14 @@ function switchView(viewName) {
     el.classList.toggle('active', el.dataset.nav === viewName);
   });
   toggleMenu();
-  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request', 'section-vipshop', 'section-netflix', 'section-wink'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.classList.add('hidden');
+  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request', 'section-vipshop', 'section-netflix'].forEach(id => {
+    document.getElementById(id).classList.add('hidden');
   });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hidden');
   else if (viewName === 'netflix') {
     document.getElementById('section-netflix').classList.remove('hidden');
     loadNetflixHistory();
     updateNetflixQuotaDisplay();
-  }
-  else if (viewName === 'wink') {
-    document.getElementById('section-wink').classList.remove('hidden');
-    loadWinkHistory();
-    updateWinkQuotaDisplay();
   }
   else if (viewName === 'vipshop') {
     document.getElementById('section-vipshop').classList.remove('hidden');
@@ -3067,260 +2341,6 @@ function copyDanaNumber() {
   }).catch(() => {
     showToast('Gagal copy nomor DANA', 'error');
   });
-}
-
-// ============ WINK FUNCTIONS ============
-function updateWinkQuotaDisplay() {
-  const el = document.getElementById('wink-quota-display');
-  if (el) {
-    if (isAdminUser || isVipUser) {
-      el.innerText = '∞';
-      el.style.color = '#93c5fd';
-    } else {
-      const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota);
-      el.innerText = remain;
-      el.style.color = remain > 0 ? 'white' : '#fda4af';
-    }
-  }
-  const resetEl = document.getElementById('wink-reset-display');
-  if (resetEl) {
-    if (isAdminUser || isVipUser) {
-      resetEl.innerText = '∞';
-    } else {
-      resetEl.innerText = '24 Jam';
-    }
-  }
-}
-
-function handleWinkFileSelect(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  
-  if (!file.type.startsWith('image/')) {
-    showToast('File harus berupa gambar!', 'error');
-    return;
-  }
-  if (file.size > 10 * 1024 * 1024) {
-    showToast('File terlalu besar! Maksimal 10MB', 'error');
-    return;
-  }
-  
-  selectedWinkFile = file;
-  
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    document.getElementById('wink-preview-image').src = e.target.result;
-    document.getElementById('wink-preview-container').classList.remove('hidden');
-  };
-  reader.readAsDataURL(file);
-  
-  const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-  document.getElementById('wink-file-info').innerText = '📎 ' + file.name + ' (' + sizeMB + ' MB)';
-  document.getElementById('btn-generate-wink').disabled = false;
-  showToast('Gambar siap di-enhance: ' + sizeMB + 'MB', 'wink');
-}
-
-async function handleGenerateWink() {
-  if (!loggedInUsername) return showToast('Harus login dulu!', 'error');
-  if (!selectedWinkFile) return showToast('Pilih gambar terlebih dahulu!', 'error');
-  
-  const btn = document.getElementById('btn-generate-wink');
-  const btnText = document.getElementById('wink-btn-text');
-  const loadingEl = document.getElementById('wink-loading');
-  const statusText = document.getElementById('wink-status-text');
-  const logText = document.getElementById('wink-log-text');
-  const progressFill = document.getElementById('wink-progress-fill');
-
-  btn.disabled = true;
-  btnText.innerText = 'Memproses...';
-  loadingEl.classList.remove('hidden');
-  progressFill.style.width = '0%';
-  statusText.innerText = 'Mengupload gambar';
-  logText.innerText = 'Preparing upload...';
-
-  try {
-    // Cek quota dulu
-    const quotaRes = await fetch('/api/wink/check-quota?username=' + encodeURIComponent(loggedInUsername));
-    const quotaData = await quotaRes.json();
-    
-    if (!quotaData.success) {
-      throw new Error(quotaData.message || 'Gagal cek quota');
-    }
-    
-    if (!quotaData.allowed) {
-      throw new Error(quotaData.message || 'Quota habis!');
-    }
-
-    statusText.innerText = 'Memproses enhance...';
-    logText.innerText = 'Uploading to Wink AI...';
-    progressFill.style.width = '30%';
-
-    // Convert file to base64
-    const base64 = await blobToBase64(selectedWinkFile);
-    
-    progressFill.style.width = '50%';
-    logText.innerText = 'Creating task...';
-
-    // Call server to enhance
-    const genRes = await fetch('/api/wink/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: loggedInUsername,
-        imageData: base64,
-        fileName: selectedWinkFile.name,
-        fileType: selectedWinkFile.type
-      })
-    });
-
-    const genData = await genRes.json();
-    progressFill.style.width = '80%';
-
-    if (genData.success && genData.result) {
-      progressFill.style.width = '100%';
-      statusText.innerText = '✅ Berhasil!';
-      logText.innerText = 'Image enhanced successfully';
-      
-      // Add to results
-      addWinkResult(genData.result);
-      
-      // Update quota
-      if (genData.quotaInfo) {
-        userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota;
-        updateQuotaDisplay(genData.quotaInfo);
-        updateWinkQuotaDisplay();
-      }
-      
-      showToast('Gambar berhasil di-enhance ke Ultra HD!', 'wink');
-      
-      // Refresh history
-      loadWinkHistory(true);
-      
-      // Reset file
-      selectedWinkFile = null;
-      document.getElementById('wink-image-file').value = '';
-      document.getElementById('wink-preview-container').classList.add('hidden');
-      document.getElementById('wink-file-info').innerText = 'Klik untuk upload gambar';
-      btn.disabled = true;
-      
-      setTimeout(() => {
-        loadingEl.classList.add('hidden');
-      }, 2000);
-    } else {
-      throw new Error(genData.message || genData.error || 'Gagal enhance gambar');
-    }
-  } catch (err) {
-    statusText.innerText = '❌ Gagal';
-    logText.innerText = err.message;
-    showToast(err.message, 'error');
-    setTimeout(() => {
-      loadingEl.classList.add('hidden');
-    }, 3000);
-  } finally {
-    btn.disabled = !selectedWinkFile;
-    btnText.innerText = 'Enhance ke Ultra HD';
-  }
-}
-
-function addWinkResult(result) {
-  winkResults.unshift(result);
-  renderWinkResults();
-  document.getElementById('wink-results-container').classList.remove('hidden');
-}
-
-function renderWinkResults() {
-  const container = document.getElementById('wink-results-list');
-  if (!container) return;
-  
-  if (winkResults.length === 0) {
-    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada hasil</p>';
-    return;
-  }
-  
-  container.innerHTML = winkResults.map((r, i) => {
-    return '<div class="wink-result">' +
-      '<div class="flex items-center justify-between mb-2">' +
-        '<span class="text-xs font-bold text-blue-300">#' + (winkResults.length - i) + ' — ULTRA HD</span>' +
-        '<span class="text-[9px] px-2 py-0.5 rounded-full" style="background: rgba(59,130,246,0.15); color: #93c5fd;">Enhanced</span>' +
-      '</div>' +
-      '<p class="label mb-1">Gambar Asli</p>' +
-      '<img src="' + r.inputPreview + '" alt="Input" style="max-width:100%; max-height:120px; border-radius:0.5rem; margin-bottom:0.5rem;">' +
-      '<p class="label mb-1">Hasil Enhance</p>' +
-      '<img src="' + r.resultUrl + '" alt="Result" style="max-width:100%; max-height:200px; border-radius:0.5rem; margin-bottom:0.5rem;">' +
-      '<div class="link-box" onclick="copyWinkLink(\'' + escapeHtml(r.resultUrl).replace(/'/g, "\\\\'") + '\')">' +
-        escapeHtml(r.resultUrl) +
-      '</div>' +
-      '<div class="flex gap-2 mt-2">' +
-        '<button onclick="copyWinkLink(\'' + escapeHtml(r.resultUrl).replace(/'/g, "\\\\'") + '\')" class="btn-wink" style="padding: 0.5rem; font-size: 0.75rem; flex: 1;">' +
-          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
-          'Copy Link' +
-        '</button>' +
-        '<a href="' + r.resultUrl + '" download target="_blank" class="btn-secondary" style="flex: 1; text-decoration: none;">' +
-          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
-          'Download' +
-        '</a>' +
-      '</div>' +
-    '</div>';
-  }).join('');
-}
-
-function copyWinkLink(url) {
-  navigator.clipboard.writeText(url).then(() => {
-    showToast('Link hasil tersalin!', 'wink');
-  }).catch(() => {
-    showToast('Gagal copy link', 'error');
-  });
-}
-
-function clearWinkResults() {
-  winkResults = [];
-  renderWinkResults();
-  document.getElementById('wink-results-container').classList.add('hidden');
-}
-
-async function loadWinkHistory(force = false) {
-  if (!loggedInUsername) return;
-  const now = Date.now();
-  if (!force && now - lastWinkHistoryFetch < CACHE_DURATION.winkHistory) {
-    const cached = getCached('winkHistory');
-    if (cached) { renderWinkHistory(cached); return; }
-  }
-  
-  const container = document.getElementById('wink-history-list');
-  if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2 animate-pulse">Memuat riwayat...</p>';
-  
-  try {
-    const res = await fetch('/api/wink/history?username=' + encodeURIComponent(loggedInUsername));
-    const data = await res.json();
-    lastWinkHistoryFetch = now;
-    setCache('winkHistory', data, CACHE_DURATION.winkHistory);
-    renderWinkHistory(data);
-  } catch(e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-2">Gagal memuat riwayat</p>';
-  }
-}
-
-function renderWinkHistory(data) {
-  const container = document.getElementById('wink-history-list');
-  if (!container) return;
-  
-  if (data.success && data.results && data.results.length > 0) {
-    container.innerHTML = data.results.map(r => {
-      return '<div class="p-2.5 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(59,130,246,0.2);">' +
-        '<div class="flex justify-between items-start mb-1">' +
-          '<span class="text-xs font-bold text-blue-300">ULTRA HD</span>' +
-          '<span class="text-[9px] text-slate-500">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span>' +
-        '</div>' +
-        '<img src="' + r.resultUrl + '" alt="Result" style="max-width:100%; max-height:100px; border-radius:0.5rem; margin:0.25rem 0;">' +
-        '<div class="link-box mt-1.5" style="padding: 0.5rem; font-size: 0.65rem;" onclick="copyWinkLink(\'' + escapeHtml(r.resultUrl).replace(/'/g, "\\\\'") + '\')">' +
-          escapeHtml(r.resultUrl) +
-        '</div>' +
-      '</div>';
-    }).join('');
-  } else {
-    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada riwayat</p>';
-  }
 }
 
 // ============ NETFLIX FUNCTIONS ============
@@ -3468,10 +2488,10 @@ function renderNetflixResults() {
         '<div><p class="label">Expires</p><p class="value">' + (r.expires ? new Date(r.expires).toLocaleDateString('id-ID') : '—') + '</p></div>' +
       '</div>' +
       '<p class="label mb-1">Link Token</p>' +
-      '<div class="link-box" onclick="copyNetflixLink(\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\')">' +
+      '<div class="link-box" onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')">' +
         escapeHtml(r.url) +
       '</div>' +
-      '<button onclick="copyNetflixLink(\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\')" class="btn-netflix mt-2" style="padding: 0.5rem; font-size: 0.75rem;">' +
+      '<button onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')" class="btn-netflix mt-2" style="padding: 0.5rem; font-size: 0.75rem;">' +
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
         'Copy Link' +
       '</button>' +
@@ -3529,7 +2549,7 @@ function renderNetflixHistory(data) {
           '<span class="text-[9px] text-slate-500">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span>' +
         '</div>' +
         '<p class="text-[10px] text-slate-400">' + escapeHtml(countryName) + ' • ' + escapeHtml(r.quality || 'HD') + '</p>' +
-        '<div class="link-box mt-1.5" style="padding: 0.5rem; font-size: 0.65rem;" onclick="copyNetflixLink(\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\')">' +
+        '<div class="link-box mt-1.5" style="padding: 0.5rem; font-size: 0.65rem;" onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')">' +
           escapeHtml(r.url) +
         '</div>' +
       '</div>';
@@ -3719,7 +2739,6 @@ function applySession(data) {
   updateStatusUI(data.serverStatus);
   fetchFeaturedVideo(true);
   updateNetflixQuotaDisplay();
-  updateWinkQuotaDisplay();
 
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   loadGlobalChat();
@@ -3778,7 +2797,6 @@ async function handleRedeemCodeMain() {
       document.getElementById('redeem-code-input-main').value = '';
       updateQuotaDisplay(data);
       updateNetflixQuotaDisplay();
-      updateWinkQuotaDisplay();
       loadVerifiedEmails(true);
       loadActiveRedeems(true);
     } else showToast(data.message, 'error');
@@ -3825,7 +2843,7 @@ function renderActiveRedeems(payload) {
         ? '<span class="px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1" style="background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);">' +
             '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' +
             'Sudah</span>'
-        : '<button onclick="quickClaimRedeem(\'' + escapeHtml(code) + '\')" class="px-2 py-1 rounded text-[10px] font-bold" style="background: rgba(6,182,212,0.2); color: #67e8f9; border: 1px solid rgba(6,182,212,0.4);">Klaim</button>';
+        : '<button onclick="quickClaimRedeem(\\'' + escapeHtml(code) + '\\')" class="px-2 py-1 rounded text-[10px] font-bold" style="background: rgba(6,182,212,0.2); color: #67e8f9; border: 1px solid rgba(6,182,212,0.4);">Klaim</button>';
       
       return '<div class="redeem-card">' +
         '<div class="flex justify-between items-start mb-1.5">' +
@@ -3866,7 +2884,7 @@ async function loadVipShopItems() {
       cachedVipShopItems = items;
       container.innerHTML = items.map(([id, item]) => {
         const priceFormatted = 'Rp ' + Number(item.price).toLocaleString('id-ID');
-        return '<div class="vip-shop-card cursor-pointer" onclick="selectVipItem(\'' + escapeHtml(id) + '\')">' +
+        return '<div class="vip-shop-card cursor-pointer" onclick="selectVipItem(\\'' + escapeHtml(id) + '\\')">' +
           '<div class="flex items-center justify-between mb-2">' +
             '<div class="flex items-center gap-2.5">' +
               '<div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: linear-gradient(135deg, rgba(245,158,11,0.3), rgba(168,85,247,0.2));">' +
@@ -4158,9 +3176,9 @@ async function loadAdminFeatureRequests() {
           (req.adminNote ? '<p class="text-[9px] text-amber-300 mb-1.5">Catatan: ' + escapeHtml(req.adminNote) + '</p>' : '') +
           '<div class="flex gap-1.5 mt-2 pt-1.5 border-t border-slate-800">' +
             '<input type="text" id="admin-note-' + req.id + '" placeholder="Catatan admin..." class="input-glow" style="flex: 1; padding: 0.4rem 0.6rem; font-size: 0.7rem;">' +
-            '<button onclick="updateFeatureRequestStatus(\'' + req.id + '\', \'approved\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);">✓</button>' +
-            '<button onclick="updateFeatureRequestStatus(\'' + req.id + '\', \'rejected\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(244,63,94,0.2); color: #fda4af; border: 1px solid rgba(244,63,94,0.4);">✗</button>' +
-            '<button onclick="deleteFeatureRequest(\'' + req.id + '\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(148,163,184,0.2); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.4);">🗑</button>' +
+            '<button onclick="updateFeatureRequestStatus(\\'' + req.id + '\\', \\'approved\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);">✓</button>' +
+            '<button onclick="updateFeatureRequestStatus(\\'' + req.id + '\\', \\'rejected\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(244,63,94,0.2); color: #fda4af; border: 1px solid rgba(244,63,94,0.4);">✗</button>' +
+            '<button onclick="deleteFeatureRequest(\\'' + req.id + '\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(148,163,184,0.2); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.4);">🗑</button>' +
           '</div>' +
         '</div>';
       }).join('');
@@ -4227,9 +3245,9 @@ async function loadAdminVipShop() {
             '<p class="text-[9px] text-slate-500">' + item.days + ' hari • Rp ' + Number(item.price).toLocaleString('id-ID') + ' • ' + (item.active !== false ? '✅ Aktif' : '❌ Nonaktif') + '</p>' +
           '</div>' +
           '<div class="flex gap-1 shrink-0">' +
-            '<button onclick="editVipShopItem(\'' + id + '\', \'' + encodeURIComponent(item.name) + '\', ' + item.price + ', ' + item.days + ')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(6,182,212,0.2); color: #67e8f9;">Edit</button>' +
-            '<button onclick="toggleVipShopItem(\'' + id + '\', ' + (item.active !== false) + ')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(245,158,11,0.2); color: #fbbf24;">' + (item.active !== false ? 'Off' : 'On') + '</button>' +
-            '<button onclick="deleteVipShopItem(\'' + id + '\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(244,63,94,0.2); color: #fda4af;">×</button>' +
+            '<button onclick="editVipShopItem(\\'' + id + '\\', \\'' + encodeURIComponent(item.name) + '\\', ' + item.price + ', ' + item.days + ')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(6,182,212,0.2); color: #67e8f9;">Edit</button>' +
+            '<button onclick="toggleVipShopItem(\\'' + id + '\\', ' + (item.active !== false) + ')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(245,158,11,0.2); color: #fbbf24;">' + (item.active !== false ? 'Off' : 'On') + '</button>' +
+            '<button onclick="deleteVipShopItem(\\'' + id + '\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(244,63,94,0.2); color: #fda4af;">×</button>' +
           '</div>' +
         '</div>'
       ).join('');
@@ -4353,9 +3371,9 @@ async function loadAdminTransactions() {
           (t.proofImage ? '<img src="' + t.proofImage + '" alt="Bukti" style="max-width:100%; max-height:120px; border-radius:0.5rem; margin-top:0.5rem; cursor:pointer;" onclick="window.open(this.src)">' : '<p class="text-[9px] text-rose-400 mt-1">Belum upload bukti</p>') +
           '<div class="flex gap-1.5 mt-2 pt-1.5 border-t border-slate-800">' +
             (t.status === 'pending' || t.status === 'process' ? 
-              '<button onclick="confirmTransaction(\'' + t.transactionId + '\', \'success\')" class="flex-1 py-1 rounded text-[9px] font-bold" style="background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);">✓ Konfirmasi</button>' +
-              '<button onclick="confirmTransaction(\'' + t.transactionId + '\', \'failed\')" class="flex-1 py-1 rounded text-[9px] font-bold" style="background: rgba(244,63,94,0.2); color: #fda4af; border: 1px solid rgba(244,63,94,0.4);">✗ Tolak</button>' : '') +
-            '<button onclick="deleteTransaction(\'' + t.transactionId + '\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(148,163,184,0.2); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.4);">🗑</button>' +
+              '<button onclick="confirmTransaction(\\'' + t.transactionId + '\\', \\'success\\')" class="flex-1 py-1 rounded text-[9px] font-bold" style="background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);">✓ Konfirmasi</button>' +
+              '<button onclick="confirmTransaction(\\'' + t.transactionId + '\\', \\'failed\\')" class="flex-1 py-1 rounded text-[9px] font-bold" style="background: rgba(244,63,94,0.2); color: #fda4af; border: 1px solid rgba(244,63,94,0.4);">✗ Tolak</button>' : '') +
+            '<button onclick="deleteTransaction(\\'' + t.transactionId + '\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(148,163,184,0.2); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.4);">🗑</button>' +
           '</div>' +
         '</div>';
       }).join('');
@@ -4503,7 +3521,6 @@ function renderVerifiedEmails(data) {
   updateQuotaStatusCard(data);
   handleCountdown(data);
   updateNetflixQuotaDisplay();
-  updateWinkQuotaDisplay();
 
   const emails = data.activatedEmails || [];
   if (emails.length === 0) {
@@ -4539,7 +3556,7 @@ function renderVerifiedEmails(data) {
           '</div>' +
         '</div>' +
       '</div>' +
-      '<button onclick="copyEmail(\'' + safeEmail + '\')" class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" ' +
+      '<button onclick="copyEmail(\\'' + safeEmail + '\\')" class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" ' +
       'style="background: rgba(168,85,247,0.15); border: 1px solid rgba(168,85,247,0.25);" title="Copy email">' +
         '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="2.5">' +
           '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>' +
@@ -4961,7 +3978,7 @@ async function loadAdminVipList() {
         '<div class="flex justify-between items-center p-2 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(245,158,11,0.2);">' +
           '<div><span class="text-amber-300 font-bold">' + uname + '</span>' +
           '<span class="text-slate-500 block text-[9px]">Exp: ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span></div>' +
-          '<button onclick="handleRemoveVip(\'' + uname + '\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(244,63,94,0.2); color: #fda4af; border: 1px solid rgba(244,63,94,0.3);">Hapus</button>' +
+          '<button onclick="handleRemoveVip(\\'' + uname + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(244,63,94,0.2); color: #fda4af; border: 1px solid rgba(244,63,94,0.3);">Hapus</button>' +
         '</div>'
       ).join('');
     } else {
@@ -5056,8 +4073,8 @@ async function loadVipAccounts() {
           '<div class="flex items-center justify-between text-[10px]">' +
             '<span class="text-amber-300">⭐ s/d ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span>' +
             '<div class="flex gap-1">' +
-              '<button onclick="copyVipCredentials(\'' + escapeHtml(uname) + '\', \'' + escapeHtml(val.password) + '\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.3);">📋 Copy</button>' +
-              '<button onclick="deleteVipAccount(\'' + escapeHtml(uname) + '\')" class="delete-btn">🗑 Hapus</button>' +
+              '<button onclick="copyVipCredentials(\\'' + escapeHtml(uname) + '\\', \\'' + escapeHtml(val.password) + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.3);">📋 Copy</button>' +
+              '<button onclick="deleteVipAccount(\\'' + escapeHtml(uname) + '\\')" class="delete-btn">🗑 Hapus</button>' +
             '</div>' +
           '</div>' +
         '</div>';
@@ -5244,10 +4261,10 @@ function renderUserList() {
           '</div>' +
         '</details>' : '') +
       '<div class="flex gap-1.5 mt-2 pt-2 border-t border-slate-800">' +
-        '<button onclick="quickSetVip(\'' + safeUser + '\')" class="flex-1 py-1 rounded text-[10px] font-bold transition" style="background: rgba(168,85,247,0.15); color: #d8b4fe; border: 1px solid rgba(168,85,247,0.3);">⭐ Set VIP</button>' +
-        '<button onclick="copyUsername(\'' + safeUser + '\')" class="flex-1 py-1 rounded text-[10px] font-bold transition" style="background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.3);">📋 Copy</button>' +
+        '<button onclick="quickSetVip(\\'' + safeUser + '\\')" class="flex-1 py-1 rounded text-[10px] font-bold transition" style="background: rgba(168,85,247,0.15); color: #d8b4fe; border: 1px solid rgba(168,85,247,0.3);">⭐ Set VIP</button>' +
+        '<button onclick="copyUsername(\\'' + safeUser + '\\')" class="flex-1 py-1 rounded text-[10px] font-bold transition" style="background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.3);">📋 Copy</button>' +
         (u.isAdmin && u.username === loggedInUsername ? '' : 
-          '<button onclick="deleteUserAccount(\'' + safeUser + '\', ' + (u.isAdmin ? 'true' : 'false') + ')" class="flex-1 py-1 rounded text-[10px] font-bold transition" style="background: rgba(244,63,94,0.15); color: #fda4af; border: 1px solid rgba(244,63,94,0.3);">🗑 Hapus</button>') +
+          '<button onclick="deleteUserAccount(\\'' + safeUser + '\\', ' + (u.isAdmin ? 'true' : 'false') + ')" class="flex-1 py-1 rounded text-[10px] font-bold transition" style="background: rgba(244,63,94,0.15); color: #fda4af; border: 1px solid rgba(244,63,94,0.3);">🗑 Hapus</button>') +
       '</div>' +
     '</div>';
   }).join('');
@@ -5395,7 +4412,7 @@ function renderGlobalChat(data) {
     const timeStr = isToday ? time : date + ' ' + time;
 
     const deleteBtn = isAdminUser ? 
-      '<button onclick="deleteChatMessage(\'' + id + '\')" class="text-[9px] opacity-50 hover:opacity-100 ml-1" title="Hapus">🗑</button>' : '';
+      '<button onclick="deleteChatMessage(\\'' + id + '\\')" class="text-[9px] opacity-50 hover:opacity-100 ml-1" title="Hapus">🗑</button>' : '';
 
     return '<div class="chat-bubble ' + bubbleClass + '">' +
       '<div class="chat-meta">' +
@@ -5510,8 +4527,8 @@ async function loadAdminAnnouncements() {
         '<div class="flex justify-between items-center p-2 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(245,158,11,0.2);">' +
           '<div class="truncate mr-2 flex-1"><span class="text-amber-300 font-bold block truncate">' + escapeHtml(val.title) + '</span></div>' +
           '<div class="flex gap-1 shrink-0">' +
-            '<button onclick="editAnnouncement(\'' + id + '\', \'' + encodeURIComponent(val.title) + '\', \'' + encodeURIComponent(val.content) + '\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(6,182,212,0.2); color: #67e8f9;">Edit</button>' +
-            '<button onclick="deleteAnnouncement(\'' + id + '\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(244,63,94,0.2); color: #fda4af;">×</button>' +
+            '<button onclick="editAnnouncement(\\'' + id + '\\', \\'' + encodeURIComponent(val.title) + '\\', \\'' + encodeURIComponent(val.content) + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(6,182,212,0.2); color: #67e8f9;">Edit</button>' +
+            '<button onclick="deleteAnnouncement(\\'' + id + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(244,63,94,0.2); color: #fda4af;">×</button>' +
           '</div>' +
         '</div>'
       ).join('');
@@ -5626,7 +4643,7 @@ async function loadAdminRedeems() {
         '<div class="flex justify-between items-center p-2 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(245,158,11,0.2);">' +
           '<div><span class="text-amber-300 font-bold mono">' + code + '</span>' +
           '<span class="text-slate-500 block text-[9px]">Kuota: ' + (val.quotaPerUser || 1) + '/user | Klaim: ' + val.claimedCount + '/' + val.maxClaims + '</span></div>' +
-          '<button onclick="handleDeleteRedeem(\'' + code + '\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(244,63,94,0.2); color: #fda4af;">×</button>' +
+          '<button onclick="handleDeleteRedeem(\\'' + code + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(244,63,94,0.2); color: #fda4af;">×</button>' +
         '</div>'
       ).join('');
     } else {
@@ -5813,148 +4830,6 @@ const server = http.createServer(async (req, res) => {
       const items = await getVipShopFromDb();
       jsonResponse(res, 200, { success: true, items });
 
-    // ====== WINK ENDPOINTS ======
-    } else if (parsedUrl.pathname === '/api/wink/check-quota' && req.method === 'GET') {
-      const username = parsedUrl.searchParams.get('username');
-      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-
-      const cleanUser = username.toLowerCase();
-      const userObj = await getUserFromDb(cleanUser);
-      if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-
-      const now = Date.now();
-      const twentyFourHours = 24 * 60 * 60 * 1000;
-      
-      if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
-        userObj.activatedEmails = [];
-        userObj.lastResetTime = now;
-        await saveUserToDb(cleanUser, userObj);
-      }
-
-      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
-      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
-      const totalQuota = 1 + (userObj.bonusQuota || 0);
-      
-      if (userObj.isAdmin || isVipActive) {
-        return jsonResponse(res, 200, { 
-          success: true, 
-          allowed: true, 
-          message: 'Unlimited access',
-          quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
-        });
-      }
-
-      if (usedQuota >= totalQuota) {
-        return jsonResponse(res, 200, { 
-          success: true, 
-          allowed: false, 
-          message: 'Quota habis! Tunggu reset 24 jam atau klaim kode redeem.',
-          quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
-        });
-      }
-
-      jsonResponse(res, 200, { 
-        success: true, 
-        allowed: true, 
-        message: 'Quota tersedia',
-        quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
-      });
-
-    } else if (parsedUrl.pathname === '/api/wink/generate' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { username, imageData, fileName, fileType } = JSON.parse(body);
-      
-      const cleanUser = username ? username.toLowerCase() : '';
-      const userObj = await getUserFromDb(cleanUser);
-      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
-
-      const now = Date.now();
-      const twentyFourHours = 24 * 60 * 60 * 1000;
-      
-      if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
-        userObj.activatedEmails = [];
-        userObj.lastResetTime = now;
-      }
-
-      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
-      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
-      const totalQuota = 1 + (userObj.bonusQuota || 0);
-
-      // Cek quota
-      if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) {
-        return jsonResponse(res, 403, { 
-          success: false, 
-          message: 'Quota habis! Tunggu reset 24 jam atau klaim kode redeem.' 
-        });
-      }
-
-      // Save image to temp file
-      const tempFileName = 'wink_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8) + path.extname(fileName || '.jpg');
-      const tempFilePath = path.join(WINK_TEMP_DIR, tempFileName);
-      
-      const base64Data = imageData.split(',')[1] || imageData;
-      fs.writeFileSync(tempFilePath, Buffer.from(base64Data, 'base64'));
-
-      try {
-        // Run Wink enhancer
-        const enhancer = new WinkEnhancer({ imagePath: tempFilePath });
-        const result = await enhancer.enhance();
-
-        if (!result.status) {
-          throw new Error('Enhance failed');
-        }
-
-        // Kurangi quota (kecuali admin/vip)
-        if (!userObj.isAdmin && !isVipActive) {
-          if (!userObj.activatedEmails) userObj.activatedEmails = [];
-          userObj.activatedEmails.push('wink_' + Date.now());
-          await saveUserToDb(cleanUser, userObj);
-        }
-
-        // Save history
-        const historyId = 'wink_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
-        await saveWinkResultToDb(historyId, {
-          id: historyId,
-          username: cleanUser,
-          inputPreview: imageData,
-          resultUrl: result.result_url,
-          timestamp: now
-        });
-
-        jsonResponse(res, 200, {
-          success: true,
-          result: {
-            inputPreview: imageData,
-            resultUrl: result.result_url
-          },
-          quotaInfo: { 
-            usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, 
-            bonusQuota: userObj.bonusQuota || 0,
-            totalQuota,
-            isAdmin: userObj.isAdmin,
-            isVip: isVipActive
-          }
-        });
-      } finally {
-        // Clean up temp file
-        try { fs.unlinkSync(tempFilePath); } catch(e) {}
-      }
-
-    } else if (parsedUrl.pathname === '/api/wink/history' && req.method === 'GET') {
-      const username = parsedUrl.searchParams.get('username');
-      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-
-      const cleanUser = username.toLowerCase();
-      const allResults = await getWinkResultsFromDb();
-      const myResults = Object.values(allResults)
-        .filter(r => r.username === cleanUser)
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 20);
-
-      jsonResponse(res, 200, { success: true, results: myResults });
-
-    // ====== END WINK ENDPOINTS ======
-
     // ====== NETFLIX ENDPOINTS ======
     } else if (parsedUrl.pathname === '/api/netflix/check-quota' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
@@ -5967,6 +4842,7 @@ const server = http.createServer(async (req, res) => {
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
       
+      // Reset jika sudah 24 jam
       if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
         userObj.activatedEmails = [];
         userObj.lastResetTime = now;
@@ -6013,6 +4889,7 @@ const server = http.createServer(async (req, res) => {
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
       
+      // Reset jika sudah 24 jam
       if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
         userObj.activatedEmails = [];
         userObj.lastResetTime = now;
@@ -6082,7 +4959,7 @@ const server = http.createServer(async (req, res) => {
       const myResults = Object.values(allResults)
         .filter(r => r.username === cleanUser)
         .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 20);
+        .slice(0, 20); // Limit 20
 
       jsonResponse(res, 200, { success: true, results: myResults });
 
@@ -7052,7 +5929,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v3.6 (Wink + Netflix + AM)           ║');
+  console.log('║  🚀 AM Premium Banggus v3.5 (DANA + Netflix Generator)      ║');
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
   console.log('║  💳 Pembayaran via DANA: ' + DANA_ADMIN_NUMBER + '              ║');
   console.log('║  🛒 VIP Shop + Upload Bukti Transfer DANA                   ║');
@@ -7070,7 +5947,6 @@ server.listen(PORT, () => {
   console.log('║  💡 Request Fitur Baru (User → Admin)                        ║');
   console.log('║  🛡️ Panel Admin Terpisah dari Profil                        ║');
   console.log('║  🎬 NETFLIX GENERATOR (Premium Token)                       ║');
-  console.log('║  🖼️ WINK AI ENHANCER (Ultra HD Image)                       ║');
-  console.log('║  📊 Quota SAMA untuk SEMUA fitur (AM, Netflix, Wink)        ║');
+  console.log('║  📊 Quota SAMA untuk semua fitur (AM & Netflix)             ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
