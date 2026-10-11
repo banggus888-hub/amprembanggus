@@ -209,6 +209,34 @@ async function removeNetflixResultFromDb(id) {
   await set(ref(db, `netflixResults/${id}`), null);
 }
 
+// ====== APK MOD HELPERS (NEW) ======
+async function getApkModsFromDb() {
+  const snapshot = await get(child(ref(db), `apkMods`));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+async function getApkModFromDb(id) {
+  const snapshot = await get(child(ref(db), `apkMods/${id}`));
+  return snapshot.exists() ? snapshot.val() : null;
+}
+async function saveApkModToDb(id, data) {
+  await set(ref(db, `apkMods/${id}`), data);
+}
+async function removeApkModFromDb(id) {
+  await set(ref(db, `apkMods/${id}`), null);
+}
+
+// ====== APK MOD REQUESTS HELPERS (NEW) ======
+async function getApkRequestsFromDb() {
+  const snapshot = await get(child(ref(db), `apkRequests`));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+async function saveApkRequestToDb(id, data) {
+  await set(ref(db, `apkRequests/${id}`), data);
+}
+async function removeApkRequestFromDb(id) {
+  await set(ref(db, `apkRequests/${id}`), null);
+}
+
 async function initAdmin() {
   const adminData = await getUserFromDb('adminbaguss');
   if (!adminData) {
@@ -240,9 +268,24 @@ async function initDefaultVipShop() {
 }
 initDefaultVipShop();
 
+// ====== INIT DEFAULT APK MODS ======
+async function initDefaultApkMods() {
+  const apks = await getApkModsFromDb();
+  if (Object.keys(apks).length === 0) {
+    const defaultApks = [
+      { id: 'apk_netflix', name: 'Netflix Mod', link: 'https://example.com/netflix-mod.apk', description: 'Netflix Premium MOD APK', active: true, order: 1 },
+      { id: 'apk_spotify', name: 'Spotify Mod', link: 'https://example.com/spotify-mod.apk', description: 'Spotify Premium MOD APK', active: true, order: 2 }
+    ];
+    for (const apk of defaultApks) {
+      await saveApkModToDb(apk.id, apk);
+    }
+  }
+}
+initDefaultApkMods();
+
 // ====== ALOKASI QUOTA UNTUK SETIAP FITUR ======
-// Setiap fitur (Alight Motion & Netflix) menggunakan quota yang SAMA
-// Quota dihitung dari total aktivasi (activatedEmails) + netflixActivations
+// Setiap fitur (Alight Motion, Netflix, APK MOD) menggunakan quota yang SAMA
+// Quota dihitung dari total aktivasi (activatedEmails) + netflixActivations + apkRequests
 // Tapi untuk kesederhanaan, kita pakai activatedEmails sebagai quota utama
 
 const am = {
@@ -326,14 +369,7 @@ async function findWorkingProxies(proxyList, count) {
 }
 
 async function generateNetflixToken(plan, proxy) {
-  // Simulasi generate token Netflix (karena puppeteer tidak tersedia di environment ini)
-  // Dalam implementasi real, ini akan menggunakan puppeteer untuk generate token
-  
-  // Untuk demo, kita return hasil simulasi
-  // Di production, Anda perlu menginstall puppeteer-extra dan puppeteer-extra-plugin-stealth
-  
   try {
-    // Coba fetch langsung ke API Netflix
     const sessionRes = await fetch(`${NETFLIX_BASE}/api/session`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
@@ -348,7 +384,6 @@ async function generateNetflixToken(plan, proxy) {
       throw new Error(sessionData.error || 'Session failed');
     }
     
-    // Request token
     const tokenRes = await fetch(`${NETFLIX_BASE}/api/random`, {
       method: 'POST',
       headers: { 
@@ -372,7 +407,6 @@ async function generateNetflixToken(plan, proxy) {
       };
     }
     
-    // Jika ada PoW challenge, coba solve
     if (tokenData.powChallenge) {
       const enc = new TextEncoder();
       let proof = null;
@@ -439,6 +473,7 @@ const htmlTemplate = `<!DOCTYPE html>
     --rose: #f43f5e;
     --amber: #f59e0b;
     --netflix-red: #e50914;
+    --apk-green: #22c55e;
   }
   * { -webkit-tap-highlight-color: transparent; }
   html, body {
@@ -540,6 +575,23 @@ const htmlTemplate = `<!DOCTYPE html>
   .btn-netflix:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(229,9,20,0.8); }
   .btn-netflix:disabled { opacity: 0.6; cursor: not-allowed; }
 
+  .btn-apk {
+    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+    box-shadow: 0 12px 30px -10px rgba(34,197,94,0.6), inset 0 1px 0 rgba(255,255,255,0.2);
+    transition: all 0.25s ease;
+    border-radius: 1rem;
+    padding: 0.95rem 1rem;
+    font-weight: 700;
+    color: white;
+    width: 100%;
+    border: none;
+    cursor: pointer;
+    font-size: 0.92rem;
+    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  }
+  .btn-apk:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(34,197,94,0.8); }
+  .btn-apk:disabled { opacity: 0.6; cursor: not-allowed; }
+
   .btn-success {
     background: linear-gradient(135deg, #10b981 0%, #059669 100%);
     box-shadow: 0 12px 30px -10px rgba(16,185,129,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
@@ -607,6 +659,11 @@ const htmlTemplate = `<!DOCTYPE html>
     color: #fca5a5;
     border-color: rgba(229,9,20,0.4);
   }
+  .nav-item.apk-nav.active {
+    background: linear-gradient(135deg, rgba(34,197,94,0.2), rgba(22,163,74,0.1));
+    color: #86efac;
+    border-color: rgba(34,197,94,0.4);
+  }
 
   @keyframes pulse-glow {
     0%, 100% { opacity: 0.4; transform: scale(1); }
@@ -641,6 +698,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .toast-error { background: rgba(244,63,94,0.95); color: white; }
   .toast-info { background: rgba(168,85,247,0.95); color: white; }
   .toast-netflix { background: rgba(229,9,20,0.95); color: white; }
+  .toast-apk { background: rgba(34,197,94,0.95); color: white; }
 
   .progress-bar {
     width: 100%; height: 8px; background: rgba(168,85,247,0.1);
@@ -668,6 +726,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .badge-vip { background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.4); color: #d8b4fe; }
   .badge-user { background: rgba(148,163,184,0.1); border-color: rgba(148,163,184,0.3); color: #cbd5e1; }
   .badge-netflix { background: rgba(229,9,20,0.15); border-color: rgba(229,9,20,0.4); color: #fca5a5; }
+  .badge-apk { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.4); color: #86efac; }
 
   .divider {
     height: 1px;
@@ -1078,6 +1137,90 @@ const htmlTemplate = `<!DOCTYPE html>
     font-weight: 700;
   }
 
+  /* APK MOD STYLES */
+  .apk-card {
+    background: linear-gradient(135deg, rgba(34,197,94,0.12), rgba(22,163,74,0.06));
+    border: 1px solid rgba(34,197,94,0.35);
+    border-radius: 1.25rem;
+    padding: 1rem;
+    animation: slide-up 0.3s ease;
+  }
+  .apk-logo {
+    width: 42px; height: 42px;
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; color: white; font-size: 1rem;
+    box-shadow: 0 8px 25px -5px rgba(34,197,94,0.5);
+  }
+  .apk-result {
+    background: rgba(7,4,15,0.7);
+    border: 1px solid rgba(34,197,94,0.25);
+    border-radius: 1rem;
+    padding: 1rem;
+    margin-top: 0.75rem;
+    animation: slide-up 0.3s ease;
+  }
+  .apk-result .label {
+    font-size: 0.65rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+  }
+  .apk-result .value {
+    font-size: 0.85rem;
+    color: #e2e8f0;
+    font-weight: 600;
+  }
+  .apk-result .link-box {
+    background: rgba(34,197,94,0.1);
+    border: 1px solid rgba(34,197,94,0.3);
+    border-radius: 0.75rem;
+    padding: 0.75rem;
+    margin-top: 0.5rem;
+    word-break: break-all;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: #86efac;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .apk-result .link-box:hover {
+    background: rgba(34,197,94,0.2);
+    border-color: rgba(34,197,94,0.6);
+  }
+  .apk-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-radius: 0.9rem;
+    border: 1px solid rgba(148,163,184,0.2);
+    background: rgba(7,4,15,0.5);
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 0.5rem;
+  }
+  .apk-option:hover {
+    border-color: rgba(34,197,94,0.5);
+    background: rgba(34,197,94,0.08);
+  }
+  .apk-option.selected {
+    border-color: rgba(34,197,94,0.8);
+    background: rgba(34,197,94,0.15);
+  }
+  .apk-option .apk-name {
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: #e2e8f0;
+  }
+  .apk-option .apk-price {
+    font-size: 0.75rem;
+    color: #86efac;
+    font-weight: 700;
+  }
+
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(168,85,247,0.3); border-radius: 999px; }
@@ -1141,6 +1284,10 @@ const htmlTemplate = `<!DOCTYPE html>
         <button onclick="switchView('netflix')" data-nav="netflix" class="nav-item netflix-nav">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
           Generator Netflix
+        </button>
+        <button onclick="switchView('apkmod')" data-nav="apkmod" class="nav-item apk-nav">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          Generator APK MOD
         </button>
         <button onclick="switchView('vipshop')" data-nav="vipshop" class="nav-item">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
@@ -1438,7 +1585,7 @@ const htmlTemplate = `<!DOCTYPE html>
       <div class="p-3 rounded-xl" style="background: rgba(229,9,20,0.08); border: 1px solid rgba(229,9,20,0.25);">
         <p class="text-[10px] text-red-300 flex items-center gap-1.5">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          <strong>Quota SAMA</strong> dengan Alight Motion — setiap generate Netflix mengurangi 1 quota
+          <strong>Quota SAMA</strong> dengan Alight Motion & APK MOD — setiap generate mengurangi 1 quota
         </p>
       </div>
 
@@ -1522,6 +1669,108 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- VIEW: APK MOD GENERATOR (NEW) -->
+    <div id="section-apkmod" class="space-y-3 hidden">
+      
+      <div class="glass-panel py-2.5 px-3.5 flex items-center justify-between" style="border-color: rgba(34,197,94,0.3);">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="apk-logo">APK</div>
+          <div class="min-w-0">
+            <p class="text-xs font-bold text-white truncate">Generator APK MOD</p>
+            <p class="text-[10px] text-green-300">Download Link Generator</p>
+          </div>
+        </div>
+        <span class="badge badge-apk">
+          <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
+          READY
+        </span>
+      </div>
+
+      <!-- Quota Info -->
+      <div class="grid grid-cols-2 gap-2.5">
+        <div class="stat-card" style="border-color: rgba(34,197,94,0.25);">
+          <div>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-green-300">Kuota Tersisa</p>
+            <p id="apk-quota-display" class="text-sm font-extrabold text-white mono mt-0.5">0</p>
+          </div>
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(34,197,94,0.15);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+        </div>
+        <div class="stat-card" style="border-color: rgba(34,197,94,0.25);">
+          <div>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-green-300">Reset</p>
+            <p id="apk-reset-display" class="text-sm font-extrabold text-white mono mt-0.5">24 Jam</p>
+          </div>
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(34,197,94,0.15);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Info Quota Sama -->
+      <div class="p-3 rounded-xl" style="background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.25);">
+        <p class="text-[10px] text-green-300 flex items-center gap-1.5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <strong>Quota SAMA</strong> dengan Alight Motion & Netflix — setiap request APK MOD mengurangi 1 quota
+        </p>
+      </div>
+
+      <!-- APK Selector -->
+      <div class="glass-panel space-y-3" style="border-color: rgba(34,197,94,0.3);">
+        <div class="section-title" style="color: #86efac;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          Pilih APK MOD
+        </div>
+
+        <div id="apk-options">
+          <p class="text-slate-500 italic text-xs text-center py-3">Memuat daftar APK...</p>
+        </div>
+
+        <button id="btn-generate-apk" onclick="handleGenerateApk()" class="btn-apk">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span id="apk-btn-text">Kirim & Dapatkan Link</span>
+        </button>
+      </div>
+
+      <!-- Loading -->
+      <div id="apk-loading" class="hidden glass-panel" style="border-color: rgba(34,197,94,0.3);">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: rgba(34,197,94,0.2);">
+            <svg class="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
+          </div>
+          <div>
+            <p class="text-xs font-bold text-white">Memproses...</p>
+            <p id="apk-status-text" class="text-[10px] text-slate-400">Menyiapkan link download</p>
+          </div>
+        </div>
+        <div class="progress-bar">
+          <div id="apk-progress-fill" class="progress-fill" style="background: linear-gradient(90deg, #22c55e, #16a34a, #22c55e);"></div>
+        </div>
+        <p id="apk-log-text" class="text-[10px] text-slate-500 mono mt-2 text-center">Processing...</p>
+      </div>
+
+      <!-- Results -->
+      <div id="apk-results-container" class="space-y-3 hidden">
+        <div class="flex items-center justify-between">
+          <p class="section-title" style="color: #86efac; margin: 0;">Link Download</p>
+          <button onclick="clearApkResults()" class="text-[10px] text-slate-400 hover:text-white underline">Bersihkan</button>
+        </div>
+        <div id="apk-results-list" class="space-y-3"></div>
+      </div>
+
+      <!-- History -->
+      <div class="glass-panel" style="border-color: rgba(34,197,94,0.2);">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-green-300">Riwayat Request</span>
+          <button onclick="loadApkHistory()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+        </div>
+        <div id="apk-history-list" class="space-y-2 max-h-60 overflow-y-auto">
+          <p class="text-slate-500 italic text-xs text-center py-2">Memuat riwayat...</p>
+        </div>
+      </div>
+    </div>
+
     <!-- VIEW: VIP SHOP -->
     <div id="section-vipshop" class="glass-panel space-y-4 hidden">
       <div class="flex items-center justify-between pb-3 border-b border-amber-500/20">
@@ -1545,6 +1794,10 @@ const htmlTemplate = `<!DOCTYPE html>
           <div class="vip-benefit">
             <span class="vip-benefit-icon">✦</span>
             <span><strong class="text-amber-200">BISA GENERATE NETFLIX TANPA BATAS</strong></span>
+          </div>
+          <div class="vip-benefit">
+            <span class="vip-benefit-icon">✦</span>
+            <span><strong class="text-amber-200">BISA REQUEST APK MOD TANPA BATAS</strong></span>
           </div>
           <div class="vip-benefit">
             <span class="vip-benefit-icon">✦</span>
@@ -1932,6 +2185,35 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
+      <!-- ====== KELOLA APK MOD (NEW) ====== -->
+      <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(34,197,94,0.1), rgba(22,163,74,0.06)); border: 1px solid rgba(34,197,94,0.35);">
+        <p class="section-title" style="color: #86efac; margin-top: 0;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          Kelola APK MOD
+        </p>
+        <p class="text-[10px] text-slate-400 mb-2">Tambahkan APK MOD dengan nama & link download</p>
+        
+        <input type="hidden" id="apk-edit-id" value="">
+        <input type="text" id="apk-name-input" placeholder="Nama APK (contoh: Netflix Mod)" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+        <input type="text" id="apk-link-input" placeholder="Link download APK" class="input-glow mb-2 mono" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+        <input type="text" id="apk-desc-input" placeholder="Deskripsi singkat (opsional)" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+        <div class="flex gap-2">
+          <button onclick="handleSaveApkMod()" id="apk-submit-btn" class="btn-apk" style="flex: 1;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Tambah APK MOD
+          </button>
+          <button onclick="resetApkForm()" id="apk-cancel-btn" class="btn-secondary hidden">Batal</button>
+        </div>
+
+        <div class="flex justify-between items-center mt-3 mb-1">
+          <span class="text-[10px] text-green-300 font-bold">Daftar APK MOD</span>
+          <button onclick="loadAdminApkList()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+        </div>
+        <div id="admin-apk-list" class="space-y-1.5 max-h-40 overflow-y-auto text-[11px]">
+          <p class="text-slate-500 italic text-center py-2">Memuat...</p>
+        </div>
+      </div>
+
       <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(168,85,247,0.06)); border: 1px solid rgba(245,158,11,0.35);">
         <p class="section-title" style="color: #fbbf24; margin-top: 0;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -2099,21 +2381,25 @@ const htmlTemplate = `<!DOCTYPE html>
           <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">3</div>
           <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Untuk Netflix: Beralih ke menu Generator Netflix, pilih plan, lalu generate token.</p>
         </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">4</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Masukkan email target Google/Gmail pada kolom yang tersedia (untuk AM).</p>
+        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(34,197,94,0.05); border: 1px solid rgba(34,197,94,0.12);">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #22c55e, #16a34a); color: white;">4</div>
+          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Untuk APK MOD: Beralih ke menu Generator APK MOD, pilih APK yang diinginkan, lalu kirim untuk mendapatkan link download.</p>
         </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
           <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">5</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klik tombol Kirim Magic Link untuk memicu token verifikasi (AM).</p>
+          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Masukkan email target Google/Gmail pada kolom yang tersedia (untuk AM).</p>
         </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
           <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">6</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Salin tautan Magic Link dari email, paste di kolom URL, lalu klik Verifikasi (AM).</p>
+          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klik tombol Kirim Magic Link untuk memicu token verifikasi (AM).</p>
         </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
           <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">7</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klaim kode redeem untuk dapat kuota bonus. Quota berlaku untuk SEMUA fitur (AM & Netflix).</p>
+          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Salin tautan Magic Link dari email, paste di kolom URL, lalu klik Verifikasi (AM).</p>
+        </div>
+        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(6,182,212,0.05); border: 1px solid rgba(6,182,212,0.12);">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #06b6d4, #0891b2); color: white;">8</div>
+          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klaim kode redeem untuk dapat kuota bonus. Quota berlaku untuk SEMUA fitur (AM, Netflix & APK MOD).</p>
         </div>
       </div>
     </div>
@@ -2197,6 +2483,11 @@ let selectedNetflixPlan = 'premium';
 let netflixResults = [];
 let netflixGenerateCount = 0;
 
+// APK MOD state
+let selectedApkId = null;
+let apkResults = [];
+let cachedApkMods = [];
+
 // ============ OPTIMASI KUOTA ============
 let isPageVisible = true;
 let statusPollInterval = null;
@@ -2208,6 +2499,7 @@ let lastEmailsFetch = 0;
 let lastRedeemsFetch = 0;
 let lastAnnouncementsFetch = 0;
 let lastNetflixHistoryFetch = 0;
+let lastApkHistoryFetch = 0;
 
 const CACHE_DURATION = {
   status: 30000,
@@ -2216,7 +2508,8 @@ const CACHE_DURATION = {
   emails: 30000,
   redeems: 60000,
   announcements: 60000,
-  netflixHistory: 30000
+  netflixHistory: 30000,
+  apkHistory: 30000
 };
 
 const memoryCache = {};
@@ -2250,6 +2543,9 @@ document.addEventListener('visibilitychange', () => {
     if (currentView === 'netflix') {
       loadNetflixHistory(true);
     }
+    if (currentView === 'apkmod') {
+      loadApkHistory(true);
+    }
   }
 });
 
@@ -2262,7 +2558,8 @@ function showToast(message, type = 'info', duration = 3000) {
     success: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>',
     error: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
     info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
-    netflix: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'
+    netflix: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+    apk: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>'
   };
   toast.innerHTML = (icons[type] || icons.info) + '<span>' + message + '</span>';
   container.appendChild(toast);
@@ -2285,7 +2582,7 @@ function switchView(viewName) {
     el.classList.toggle('active', el.dataset.nav === viewName);
   });
   toggleMenu();
-  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request', 'section-vipshop', 'section-netflix'].forEach(id => {
+  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request', 'section-vipshop', 'section-netflix', 'section-apkmod'].forEach(id => {
     document.getElementById(id).classList.add('hidden');
   });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hidden');
@@ -2293,6 +2590,12 @@ function switchView(viewName) {
     document.getElementById('section-netflix').classList.remove('hidden');
     loadNetflixHistory();
     updateNetflixQuotaDisplay();
+  }
+  else if (viewName === 'apkmod') {
+    document.getElementById('section-apkmod').classList.remove('hidden');
+    loadApkMods();
+    loadApkHistory();
+    updateApkQuotaDisplay();
   }
   else if (viewName === 'vipshop') {
     document.getElementById('section-vipshop').classList.remove('hidden');
@@ -2331,6 +2634,7 @@ function switchView(viewName) {
     loadAdminFeatureRequests();
     loadAdminVipShop();
     loadAdminTransactions();
+    loadAdminApkList();
   }
 }
 
@@ -2392,7 +2696,6 @@ async function handleGenerateNetflix() {
   logText.innerText = 'Initializing...';
 
   try {
-    // Cek quota dulu
     const quotaRes = await fetch('/api/netflix/check-quota?username=' + encodeURIComponent(loggedInUsername));
     const quotaData = await quotaRes.json();
     
@@ -2408,7 +2711,6 @@ async function handleGenerateNetflix() {
     logText.innerText = 'Connecting to Netflix API...';
     progressFill.style.width = '30%';
 
-    // Call server to generate
     const genRes = await fetch('/api/netflix/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2427,10 +2729,8 @@ async function handleGenerateNetflix() {
       statusText.innerText = '✅ Berhasil!';
       logText.innerText = 'Token generated successfully';
       
-      // Add to results
       addNetflixResult(genData.result);
       
-      // Update quota
       if (genData.quotaInfo) {
         userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota;
         updateQuotaDisplay(genData.quotaInfo);
@@ -2438,8 +2738,6 @@ async function handleGenerateNetflix() {
       }
       
       showToast('Token Netflix berhasil di-generate!', 'netflix');
-      
-      // Refresh history
       loadNetflixHistory(true);
       
       setTimeout(() => {
@@ -2569,6 +2867,368 @@ const NETFLIX_COUNTRY = {
   BD:'BANGLADESH',NG:'NIGERIA',EG:'EGYPT',ZA:'SOUTH AFRICA',VN:'VIETNAM',
   RU:'RUSSIA',UA:'UKRAINE',
 };
+
+// ============ APK MOD FUNCTIONS (NEW) ============
+function updateApkQuotaDisplay() {
+  const el = document.getElementById('apk-quota-display');
+  if (el) {
+    if (isAdminUser || isVipUser) {
+      el.innerText = '∞';
+      el.style.color = '#86efac';
+    } else {
+      const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota);
+      el.innerText = remain;
+      el.style.color = remain > 0 ? 'white' : '#fda4af';
+    }
+  }
+  const resetEl = document.getElementById('apk-reset-display');
+  if (resetEl) {
+    if (isAdminUser || isVipUser) {
+      resetEl.innerText = '∞';
+    } else {
+      resetEl.innerText = '24 Jam';
+    }
+  }
+}
+
+async function loadApkMods() {
+  const container = document.getElementById('apk-options');
+  if (!container) return;
+  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3 animate-pulse">Memuat daftar APK...</p>';
+  
+  try {
+    const res = await fetch('/api/apk-mods');
+    const data = await res.json();
+    if (data.success && data.items && Object.keys(data.items).length > 0) {
+      const items = Object.entries(data.items)
+        .filter(([_, v]) => v.active !== false)
+        .sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+      cachedApkMods = items;
+      
+      container.innerHTML = items.map(([id, item]) => {
+        const isSelected = selectedApkId === id;
+        return '<div class="apk-option ' + (isSelected ? 'selected' : '') + '" data-apk-id="' + id + '" onclick="selectApkMod(\\'' + id + '\\')">' +
+          '<div>' +
+            '<p class="apk-name">📱 ' + escapeHtml(item.name) + '</p>' +
+            '<p class="text-[10px] text-slate-400">' + escapeHtml(item.description || 'APK MOD Premium') + '</p>' +
+          '</div>' +
+          '<span class="apk-price">1 Quota</span>' +
+        '</div>';
+      }).join('');
+    } else {
+      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada APK MOD tersedia</p>';
+    }
+  } catch(e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-3">Gagal memuat daftar APK</p>';
+  }
+}
+
+function selectApkMod(apkId) {
+  selectedApkId = apkId;
+  document.querySelectorAll('.apk-option').forEach(el => {
+    el.classList.toggle('selected', el.dataset.apkId === apkId);
+  });
+  const item = cachedApkMods.find(([id]) => id === apkId);
+  if (item) {
+    showToast('APK dipilih: ' + item[1].name, 'apk');
+  }
+}
+
+async function handleGenerateApk() {
+  if (!loggedInUsername) return showToast('Harus login dulu!', 'error');
+  if (!selectedApkId) return showToast('Pilih APK MOD terlebih dahulu!', 'error');
+  
+  const btn = document.getElementById('btn-generate-apk');
+  const btnText = document.getElementById('apk-btn-text');
+  const loadingEl = document.getElementById('apk-loading');
+  const statusText = document.getElementById('apk-status-text');
+  const logText = document.getElementById('apk-log-text');
+  const progressFill = document.getElementById('apk-progress-fill');
+
+  btn.disabled = true;
+  btnText.innerText = 'Memproses...';
+  loadingEl.classList.remove('hidden');
+  progressFill.style.width = '0%';
+  statusText.innerText = 'Memeriksa kuota...';
+  logText.innerText = 'Checking quota...';
+
+  try {
+    // Cek quota dulu
+    const quotaRes = await fetch('/api/apk/check-quota?username=' + encodeURIComponent(loggedInUsername));
+    const quotaData = await quotaRes.json();
+    
+    if (!quotaData.success) {
+      throw new Error(quotaData.message || 'Gagal cek quota');
+    }
+    
+    if (!quotaData.allowed) {
+      throw new Error(quotaData.message || 'Quota habis!');
+    }
+
+    statusText.innerText = 'Mengambil link download...';
+    logText.innerText = 'Fetching download link...';
+    progressFill.style.width = '50%';
+
+    // Kirim request APK
+    const reqRes = await fetch('/api/apk/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: loggedInUsername,
+        apkId: selectedApkId
+      })
+    });
+
+    const reqData = await reqRes.json();
+    progressFill.style.width = '80%';
+
+    if (reqData.success && reqData.result) {
+      progressFill.style.width = '100%';
+      statusText.innerText = '✅ Berhasil!';
+      logText.innerText = 'Download link generated';
+      
+      addApkResult(reqData.result);
+      
+      if (reqData.quotaInfo) {
+        userQuotaData.usedQuota = reqData.quotaInfo.usedQuota || userQuotaData.usedQuota;
+        updateQuotaDisplay(reqData.quotaInfo);
+        updateApkQuotaDisplay();
+      }
+      
+      showToast('Link download APK berhasil didapatkan!', 'apk');
+      loadApkHistory(true);
+      
+      setTimeout(() => {
+        loadingEl.classList.add('hidden');
+      }, 2000);
+    } else {
+      throw new Error(reqData.message || reqData.error || 'Gagal mendapatkan link');
+    }
+  } catch (err) {
+    statusText.innerText = '❌ Gagal';
+    logText.innerText = err.message;
+    showToast(err.message, 'error');
+    setTimeout(() => {
+      loadingEl.classList.add('hidden');
+    }, 3000);
+  } finally {
+    btn.disabled = false;
+    btnText.innerText = 'Kirim & Dapatkan Link';
+  }
+}
+
+function addApkResult(result) {
+  apkResults.unshift(result);
+  renderApkResults();
+  document.getElementById('apk-results-container').classList.remove('hidden');
+}
+
+function renderApkResults() {
+  const container = document.getElementById('apk-results-list');
+  if (!container) return;
+  
+  if (apkResults.length === 0) {
+    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada hasil</p>';
+    return;
+  }
+  
+  container.innerHTML = apkResults.map((r, i) => {
+    return '<div class="apk-result">' +
+      '<div class="flex items-center justify-between mb-2">' +
+        '<span class="text-xs font-bold text-green-300">#' + (apkResults.length - i) + ' — ' + escapeHtml(r.name) + '</span>' +
+        '<span class="text-[9px] px-2 py-0.5 rounded-full" style="background: rgba(34,197,94,0.15); color: #86efac;">APK MOD</span>' +
+      '</div>' +
+      '<p class="label mb-1">Link Download</p>' +
+      '<div class="link-box" onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')">' +
+        escapeHtml(r.link) +
+      '</div>' +
+      '<button onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')" class="btn-apk mt-2" style="padding: 0.5rem; font-size: 0.75rem;">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
+        'Copy Link Download' +
+      '</button>' +
+    '</div>';
+  }).join('');
+}
+
+function copyApkLink(link) {
+  navigator.clipboard.writeText(link).then(() => {
+    showToast('Link download APK tersalin!', 'apk');
+  }).catch(() => {
+    showToast('Gagal copy link', 'error');
+  });
+}
+
+function clearApkResults() {
+  apkResults = [];
+  renderApkResults();
+  document.getElementById('apk-results-container').classList.add('hidden');
+}
+
+async function loadApkHistory(force = false) {
+  if (!loggedInUsername) return;
+  const now = Date.now();
+  if (!force && now - lastApkHistoryFetch < CACHE_DURATION.apkHistory) {
+    const cached = getCached('apkHistory');
+    if (cached) { renderApkHistory(cached); return; }
+  }
+  
+  const container = document.getElementById('apk-history-list');
+  if (!container) return;
+  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2 animate-pulse">Memuat riwayat...</p>';
+  
+  try {
+    const res = await fetch('/api/apk/history?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+    lastApkHistoryFetch = now;
+    setCache('apkHistory', data, CACHE_DURATION.apkHistory);
+    renderApkHistory(data);
+  } catch(e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-2">Gagal memuat riwayat</p>';
+  }
+}
+
+function renderApkHistory(data) {
+  const container = document.getElementById('apk-history-list');
+  if (!container) return;
+  
+  if (data.success && data.results && data.results.length > 0) {
+    container.innerHTML = data.results.map(r => {
+      return '<div class="p-2.5 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(34,197,94,0.2);">' +
+        '<div class="flex justify-between items-start mb-1">' +
+          '<span class="text-xs font-bold text-green-300">' + escapeHtml(r.name) + '</span>' +
+          '<span class="text-[9px] text-slate-500">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span>' +
+        '</div>' +
+        '<div class="link-box mt-1.5" style="padding: 0.5rem; font-size: 0.65rem;" onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')">' +
+          escapeHtml(r.link) +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } else {
+    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada riwayat</p>';
+  }
+}
+
+// ============ ADMIN: APK MOD MANAGEMENT (NEW) ============
+async function loadAdminApkList() {
+  if (!isAdminUser) return;
+  const container = document.getElementById('admin-apk-list');
+  if (!container) return;
+  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 animate-pulse">Memuat APK MOD...</p>';
+  
+  try {
+    const res = await fetch('/api/apk-mods');
+    const data = await res.json();
+    if (data.success && data.items && Object.keys(data.items).length > 0) {
+      const items = Object.entries(data.items).sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+      container.innerHTML = items.map(([id, item]) => 
+        '<div class="flex justify-between items-center p-2 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(34,197,94,0.2);">' +
+          '<div class="flex-1 min-w-0">' +
+            '<p class="text-xs font-bold text-green-300">' + escapeHtml(item.name) + '</p>' +
+            '<p class="text-[9px] text-slate-500 truncate">' + escapeHtml(item.link) + '</p>' +
+          '</div>' +
+          '<div class="flex gap-1 shrink-0">' +
+            '<button onclick="editApkMod(\\'' + id + '\\', \\'' + encodeURIComponent(item.name) + '\\', \\'' + encodeURIComponent(item.link) + '\\', \\'' + encodeURIComponent(item.description || '') + '\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(6,182,212,0.2); color: #67e8f9;">Edit</button>' +
+            '<button onclick="toggleApkMod(\\'' + id + '\\', ' + (item.active !== false) + ')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(245,158,11,0.2); color: #fbbf24;">' + (item.active !== false ? 'Off' : 'On') + '</button>' +
+            '<button onclick="deleteApkMod(\\'' + id + '\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(244,63,94,0.2); color: #fda4af;">×</button>' +
+          '</div>' +
+        '</div>'
+      ).join('');
+    } else {
+      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada APK MOD</p>';
+    }
+  } catch(e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-center py-2">Gagal memuat</p>';
+  }
+}
+
+async function handleSaveApkMod() {
+  if (!isAdminUser) return showToast('Akses ditolak!', 'error');
+  const editId = document.getElementById('apk-edit-id').value;
+  const name = document.getElementById('apk-name-input').value.trim();
+  const link = document.getElementById('apk-link-input').value.trim();
+  const description = document.getElementById('apk-desc-input').value.trim();
+
+  if (!name || !link) return showToast('Lengkapi nama dan link APK!', 'error');
+  if (!link.startsWith('http://') && !link.startsWith('https://')) {
+    return showToast('Link harus dimulai dengan http:// atau https://', 'error');
+  }
+
+  try {
+    const res = await fetch('/api/admin/apk-mod/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        adminUsername: loggedInUsername, 
+        id: editId, 
+        name, 
+        link, 
+        description 
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success');
+      resetApkForm();
+      loadAdminApkList();
+      loadApkMods();
+    } else {
+      showToast(data.message, 'error');
+    }
+  } catch(e) {
+    showToast('Gagal menyimpan APK MOD', 'error');
+  }
+}
+
+function editApkMod(id, encName, encLink, encDesc) {
+  document.getElementById('apk-edit-id').value = id;
+  document.getElementById('apk-name-input').value = decodeURIComponent(encName);
+  document.getElementById('apk-link-input').value = decodeURIComponent(encLink);
+  document.getElementById('apk-desc-input').value = decodeURIComponent(encDesc || '');
+  document.getElementById('apk-submit-btn').innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg> Perbarui APK MOD';
+  document.getElementById('apk-cancel-btn').classList.remove('hidden');
+}
+
+function resetApkForm() {
+  document.getElementById('apk-edit-id').value = '';
+  document.getElementById('apk-name-input').value = '';
+  document.getElementById('apk-link-input').value = '';
+  document.getElementById('apk-desc-input').value = '';
+  document.getElementById('apk-submit-btn').innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Tambah APK MOD';
+  document.getElementById('apk-cancel-btn').classList.add('hidden');
+}
+
+async function toggleApkMod(id, currentActive) {
+  try {
+    const res = await fetch('/api/admin/apk-mod/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: loggedInUsername, id, active: !currentActive })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success');
+      loadAdminApkList();
+      loadApkMods();
+    }
+  } catch(e) {}
+}
+
+async function deleteApkMod(id) {
+  if (!confirm('Hapus APK MOD ini?')) return;
+  try {
+    const res = await fetch('/api/admin/apk-mod/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: loggedInUsername, id })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('APK MOD dihapus', 'success');
+      loadAdminApkList();
+      loadApkMods();
+    }
+  } catch(e) {}
+}
 
 // ============ STATUS & VIDEO (OPTIMIZED) ============
 async function fetchServerStatus(force = false) {
@@ -2739,6 +3399,7 @@ function applySession(data) {
   updateStatusUI(data.serverStatus);
   fetchFeaturedVideo(true);
   updateNetflixQuotaDisplay();
+  updateApkQuotaDisplay();
 
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   loadGlobalChat();
@@ -2797,6 +3458,7 @@ async function handleRedeemCodeMain() {
       document.getElementById('redeem-code-input-main').value = '';
       updateQuotaDisplay(data);
       updateNetflixQuotaDisplay();
+      updateApkQuotaDisplay();
       loadVerifiedEmails(true);
       loadActiveRedeems(true);
     } else showToast(data.message, 'error');
@@ -3521,6 +4183,7 @@ function renderVerifiedEmails(data) {
   updateQuotaStatusCard(data);
   handleCountdown(data);
   updateNetflixQuotaDisplay();
+  updateApkQuotaDisplay();
 
   const emails = data.activatedEmails || [];
   if (emails.length === 0) {
@@ -3600,7 +4263,6 @@ function updateQuotaStatusCard(data) {
     badge.innerText = '✓ Tersedia';
   }
 
-  // Update state
   userQuotaData = {
     usedQuota: used,
     bonusQuota: data.bonusQuota || 0,
@@ -4830,6 +5492,186 @@ const server = http.createServer(async (req, res) => {
       const items = await getVipShopFromDb();
       jsonResponse(res, 200, { success: true, items });
 
+    // ====== APK MOD ENDPOINTS (NEW) ======
+    } else if (parsedUrl.pathname === '/api/apk-mods' && req.method === 'GET') {
+      const items = await getApkModsFromDb();
+      jsonResponse(res, 200, { success: true, items });
+
+    } else if (parsedUrl.pathname === '/api/apk/check-quota' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+
+      const cleanUser = username.toLowerCase();
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
+
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
+        userObj.activatedEmails = [];
+        userObj.lastResetTime = now;
+        await saveUserToDb(cleanUser, userObj);
+      }
+
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
+      const totalQuota = 1 + (userObj.bonusQuota || 0);
+      
+      if (userObj.isAdmin || isVipActive) {
+        return jsonResponse(res, 200, { 
+          success: true, 
+          allowed: true, 
+          message: 'Unlimited access',
+          quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
+        });
+      }
+
+      if (usedQuota >= totalQuota) {
+        return jsonResponse(res, 200, { 
+          success: true, 
+          allowed: false, 
+          message: 'Quota habis! Tunggu reset 24 jam atau klaim kode redeem.',
+          quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
+        });
+      }
+
+      jsonResponse(res, 200, { 
+        success: true, 
+        allowed: true, 
+        message: 'Quota tersedia',
+        quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
+      });
+
+    } else if (parsedUrl.pathname === '/api/apk/request' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, apkId } = JSON.parse(body);
+      
+      const cleanUser = username ? username.toLowerCase() : '';
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
+
+      const apkObj = await getApkModFromDb(apkId);
+      if (!apkObj) return jsonResponse(res, 404, { success: false, message: 'APK MOD tidak ditemukan!' });
+      if (apkObj.active === false) return jsonResponse(res, 400, { success: false, message: 'APK MOD tidak tersedia!' });
+
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
+        userObj.activatedEmails = [];
+        userObj.lastResetTime = now;
+      }
+
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
+      const totalQuota = 1 + (userObj.bonusQuota || 0);
+
+      // Cek quota
+      if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) {
+        return jsonResponse(res, 403, { 
+          success: false, 
+          message: 'Quota habis! Tunggu reset 24 jam atau klaim kode redeem.' 
+        });
+      }
+
+      // Kurangi quota (kecuali admin/vip)
+      if (!userObj.isAdmin && !isVipActive) {
+        if (!userObj.activatedEmails) userObj.activatedEmails = [];
+        userObj.activatedEmails.push('apk_' + Date.now());
+        await saveUserToDb(cleanUser, userObj);
+      }
+
+      // Simpan history request
+      const reqId = 'apk_req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+      await saveApkRequestToDb(reqId, {
+        id: reqId,
+        username: cleanUser,
+        apkId,
+        name: apkObj.name,
+        link: apkObj.link,
+        description: apkObj.description || '',
+        timestamp: now
+      });
+
+      jsonResponse(res, 200, {
+        success: true,
+        result: {
+          name: apkObj.name,
+          link: apkObj.link,
+          description: apkObj.description || '',
+          requestedAt: now
+        },
+        quotaInfo: { 
+          usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, 
+          bonusQuota: userObj.bonusQuota || 0,
+          totalQuota,
+          isAdmin: userObj.isAdmin,
+          isVip: isVipActive
+        }
+      });
+
+    } else if (parsedUrl.pathname === '/api/apk/history' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+
+      const cleanUser = username.toLowerCase();
+      const allRequests = await getApkRequestsFromDb();
+      const myRequests = Object.values(allRequests)
+        .filter(r => r.username === cleanUser)
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 20);
+
+      jsonResponse(res, 200, { success: true, results: myRequests });
+
+    // ====== END APK MOD ENDPOINTS ======
+
+    // ====== ADMIN APK MOD MANAGEMENT (NEW) ======
+    } else if (parsedUrl.pathname === '/api/admin/apk-mod/save' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { adminUsername, id, name, link, description } = JSON.parse(body);
+      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+
+      if (!name || !link) return jsonResponse(res, 400, { success: false, message: 'Nama dan link harus diisi!' });
+      if (!link.startsWith('http://') && !link.startsWith('https://')) {
+        return jsonResponse(res, 400, { success: false, message: 'Link harus dimulai dengan http:// atau https://' });
+      }
+
+      const apkId = id || ('apk_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
+      const apks = await getApkModsFromDb();
+      const order = id ? (apks[id]?.order || Object.keys(apks).length + 1) : Object.keys(apks).length + 1;
+
+      await saveApkModToDb(apkId, {
+        id: apkId,
+        name,
+        link,
+        description: description || '',
+        active: true,
+        order
+      });
+
+      jsonResponse(res, 200, { success: true, message: id ? 'APK MOD diperbarui!' : 'APK MOD ditambahkan!' });
+
+    } else if (parsedUrl.pathname === '/api/admin/apk-mod/toggle' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { adminUsername, id, active } = JSON.parse(body);
+      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      const apkObj = await getApkModFromDb(id);
+      if (!apkObj) return jsonResponse(res, 404, { success: false, message: 'APK MOD tidak ditemukan!' });
+      apkObj.active = active;
+      await saveApkModToDb(id, apkObj);
+      jsonResponse(res, 200, { success: true, message: active ? 'APK MOD diaktifkan' : 'APK MOD dinonaktifkan' });
+
+    } else if (parsedUrl.pathname === '/api/admin/apk-mod/delete' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { adminUsername, id } = JSON.parse(body);
+      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      await removeApkModFromDb(id);
+      jsonResponse(res, 200, { success: true, message: 'APK MOD dihapus' });
+
     // ====== NETFLIX ENDPOINTS ======
     } else if (parsedUrl.pathname === '/api/netflix/check-quota' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
@@ -4842,7 +5684,6 @@ const server = http.createServer(async (req, res) => {
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
       
-      // Reset jika sudah 24 jam
       if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
         userObj.activatedEmails = [];
         userObj.lastResetTime = now;
@@ -4889,7 +5730,6 @@ const server = http.createServer(async (req, res) => {
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
       
-      // Reset jika sudah 24 jam
       if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
         userObj.activatedEmails = [];
         userObj.lastResetTime = now;
@@ -4899,7 +5739,6 @@ const server = http.createServer(async (req, res) => {
       const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
       const totalQuota = 1 + (userObj.bonusQuota || 0);
 
-      // Cek quota
       if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) {
         return jsonResponse(res, 403, { 
           success: false, 
@@ -4907,7 +5746,6 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      // Generate token Netflix
       const genResult = await generateNetflixToken(plan || 'premium', useProxy);
       
       if (!genResult.success) {
@@ -4917,14 +5755,12 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      // Kurangi quota (kecuali admin/vip)
       if (!userObj.isAdmin && !isVipActive) {
         if (!userObj.activatedEmails) userObj.activatedEmails = [];
         userObj.activatedEmails.push('netflix_' + Date.now());
         await saveUserToDb(cleanUser, userObj);
       }
 
-      // Simpan history
       const historyId = 'nf_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
       await saveNetflixResultToDb(historyId, {
         id: historyId,
@@ -4959,7 +5795,7 @@ const server = http.createServer(async (req, res) => {
       const myResults = Object.values(allResults)
         .filter(r => r.username === cleanUser)
         .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 20); // Limit 20
+        .slice(0, 20);
 
       jsonResponse(res, 200, { success: true, results: myResults });
 
@@ -5929,7 +6765,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v3.5 (DANA + Netflix Generator)      ║');
+  console.log('║  🚀 AM Premium Banggus v4.0                                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
   console.log('║  💳 Pembayaran via DANA: ' + DANA_ADMIN_NUMBER + '              ║');
   console.log('║  🛒 VIP Shop + Upload Bukti Transfer DANA                   ║');
@@ -5947,6 +6783,8 @@ server.listen(PORT, () => {
   console.log('║  💡 Request Fitur Baru (User → Admin)                        ║');
   console.log('║  🛡️ Panel Admin Terpisah dari Profil                        ║');
   console.log('║  🎬 NETFLIX GENERATOR (Premium Token)                       ║');
-  console.log('║  📊 Quota SAMA untuk semua fitur (AM & Netflix)             ║');
+  console.log('║  📱 APK MOD GENERATOR (Download Link)                       ║');
+  console.log('║  🆕 Admin bisa tambah/edit/hapus APK MOD                    ║');
+  console.log('║  📊 Quota SAMA untuk semua fitur (AM, Netflix & APK MOD)    ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
