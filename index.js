@@ -209,7 +209,7 @@ async function removeNetflixResultFromDb(id) {
   await set(ref(db, `netflixResults/${id}`), null);
 }
 
-// ====== APK MOD HELPERS ======
+// ====== APK MOD HELPERS (NEW) ======
 async function getApkModsFromDb() {
   const snapshot = await get(child(ref(db), `apkMods`));
   return snapshot.exists() ? snapshot.val() : {};
@@ -225,7 +225,7 @@ async function removeApkModFromDb(id) {
   await set(ref(db, `apkMods/${id}`), null);
 }
 
-// ====== APK MOD REQUESTS HELPERS ======
+// ====== APK MOD REQUESTS HELPERS (NEW) ======
 async function getApkRequestsFromDb() {
   const snapshot = await get(child(ref(db), `apkRequests`));
   return snapshot.exists() ? snapshot.val() : {};
@@ -235,51 +235,6 @@ async function saveApkRequestToDb(id, data) {
 }
 async function removeApkRequestFromDb(id) {
   await set(ref(db, `apkRequests/${id}`), null);
-}
-
-// ====== ORDER HELPERS (NEW) ======
-async function getOrdersFromDb() {
-  const snapshot = await get(child(ref(db), `orders`));
-  return snapshot.exists() ? snapshot.val() : {};
-}
-async function getOrderFromDb(id) {
-  const snapshot = await get(child(ref(db), `orders/${id}`));
-  return snapshot.exists() ? snapshot.val() : null;
-}
-async function saveOrderToDb(id, data) {
-  await set(ref(db, `orders/${id}`), data);
-}
-async function removeOrderFromDb(id) {
-  await set(ref(db, `orders/${id}`), null);
-}
-
-// Generate Order ID otomatis
-function generateOrderId(type) {
-  const prefix = type === 'netflix' ? 'NF' : type === 'apk' ? 'APK' : 'AM';
-  const timestamp = Date.now().toString(36).toUpperCase();
-  const random = Math.random().toString(36).substring(2, 6).toUpperCase();
-  return `ORD-${prefix}-${timestamp}-${random}`;
-}
-
-// ====== QUOTA REFUND HELPER (NEW) ======
-async function refundQuota(username, quotaId) {
-  try {
-    const userObj = await getUserFromDb(username);
-    if (!userObj) return false;
-    
-    if (userObj.activatedEmails && Array.isArray(userObj.activatedEmails)) {
-      const idx = userObj.activatedEmails.indexOf(quotaId);
-      if (idx !== -1) {
-        userObj.activatedEmails.splice(idx, 1);
-        await saveUserToDb(username, userObj);
-        return true;
-      }
-    }
-    return false;
-  } catch (e) {
-    console.error('Refund quota error:', e);
-    return false;
-  }
 }
 
 async function initAdmin() {
@@ -328,7 +283,11 @@ async function initDefaultApkMods() {
 }
 initDefaultApkMods();
 
-// ====== ALOKASI QUOTA ======
+// ====== ALOKASI QUOTA UNTUK SETIAP FITUR ======
+// Setiap fitur (Alight Motion, Netflix, APK MOD) menggunakan quota yang SAMA
+// Quota dihitung dari total aktivasi (activatedEmails) + netflixActivations + apkRequests
+// Tapi untuk kesederhanaan, kita pakai activatedEmails sebagai quota utama
+
 const am = {
   async magiclink(email) {
     if (!email.includes("@") || !email.includes(".")) throw new Error("Invalid email.");
@@ -705,11 +664,6 @@ const htmlTemplate = `<!DOCTYPE html>
     color: #86efac;
     border-color: rgba(34,197,94,0.4);
   }
-  .nav-item.orders-nav.active {
-    background: linear-gradient(135deg, rgba(6,182,212,0.2), rgba(8,145,178,0.1));
-    color: #67e8f9;
-    border-color: rgba(6,182,212,0.4);
-  }
 
   @keyframes pulse-glow {
     0%, 100% { opacity: 0.4; transform: scale(1); }
@@ -773,7 +727,6 @@ const htmlTemplate = `<!DOCTYPE html>
   .badge-user { background: rgba(148,163,184,0.1); border-color: rgba(148,163,184,0.3); color: #cbd5e1; }
   .badge-netflix { background: rgba(229,9,20,0.15); border-color: rgba(229,9,20,0.4); color: #fca5a5; }
   .badge-apk { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.4); color: #86efac; }
-  .badge-order { background: rgba(6,182,212,0.15); border-color: rgba(6,182,212,0.4); color: #67e8f9; }
 
   .divider {
     height: 1px;
@@ -978,14 +931,6 @@ const htmlTemplate = `<!DOCTYPE html>
     animation: slide-up 0.3s ease;
   }
 
-  .order-card {
-    background: linear-gradient(135deg, rgba(6,182,212,0.08), rgba(168,85,247,0.06));
-    border: 1px solid rgba(6,182,212,0.3);
-    border-radius: 1rem;
-    padding: 0.85rem;
-    animation: slide-up 0.3s ease;
-  }
-
   .vip-shop-card {
     background: linear-gradient(145deg, rgba(20,14,38,0.9), rgba(12,8,24,0.8));
     border: 1px solid rgba(245,158,11,0.3);
@@ -1107,7 +1052,6 @@ const htmlTemplate = `<!DOCTYPE html>
   .status-process { background: rgba(6,182,212,0.15); border: 1px solid rgba(6,182,212,0.4); color: #67e8f9; }
   .status-success { background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.4); color: #6ee7b7; }
   .status-failed { background: rgba(244,63,94,0.15); border: 1px solid rgba(244,63,94,0.4); color: #fda4af; }
-  .status-refund { background: rgba(168,85,247,0.15); border: 1px solid rgba(168,85,247,0.4); color: #d8b4fe; }
 
   /* NETFLIX STYLES */
   .netflix-card {
@@ -1206,7 +1150,7 @@ const htmlTemplate = `<!DOCTYPE html>
     background: linear-gradient(135deg, #22c55e, #16a34a);
     border-radius: 12px;
     display: flex; align-items: center; justify-content: center;
-    font-weight: 900; color: white; font-size: 0.85rem;
+    font-weight: 900; color: white; font-size: 1rem;
     box-shadow: 0 8px 25px -5px rgba(34,197,94,0.5);
   }
   .apk-result {
@@ -1277,24 +1221,6 @@ const htmlTemplate = `<!DOCTYPE html>
     font-weight: 700;
   }
 
-  .order-item {
-    background: rgba(7,4,15,0.6);
-    border: 1px solid rgba(6,182,212,0.2);
-    border-radius: 0.85rem;
-    padding: 0.85rem;
-    animation: slide-up 0.3s ease;
-  }
-  .order-id-badge {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.65rem;
-    font-weight: 800;
-    padding: 0.2rem 0.5rem;
-    border-radius: 0.4rem;
-    background: rgba(6,182,212,0.15);
-    border: 1px solid rgba(6,182,212,0.35);
-    color: #67e8f9;
-  }
-
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(168,85,247,0.3); border-radius: 999px; }
@@ -1362,10 +1288,6 @@ const htmlTemplate = `<!DOCTYPE html>
         <button onclick="switchView('apkmod')" data-nav="apkmod" class="nav-item apk-nav">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
           Generator APK MOD
-        </button>
-        <button onclick="switchView('orders')" data-nav="orders" class="nav-item orders-nav">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-          Orderan Saya
         </button>
         <button onclick="switchView('vipshop')" data-nav="vipshop" class="nav-item">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
@@ -1747,7 +1669,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- VIEW: APK MOD GENERATOR -->
+    <!-- VIEW: APK MOD GENERATOR (NEW) -->
     <div id="section-apkmod" class="space-y-3 hidden">
       
       <div class="glass-panel py-2.5 px-3.5 flex items-center justify-between" style="border-color: rgba(34,197,94,0.3);">
@@ -1846,35 +1768,6 @@ const htmlTemplate = `<!DOCTYPE html>
         <div id="apk-history-list" class="space-y-2 max-h-60 overflow-y-auto">
           <p class="text-slate-500 italic text-xs text-center py-2">Memuat riwayat...</p>
         </div>
-      </div>
-    </div>
-
-    <!-- VIEW: ORDERAN SAYA -->
-    <div id="section-orders" class="glass-panel space-y-4 hidden">
-      <div class="flex items-center justify-between pb-3 border-b border-cyan-500/20">
-        <h2 class="section-title" style="margin: 0; color: #67e8f9;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-          Orderan Saya
-        </h2>
-        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
-      </div>
-
-      <div class="flex gap-2 mb-2">
-        <button onclick="loadMyOrders('all')" class="btn-secondary order-filter-btn active-filter" style="flex:1; padding:0.5rem; font-size:0.75rem; background: rgba(6,182,212,0.25); border-color: rgba(6,182,212,0.6); color: white;">Semua</button>
-        <button onclick="loadMyOrders('am')" class="btn-secondary order-filter-btn" style="flex:1; padding:0.5rem; font-size:0.75rem;">AM</button>
-        <button onclick="loadMyOrders('netflix')" class="btn-secondary order-filter-btn" style="flex:1; padding:0.5rem; font-size:0.75rem;">Netflix</button>
-        <button onclick="loadMyOrders('apk')" class="btn-secondary order-filter-btn" style="flex:1; padding:0.5rem; font-size:0.75rem;">APK</button>
-      </div>
-
-      <div id="my-orders-list" class="space-y-2 max-h-96 overflow-y-auto">
-        <p class="text-slate-500 italic text-xs text-center py-3">Memuat orderan...</p>
-      </div>
-
-      <div class="pt-3 border-t border-cyan-500/20">
-        <button onclick="loadMyOrders()" class="btn-primary" style="width:100%;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-          Refresh Orderan
-        </button>
       </div>
     </div>
 
@@ -2292,34 +2185,7 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- ADMIN: ORDER MANAGEMENT (NEW) -->
-      <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(6,182,212,0.1), rgba(168,85,247,0.06)); border: 1px solid rgba(6,182,212,0.35);">
-        <div class="flex justify-between items-center mb-2">
-          <p class="section-title" style="color: #67e8f9; margin: 0;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-            Semua Orderan User
-          </p>
-          <button onclick="loadAdminOrders()" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.68rem;">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-            Refresh
-          </button>
-        </div>
-
-        <div class="flex gap-1.5 mb-2">
-          <button onclick="setAdminOrderFilter('all')" class="btn-secondary admin-order-filter" data-filter="all" style="flex:1; padding:0.35rem; font-size:0.65rem; background: rgba(6,182,212,0.25); border-color: rgba(6,182,212,0.6); color: white;">Semua</button>
-          <button onclick="setAdminOrderFilter('am')" class="btn-secondary admin-order-filter" data-filter="am" style="flex:1; padding:0.35rem; font-size:0.65rem;">AM</button>
-          <button onclick="setAdminOrderFilter('netflix')" class="btn-secondary admin-order-filter" data-filter="netflix" style="flex:1; padding:0.35rem; font-size:0.65rem;">Netflix</button>
-          <button onclick="setAdminOrderFilter('apk')" class="btn-secondary admin-order-filter" data-filter="apk" style="flex:1; padding:0.35rem; font-size:0.65rem;">APK</button>
-        </div>
-
-        <input type="text" id="admin-order-search" oninput="renderAdminOrders()" placeholder="Cari order ID / username..." class="input-glow mb-2" style="padding: 0.55rem 0.85rem; font-size: 0.78rem;">
-
-        <div id="admin-orders-list" class="space-y-1.5 max-h-64 overflow-y-auto text-[11px]">
-          <p class="text-slate-500 italic text-center py-2">Memuat orderan...</p>
-        </div>
-      </div>
-
-      <!-- ADMIN: APK MOD MANAGEMENT -->
+      <!-- ====== KELOLA APK MOD (NEW) ====== -->
       <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(34,197,94,0.1), rgba(22,163,74,0.06)); border: 1px solid rgba(34,197,94,0.35);">
         <p class="section-title" style="color: #86efac; margin-top: 0;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
@@ -2519,28 +2385,20 @@ const htmlTemplate = `<!DOCTYPE html>
           <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #22c55e, #16a34a); color: white;">4</div>
           <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Untuk APK MOD: Beralih ke menu Generator APK MOD, pilih APK yang diinginkan, lalu kirim untuk mendapatkan link download.</p>
         </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(6,182,212,0.05); border: 1px solid rgba(6,182,212,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #06b6d4, #0891b2); color: white;">5</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Setiap generate akan otomatis membuat Order ID dan masuk ke Riwayat Orderan Saya.</p>
-        </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">6</div>
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">5</div>
           <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Masukkan email target Google/Gmail pada kolom yang tersedia (untuk AM).</p>
         </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">7</div>
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">6</div>
           <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klik tombol Kirim Magic Link untuk memicu token verifikasi (AM).</p>
         </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">8</div>
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">7</div>
           <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Salin tautan Magic Link dari email, paste di kolom URL, lalu klik Verifikasi (AM).</p>
         </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(6,182,212,0.05); border: 1px solid rgba(6,182,212,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #06b6d4, #0891b2); color: white;">9</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Jika server offline, semua fitur generator akan gagal dan kuota Anda otomatis di-refund (tidak berkurang).</p>
-        </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(6,182,212,0.05); border: 1px solid rgba(6,182,212,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #06b6d4, #0891b2); color: white;">10</div>
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #06b6d4, #0891b2); color: white;">8</div>
           <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klaim kode redeem untuk dapat kuota bonus. Quota berlaku untuk SEMUA fitur (AM, Netflix & APK MOD).</p>
         </div>
       </div>
@@ -2630,15 +2488,6 @@ let selectedApkId = null;
 let apkResults = [];
 let cachedApkMods = [];
 
-// Order state (NEW)
-let cachedMyOrders = [];
-let cachedAdminOrders = [];
-let currentOrderFilter = 'all';
-let currentAdminOrderFilter = 'all';
-
-// Current server status (untuk cek offline di frontend)
-let currentServerStatus = 'online';
-
 // ============ OPTIMASI KUOTA ============
 let isPageVisible = true;
 let statusPollInterval = null;
@@ -2651,7 +2500,6 @@ let lastRedeemsFetch = 0;
 let lastAnnouncementsFetch = 0;
 let lastNetflixHistoryFetch = 0;
 let lastApkHistoryFetch = 0;
-let lastOrdersFetch = 0;
 
 const CACHE_DURATION = {
   status: 30000,
@@ -2661,8 +2509,7 @@ const CACHE_DURATION = {
   redeems: 60000,
   announcements: 60000,
   netflixHistory: 30000,
-  apkHistory: 30000,
-  orders: 15000
+  apkHistory: 30000
 };
 
 const memoryCache = {};
@@ -2698,9 +2545,6 @@ document.addEventListener('visibilitychange', () => {
     }
     if (currentView === 'apkmod') {
       loadApkHistory(true);
-    }
-    if (currentView === 'orders') {
-      loadMyOrders(true);
     }
   }
 });
@@ -2738,9 +2582,8 @@ function switchView(viewName) {
     el.classList.toggle('active', el.dataset.nav === viewName);
   });
   toggleMenu();
-  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request', 'section-vipshop', 'section-netflix', 'section-apkmod', 'section-orders'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.classList.add('hidden');
+  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request', 'section-vipshop', 'section-netflix', 'section-apkmod'].forEach(id => {
+    document.getElementById(id).classList.add('hidden');
   });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hidden');
   else if (viewName === 'netflix') {
@@ -2753,10 +2596,6 @@ function switchView(viewName) {
     loadApkMods();
     loadApkHistory();
     updateApkQuotaDisplay();
-  }
-  else if (viewName === 'orders') {
-    document.getElementById('section-orders').classList.remove('hidden');
-    loadMyOrders();
   }
   else if (viewName === 'vipshop') {
     document.getElementById('section-vipshop').classList.remove('hidden');
@@ -2796,7 +2635,6 @@ function switchView(viewName) {
     loadAdminVipShop();
     loadAdminTransactions();
     loadAdminApkList();
-    loadAdminOrders();
   }
 }
 
@@ -2807,229 +2645,6 @@ function copyDanaNumber() {
   }).catch(() => {
     showToast('Gagal copy nomor DANA', 'error');
   });
-}
-
-// ============ ORDER FUNCTIONS (NEW) ============
-async function loadMyOrders(force = false) {
-  if (!loggedInUsername) return;
-  const now = Date.now();
-  if (!force && now - lastOrdersFetch < CACHE_DURATION.orders) {
-    const cached = getCached('myOrders');
-    if (cached) { cachedMyOrders = cached; renderMyOrders(); return; }
-  }
-
-  const container = document.getElementById('my-orders-list');
-  if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3 animate-pulse">Memuat orderan...</p>';
-
-  try {
-    const res = await fetch('/api/orders/my?username=' + encodeURIComponent(loggedInUsername));
-    const data = await res.json();
-    lastOrdersFetch = now;
-    if (data.success && data.orders) {
-      cachedMyOrders = data.orders;
-      setCache('myOrders', data.orders, CACHE_DURATION.orders);
-      renderMyOrders();
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada orderan</p>';
-    }
-  } catch(e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-3">Gagal memuat orderan</p>';
-  }
-}
-
-function renderMyOrders() {
-  const container = document.getElementById('my-orders-list');
-  if (!container) return;
-
-  let filtered = cachedMyOrders;
-  if (currentOrderFilter !== 'all') {
-    filtered = cachedMyOrders.filter(o => o.type === currentOrderFilter);
-  }
-
-  if (filtered.length === 0) {
-    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada orderan</p>';
-    return;
-  }
-
-  container.innerHTML = filtered.map(order => {
-    const typeIcon = order.type === 'netflix' ? '🎬' : order.type === 'apk' ? '📱' : '⚡';
-    const typeName = order.type === 'netflix' ? 'Netflix' : order.type === 'apk' ? 'APK MOD' : 'Alight Motion';
-    const typeColor = order.type === 'netflix' ? '#fca5a5' : order.type === 'apk' ? '#86efac' : '#c4b5fd';
-    const statusClass = order.status === 'success' ? 'status-success' : order.status === 'failed' ? 'status-failed' : order.status === 'refund' ? 'status-refund' : 'status-pending';
-    const statusText = order.status === 'success' ? '✓ Sukses' : order.status === 'failed' ? '✗ Gagal' : order.status === 'refund' ? '↩ Refund' : '⏳ Proses';
-    const time = new Date(order.timestamp).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-    let detailHtml = '';
-    if (order.type === 'netflix' && order.detail) {
-      detailHtml = '<p class="text-[9px] text-slate-400 mt-1">Plan: ' + escapeHtml(order.detail.plan || '-') + ' • ' + escapeHtml(order.detail.quality || '-') + '</p>';
-    } else if (order.type === 'apk' && order.detail) {
-      detailHtml = '<p class="text-[9px] text-slate-400 mt-1">APK: ' + escapeHtml(order.detail.name || '-') + '</p>';
-    } else if (order.type === 'am' && order.detail) {
-      detailHtml = '<p class="text-[9px] text-slate-400 mt-1">Email: ' + escapeHtml(order.detail.email || '-') + '</p>';
-    }
-
-    return '<div class="order-item">' +
-      '<div class="flex justify-between items-start mb-1.5">' +
-        '<div class="flex items-center gap-2 min-w-0">' +
-          '<span class="text-lg">' + typeIcon + '</span>' +
-          '<div class="min-w-0">' +
-            '<p class="text-xs font-bold" style="color: ' + typeColor + '">' + typeName + '</p>' +
-            '<span class="order-id-badge">' + escapeHtml(order.orderId) + '</span>' +
-          '</div>' +
-        '</div>' +
-        '<span class="payment-status-badge ' + statusClass + '" style="font-size: 0.55rem; padding: 0.15rem 0.4rem;">' + statusText + '</span>' +
-      '</div>' +
-      detailHtml +
-      (order.resultUrl ? '<div class="link-box mt-1.5" style="padding: 0.4rem; font-size: 0.6rem;" onclick="copyOrderLink(\\'' + escapeHtml(order.resultUrl).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(order.resultUrl.substring(0, 60)) + (order.resultUrl.length > 60 ? '...' : '') + '</div>' : '') +
-      (order.errorMessage ? '<p class="text-[9px] text-rose-400 mt-1">' + escapeHtml(order.errorMessage) + '</p>' : '') +
-      '<div class="flex justify-between items-center mt-1.5 text-[9px] text-slate-500">' +
-        '<span>⏱ ' + time + '</span>' +
-        (order.refunded ? '<span class="text-purple-300">↩ Kuota direfund</span>' : '') +
-      '</div>' +
-    '</div>';
-  }).join('');
-}
-
-async function loadMyOrdersFilter(filter) {
-  currentOrderFilter = filter;
-  document.querySelectorAll('.order-filter-btn').forEach(btn => {
-    const isActive = btn.textContent.trim().toLowerCase().includes(filter === 'all' ? 'semua' : filter);
-    if (filter === 'all' && btn.textContent.includes('Semua')) {
-      btn.style.background = 'rgba(6,182,212,0.25)';
-      btn.style.borderColor = 'rgba(6,182,212,0.6)';
-      btn.style.color = 'white';
-    } else if (filter === 'am' && btn.textContent.includes('AM')) {
-      btn.style.background = 'rgba(6,182,212,0.25)';
-      btn.style.borderColor = 'rgba(6,182,212,0.6)';
-      btn.style.color = 'white';
-    } else if (filter === 'netflix' && btn.textContent.includes('Netflix')) {
-      btn.style.background = 'rgba(6,182,212,0.25)';
-      btn.style.borderColor = 'rgba(6,182,212,0.6)';
-      btn.style.color = 'white';
-    } else if (filter === 'apk' && btn.textContent.includes('APK')) {
-      btn.style.background = 'rgba(6,182,212,0.25)';
-      btn.style.borderColor = 'rgba(6,182,212,0.6)';
-      btn.style.color = 'white';
-    } else {
-      btn.style.background = '';
-      btn.style.borderColor = '';
-      btn.style.color = '';
-    }
-  });
-  loadMyOrders(true);
-}
-
-function copyOrderLink(url) {
-  navigator.clipboard.writeText(url).then(() => {
-    showToast('Link order tersalin!', 'success');
-  }).catch(() => {
-    showToast('Gagal copy link', 'error');
-  });
-}
-
-// Admin Orders
-async function loadAdminOrders() {
-  if (!isAdminUser) return;
-  const container = document.getElementById('admin-orders-list');
-  if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 animate-pulse">Memuat orderan...</p>';
-
-  try {
-    const res = await fetch('/api/admin/orders?username=' + encodeURIComponent(loggedInUsername));
-    const data = await res.json();
-    if (data.success && data.orders) {
-      cachedAdminOrders = data.orders;
-      renderAdminOrders();
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada orderan</p>';
-    }
-  } catch(e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-center py-2">Gagal memuat</p>';
-  }
-}
-
-function setAdminOrderFilter(filter) {
-  currentAdminOrderFilter = filter;
-  document.querySelectorAll('.admin-order-filter').forEach(btn => {
-    const isActive = btn.dataset.filter === filter;
-    if (isActive) {
-      btn.style.background = 'rgba(6,182,212,0.25)';
-      btn.style.borderColor = 'rgba(6,182,212,0.6)';
-      btn.style.color = 'white';
-    } else {
-      btn.style.background = '';
-      btn.style.borderColor = '';
-      btn.style.color = '';
-    }
-  });
-  renderAdminOrders();
-}
-
-function renderAdminOrders() {
-  const container = document.getElementById('admin-orders-list');
-  if (!container) return;
-
-  const search = (document.getElementById('admin-order-search')?.value || '').toLowerCase().trim();
-
-  let filtered = cachedAdminOrders;
-  if (currentAdminOrderFilter !== 'all') {
-    filtered = filtered.filter(o => o.type === currentAdminOrderFilter);
-  }
-  if (search) {
-    filtered = filtered.filter(o => 
-      o.orderId.toLowerCase().includes(search) ||
-      o.username.toLowerCase().includes(search)
-    );
-  }
-
-  if (filtered.length === 0) {
-    container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Tidak ada orderan</p>';
-    return;
-  }
-
-  container.innerHTML = filtered.slice(0, 50).map(order => {
-    const typeIcon = order.type === 'netflix' ? '🎬' : order.type === 'apk' ? '📱' : '⚡';
-    const typeName = order.type === 'netflix' ? 'Netflix' : order.type === 'apk' ? 'APK MOD' : 'Alight Motion';
-    const typeColor = order.type === 'netflix' ? '#fca5a5' : order.type === 'apk' ? '#86efac' : '#c4b5fd';
-    const statusClass = order.status === 'success' ? 'status-success' : order.status === 'failed' ? 'status-failed' : order.status === 'refund' ? 'status-refund' : 'status-pending';
-    const statusText = order.status === 'success' ? '✓ Sukses' : order.status === 'failed' ? '✗ Gagal' : order.status === 'refund' ? '↩ Refund' : '⏳ Proses';
-    const time = new Date(order.timestamp).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-
-    return '<div class="p-2 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(6,182,212,0.2);">' +
-      '<div class="flex justify-between items-start mb-1">' +
-        '<div class="flex items-center gap-1.5 min-w-0">' +
-          '<span>' + typeIcon + '</span>' +
-          '<div class="min-w-0">' +
-            '<p class="text-[11px] font-bold" style="color: ' + typeColor + '">' + typeName + '</p>' +
-            '<span class="order-id-badge" style="font-size: 0.55rem;">' + escapeHtml(order.orderId) + '</span>' +
-          '</div>' +
-        '</div>' +
-        '<span class="payment-status-badge ' + statusClass + '" style="font-size: 0.5rem; padding: 0.1rem 0.35rem;">' + statusText + '</span>' +
-      '</div>' +
-      '<div class="flex justify-between items-center text-[9px] text-slate-500 mt-1">' +
-        '<span>👤 ' + escapeHtml(order.username) + '</span>' +
-        '<span>⏱ ' + time + '</span>' +
-      '</div>' +
-      (order.errorMessage ? '<p class="text-[9px] text-rose-400 mt-0.5">' + escapeHtml(order.errorMessage) + '</p>' : '') +
-      (order.refunded ? '<p class="text-[9px] text-purple-300 mt-0.5">↩ Kuota direfund</p>' : '') +
-    '</div>';
-  }).join('');
-}
-
-// ============ SERVER STATUS CHECK (NEW) ============
-function isServerAvailable() {
-  return currentServerStatus === 'online';
-}
-
-function checkServerBeforeGenerate(showWarning = true) {
-  if (!isAdminUser && !isServerAvailable()) {
-    if (showWarning) {
-      showToast('❌ Server sedang OFFLINE! Fitur generator tidak tersedia. Kuota TIDAK akan berkurang.', 'error', 5000);
-    }
-    return false;
-  }
-  return true;
 }
 
 // ============ NETFLIX FUNCTIONS ============
@@ -3064,9 +2679,6 @@ function updateNetflixQuotaDisplay() {
 
 async function handleGenerateNetflix() {
   if (!loggedInUsername) return showToast('Harus login dulu!', 'error');
-  
-  // Cek server offline (kecuali admin)
-  if (!checkServerBeforeGenerate()) return;
   
   const useProxy = document.getElementById('netflix-use-proxy').checked;
   const btn = document.getElementById('btn-generate-netflix');
@@ -3117,7 +2729,7 @@ async function handleGenerateNetflix() {
       statusText.innerText = '✅ Berhasil!';
       logText.innerText = 'Token generated successfully';
       
-      addNetflixResult(genData.result, genData.orderId);
+      addNetflixResult(genData.result);
       
       if (genData.quotaInfo) {
         userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota;
@@ -3127,7 +2739,6 @@ async function handleGenerateNetflix() {
       
       showToast('Token Netflix berhasil di-generate!', 'netflix');
       loadNetflixHistory(true);
-      loadMyOrders(true);
       
       setTimeout(() => {
         loadingEl.classList.add('hidden');
@@ -3148,8 +2759,8 @@ async function handleGenerateNetflix() {
   }
 }
 
-function addNetflixResult(result, orderId) {
-  netflixResults.unshift({ ...result, orderId });
+function addNetflixResult(result) {
+  netflixResults.unshift(result);
   renderNetflixResults();
   document.getElementById('netflix-results-container').classList.remove('hidden');
 }
@@ -3167,10 +2778,7 @@ function renderNetflixResults() {
     const countryName = NETFLIX_COUNTRY[r.country] || r.country || 'Unknown';
     return '<div class="netflix-result">' +
       '<div class="flex items-center justify-between mb-2">' +
-        '<div class="flex items-center gap-2">' +
-          '<span class="text-xs font-bold text-red-300">#' + (netflixResults.length - i) + ' — ' + escapeHtml(r.plan || selectedNetflixPlan).toUpperCase() + '</span>' +
-          (r.orderId ? '<span class="order-id-badge">' + escapeHtml(r.orderId) + '</span>' : '') +
-        '</div>' +
+        '<span class="text-xs font-bold text-red-300">#' + (netflixResults.length - i) + ' — ' + escapeHtml(r.plan || selectedNetflixPlan).toUpperCase() + '</span>' +
         '<span class="text-[9px] px-2 py-0.5 rounded-full" style="background: rgba(229,9,20,0.15); color: #fca5a5;">' + escapeHtml(countryName) + '</span>' +
       '</div>' +
       '<div class="grid grid-cols-2 gap-2 mb-2">' +
@@ -3238,8 +2846,7 @@ function renderNetflixHistory(data) {
           '<span class="text-xs font-bold text-red-300">' + escapeHtml(r.plan || 'premium').toUpperCase() + '</span>' +
           '<span class="text-[9px] text-slate-500">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span>' +
         '</div>' +
-        (r.orderId ? '<span class="order-id-badge" style="font-size: 0.55rem;">' + escapeHtml(r.orderId) + '</span>' : '') +
-        '<p class="text-[10px] text-slate-400 mt-1">' + escapeHtml(countryName) + ' • ' + escapeHtml(r.quality || 'HD') + '</p>' +
+        '<p class="text-[10px] text-slate-400">' + escapeHtml(countryName) + ' • ' + escapeHtml(r.quality || 'HD') + '</p>' +
         '<div class="link-box mt-1.5" style="padding: 0.5rem; font-size: 0.65rem;" onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')">' +
           escapeHtml(r.url) +
         '</div>' +
@@ -3250,7 +2857,18 @@ function renderNetflixHistory(data) {
   }
 }
 
-// ============ APK MOD FUNCTIONS ============
+const NETFLIX_COUNTRY = {
+  US:'UNITED STATES',GB:'UNITED KINGDOM',DE:'GERMANY',FR:'FRANCE',JP:'JAPAN',
+  KR:'SOUTH KOREA',IN:'INDIA',BR:'BRAZIL',CA:'CANADA',AU:'AUSTRALIA',
+  IT:'ITALY',ES:'SPAIN',MX:'MEXICO',PH:'PHILIPPINES',ID:'INDONESIA',
+  MY:'MALAYSIA',TH:'THAILAND',SG:'SINGAPORE',TR:'TURKEY',PL:'POLAND',
+  NL:'NETHERLANDS',SE:'SWEDEN',NO:'NORWAY',DK:'DENMARK',FI:'FINLAND',
+  PT:'PORTUGAL',AR:'ARGENTINA',CL:'CHILE',CO:'COLOMBIA',PK:'PAKISTAN',
+  BD:'BANGLADESH',NG:'NIGERIA',EG:'EGYPT',ZA:'SOUTH AFRICA',VN:'VIETNAM',
+  RU:'RUSSIA',UA:'UKRAINE',
+};
+
+// ============ APK MOD FUNCTIONS (NEW) ============
 function updateApkQuotaDisplay() {
   const el = document.getElementById('apk-quota-display');
   if (el) {
@@ -3320,9 +2938,6 @@ async function handleGenerateApk() {
   if (!loggedInUsername) return showToast('Harus login dulu!', 'error');
   if (!selectedApkId) return showToast('Pilih APK MOD terlebih dahulu!', 'error');
   
-  // Cek server offline (kecuali admin)
-  if (!checkServerBeforeGenerate()) return;
-  
   const btn = document.getElementById('btn-generate-apk');
   const btnText = document.getElementById('apk-btn-text');
   const loadingEl = document.getElementById('apk-loading');
@@ -3338,6 +2953,7 @@ async function handleGenerateApk() {
   logText.innerText = 'Checking quota...';
 
   try {
+    // Cek quota dulu
     const quotaRes = await fetch('/api/apk/check-quota?username=' + encodeURIComponent(loggedInUsername));
     const quotaData = await quotaRes.json();
     
@@ -3353,6 +2969,7 @@ async function handleGenerateApk() {
     logText.innerText = 'Fetching download link...';
     progressFill.style.width = '50%';
 
+    // Kirim request APK
     const reqRes = await fetch('/api/apk/request', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3370,7 +2987,7 @@ async function handleGenerateApk() {
       statusText.innerText = '✅ Berhasil!';
       logText.innerText = 'Download link generated';
       
-      addApkResult(reqData.result, reqData.orderId);
+      addApkResult(reqData.result);
       
       if (reqData.quotaInfo) {
         userQuotaData.usedQuota = reqData.quotaInfo.usedQuota || userQuotaData.usedQuota;
@@ -3380,7 +2997,6 @@ async function handleGenerateApk() {
       
       showToast('Link download APK berhasil didapatkan!', 'apk');
       loadApkHistory(true);
-      loadMyOrders(true);
       
       setTimeout(() => {
         loadingEl.classList.add('hidden');
@@ -3401,8 +3017,8 @@ async function handleGenerateApk() {
   }
 }
 
-function addApkResult(result, orderId) {
-  apkResults.unshift({ ...result, orderId });
+function addApkResult(result) {
+  apkResults.unshift(result);
   renderApkResults();
   document.getElementById('apk-results-container').classList.remove('hidden');
 }
@@ -3419,10 +3035,7 @@ function renderApkResults() {
   container.innerHTML = apkResults.map((r, i) => {
     return '<div class="apk-result">' +
       '<div class="flex items-center justify-between mb-2">' +
-        '<div class="flex items-center gap-2">' +
-          '<span class="text-xs font-bold text-green-300">#' + (apkResults.length - i) + ' — ' + escapeHtml(r.name) + '</span>' +
-          (r.orderId ? '<span class="order-id-badge">' + escapeHtml(r.orderId) + '</span>' : '') +
-        '</div>' +
+        '<span class="text-xs font-bold text-green-300">#' + (apkResults.length - i) + ' — ' + escapeHtml(r.name) + '</span>' +
         '<span class="text-[9px] px-2 py-0.5 rounded-full" style="background: rgba(34,197,94,0.15); color: #86efac;">APK MOD</span>' +
       '</div>' +
       '<p class="label mb-1">Link Download</p>' +
@@ -3485,7 +3098,6 @@ function renderApkHistory(data) {
           '<span class="text-xs font-bold text-green-300">' + escapeHtml(r.name) + '</span>' +
           '<span class="text-[9px] text-slate-500">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span>' +
         '</div>' +
-        (r.orderId ? '<span class="order-id-badge" style="font-size: 0.55rem;">' + escapeHtml(r.orderId) + '</span>' : '') +
         '<div class="link-box mt-1.5" style="padding: 0.5rem; font-size: 0.65rem;" onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')">' +
           escapeHtml(r.link) +
         '</div>' +
@@ -3496,7 +3108,7 @@ function renderApkHistory(data) {
   }
 }
 
-// ============ ADMIN: APK MOD MANAGEMENT ============
+// ============ ADMIN: APK MOD MANAGEMENT (NEW) ============
 async function loadAdminApkList() {
   if (!isAdminUser) return;
   const container = document.getElementById('admin-apk-list');
@@ -3618,7 +3230,7 @@ async function deleteApkMod(id) {
   } catch(e) {}
 }
 
-// ============ STATUS & VIDEO ============
+// ============ STATUS & VIDEO (OPTIMIZED) ============
 async function fetchServerStatus(force = false) {
   if (!isPageVisible && !force) return;
   const now = Date.now();
@@ -3629,7 +3241,6 @@ async function fetchServerStatus(force = false) {
   try {
     const res = await fetch('/api/status');
     const data = await res.json();
-    currentServerStatus = data.status;
     updateStatusUI(data.status);
     lastStatusFetch = now;
     setCache('serverStatus', data.status, CACHE_DURATION.status);
@@ -3660,7 +3271,6 @@ async function fetchFeaturedVideo(force = false) {
 }
 
 function updateStatusUI(status) {
-  currentServerStatus = status;
   const ind = document.getElementById('server-status-indicator');
   const dot = document.getElementById('server-dot');
   const txt = document.getElementById('server-status-text');
@@ -3768,7 +3378,6 @@ function applySession(data) {
   loggedInUsername = data.username;
   isAdminUser = data.isAdmin;
   isVipUser = data.isVip || false;
-  currentServerStatus = data.serverStatus || 'online';
   document.getElementById('auth-view').classList.add('hidden');
   document.getElementById('terminal-view').classList.remove('hidden');
   document.getElementById('header-menu-btn').classList.remove('hidden');
@@ -4538,7 +4147,7 @@ async function triggerUpdateUsername() {
   }
 }
 
-// ============ RIWAYAT GMAIL & COUNTDOWN RESET ============
+// ============ RIWAYAT GMAIL & COUNTDOWN RESET (OPTIMIZED) ============
 async function loadVerifiedEmails(force = false) {
   if (!loggedInUsername) return;
   const now = Date.now();
@@ -5370,7 +4979,7 @@ function copyUsername(username) {
   });
 }
 
-// ============ GLOBAL CHAT ============
+// ============ GLOBAL CHAT (OPTIMIZED) ============
 function updateChatBadge() {
   const badge = document.getElementById('chat-unread-badge');
   if (unreadChatCount > 0) {
@@ -5533,7 +5142,7 @@ async function deleteChatMessage(messageId) {
   } catch(e) {}
 }
 
-// ============ ANNOUNCEMENTS ============
+// ============ ANNOUNCEMENTS (OPTIMIZED) ============
 async function loadUserAnnouncements(force = false) {
   const now = Date.now();
   if (!force && now - lastAnnouncementsFetch < CACHE_DURATION.announcements) {
@@ -5718,14 +5327,10 @@ async function handleDeleteRedeem(code) {
   } catch(e) {}
 }
 
-// ============ GENERATOR ACTIONS (AM) ============
+// ============ GENERATOR ACTIONS ============
 async function handleSendEmail() {
   const email = document.getElementById('target-email').value.trim();
   if (!email) return showToast('Masukkan email target!', 'error');
-  
-  // Cek server offline (kecuali admin)
-  if (!checkServerBeforeGenerate()) return;
-  
   const btn = document.getElementById('btn-send');
   const sendText = document.getElementById('send-text');
   btn.disabled = true;
@@ -5734,7 +5339,6 @@ async function handleSendEmail() {
   const resultText = document.getElementById('result-text');
   resultBox.classList.remove('hidden');
   resultText.innerText = '⏳ Memproses...';
-  
   try {
     const res = await fetch('/api/magiclink', {
       method: 'POST',
@@ -5745,11 +5349,10 @@ async function handleSendEmail() {
     if (data.success) {
       sendText.innerText = 'Kirim Magic Link';
       currentResultText = JSON.stringify(data.result, null, 2);
-      resultText.innerText = currentResultText + (data.orderId ? '\\n\\n📋 Order ID: ' + data.orderId : '');
+      resultText.innerText = currentResultText;
       showToast('Magic link terkirim!', 'success');
       if (!isAdminUser && data.quotaInfo) updateQuotaDisplay(data.quotaInfo);
       loadVerifiedEmails(true);
-      loadMyOrders(true);
     } else {
       sendText.innerText = 'Kirim Magic Link';
       currentResultText = 'Error: ' + data.message;
@@ -5771,10 +5374,6 @@ async function handleActivate() {
   const email = document.getElementById('target-email').value;
   const magicUrl = document.getElementById('magic-url').value;
   if (!email || !magicUrl) return showToast('Email dan URL wajib diisi!', 'error');
-  
-  // Cek server offline (kecuali admin)
-  if (!checkServerBeforeGenerate()) return;
-  
   const resultBox = document.getElementById('result-box');
   const resultText = document.getElementById('result-text');
   resultBox.classList.remove('hidden');
@@ -5790,7 +5389,6 @@ async function handleActivate() {
     resultText.innerText = currentResultText;
     if (data.success || !data.error) showToast('Verifikasi selesai!', 'success');
     else showToast(data.error || 'Verifikasi gagal', 'error');
-    loadMyOrders(true);
   } catch (err) {
     currentResultText = 'Error: ' + err.message;
     resultText.innerText = currentResultText;
@@ -5894,29 +5492,7 @@ const server = http.createServer(async (req, res) => {
       const items = await getVipShopFromDb();
       jsonResponse(res, 200, { success: true, items });
 
-    // ====== ORDERS (NEW) ======
-    } else if (parsedUrl.pathname === '/api/orders/my' && req.method === 'GET') {
-      const username = parsedUrl.searchParams.get('username');
-      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-      const cleanUser = username.toLowerCase();
-      const allOrders = await getOrdersFromDb();
-      const myOrders = Object.values(allOrders)
-        .filter(o => o.username === cleanUser)
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 100);
-      jsonResponse(res, 200, { success: true, orders: myOrders });
-
-    } else if (parsedUrl.pathname === '/api/admin/orders' && req.method === 'GET') {
-      const username = parsedUrl.searchParams.get('username');
-      const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      const allOrders = await getOrdersFromDb();
-      const orders = Object.values(allOrders)
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 500);
-      jsonResponse(res, 200, { success: true, orders });
-
-    // ====== APK MOD ENDPOINTS ======
+    // ====== APK MOD ENDPOINTS (NEW) ======
     } else if (parsedUrl.pathname === '/api/apk-mods' && req.method === 'GET') {
       const items = await getApkModsFromDb();
       jsonResponse(res, 200, { success: true, items });
@@ -5975,28 +5551,6 @@ const server = http.createServer(async (req, res) => {
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
 
-      // ====== CEK SERVER OFFLINE (kecuali admin) ======
-      if (currentServerStatus !== 'online' && !userObj.isAdmin) {
-        // Buat order gagal dengan status failed (TIDAK kurangi kuota)
-        const orderId = generateOrderId('apk');
-        await saveOrderToDb(orderId, {
-          orderId,
-          username: cleanUser,
-          type: 'apk',
-          status: 'failed',
-          errorMessage: 'Server sedang offline',
-          detail: { apkId },
-          resultUrl: null,
-          timestamp: Date.now(),
-          refunded: false
-        });
-        return jsonResponse(res, 403, { 
-          success: false, 
-          message: '❌ Server sedang OFFLINE! Fitur generator tidak tersedia. Kuota TIDAK berkurang.',
-          orderId
-        });
-      }
-
       const apkObj = await getApkModFromDb(apkId);
       if (!apkObj) return jsonResponse(res, 404, { success: false, message: 'APK MOD tidak ditemukan!' });
       if (apkObj.active === false) return jsonResponse(res, 400, { success: false, message: 'APK MOD tidak tersedia!' });
@@ -6021,35 +5575,17 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      // Generate Order ID
-      const orderId = generateOrderId('apk');
-      const quotaId = 'apk_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
-
       // Kurangi quota (kecuali admin/vip)
       if (!userObj.isAdmin && !isVipActive) {
         if (!userObj.activatedEmails) userObj.activatedEmails = [];
-        userObj.activatedEmails.push(quotaId);
+        userObj.activatedEmails.push('apk_' + Date.now());
         await saveUserToDb(cleanUser, userObj);
       }
-
-      // Simpan order
-      await saveOrderToDb(orderId, {
-        orderId,
-        username: cleanUser,
-        type: 'apk',
-        status: 'success',
-        detail: { apkId, name: apkObj.name },
-        resultUrl: apkObj.link,
-        timestamp: now,
-        refunded: false,
-        quotaId: quotaId
-      });
 
       // Simpan history request
       const reqId = 'apk_req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
       await saveApkRequestToDb(reqId, {
         id: reqId,
-        orderId,
         username: cleanUser,
         apkId,
         name: apkObj.name,
@@ -6060,7 +5596,6 @@ const server = http.createServer(async (req, res) => {
 
       jsonResponse(res, 200, {
         success: true,
-        orderId,
         result: {
           name: apkObj.name,
           link: apkObj.link,
@@ -6089,7 +5624,9 @@ const server = http.createServer(async (req, res) => {
 
       jsonResponse(res, 200, { success: true, results: myRequests });
 
-    // ====== ADMIN APK MOD MANAGEMENT ======
+    // ====== END APK MOD ENDPOINTS ======
+
+    // ====== ADMIN APK MOD MANAGEMENT (NEW) ======
     } else if (parsedUrl.pathname === '/api/admin/apk-mod/save' && req.method === 'POST') {
       const body = await readBody(req);
       const { adminUsername, id, name, link, description } = JSON.parse(body);
@@ -6190,27 +5727,6 @@ const server = http.createServer(async (req, res) => {
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
 
-      // ====== CEK SERVER OFFLINE (kecuali admin) ======
-      if (currentServerStatus !== 'online' && !userObj.isAdmin) {
-        const orderId = generateOrderId('netflix');
-        await saveOrderToDb(orderId, {
-          orderId,
-          username: cleanUser,
-          type: 'netflix',
-          status: 'failed',
-          errorMessage: 'Server sedang offline',
-          detail: { plan },
-          resultUrl: null,
-          timestamp: Date.now(),
-          refunded: false
-        });
-        return jsonResponse(res, 403, { 
-          success: false, 
-          message: '❌ Server sedang OFFLINE! Fitur generator tidak tersedia. Kuota TIDAK berkurang.',
-          orderId
-        });
-      }
-
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
       
@@ -6230,65 +5746,24 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      // Generate Order ID
-      const orderId = generateOrderId('netflix');
-      const quotaId = 'netflix_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
-
-      // Generate token
       const genResult = await generateNetflixToken(plan || 'premium', useProxy);
       
       if (!genResult.success) {
-        // GAGAL: Refund kuota (jika bukan admin/vip)
-        if (!userObj.isAdmin && !isVipActive) {
-          // Tidak kurangi kuota karena kita belum push
-        }
-        
-        // Simpan order gagal
-        await saveOrderToDb(orderId, {
-          orderId,
-          username: cleanUser,
-          type: 'netflix',
-          status: 'failed',
-          errorMessage: genResult.error || 'Gagal generate token',
-          detail: { plan },
-          resultUrl: null,
-          timestamp: now,
-          refunded: !userObj.isAdmin && !isVipActive
-        });
-        
         return jsonResponse(res, 500, { 
           success: false, 
-          message: genResult.error || 'Gagal generate token',
-          orderId,
-          refunded: !userObj.isAdmin && !isVipActive
+          message: genResult.error || 'Gagal generate token' 
         });
       }
 
-      // SUKSES: Kurangi kuota
       if (!userObj.isAdmin && !isVipActive) {
         if (!userObj.activatedEmails) userObj.activatedEmails = [];
-        userObj.activatedEmails.push(quotaId);
+        userObj.activatedEmails.push('netflix_' + Date.now());
         await saveUserToDb(cleanUser, userObj);
       }
 
-      // Simpan order sukses
-      await saveOrderToDb(orderId, {
-        orderId,
-        username: cleanUser,
-        type: 'netflix',
-        status: 'success',
-        detail: { plan: genResult.plan, quality: genResult.quality, country: genResult.country },
-        resultUrl: genResult.url,
-        timestamp: now,
-        refunded: false,
-        quotaId: quotaId
-      });
-
-      // Simpan history
       const historyId = 'nf_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
       await saveNetflixResultToDb(historyId, {
         id: historyId,
-        orderId,
         username: cleanUser,
         plan: genResult.plan,
         quality: genResult.quality,
@@ -6301,7 +5776,6 @@ const server = http.createServer(async (req, res) => {
 
       jsonResponse(res, 200, {
         success: true,
-        orderId,
         result: genResult,
         quotaInfo: { 
           usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, 
@@ -6325,7 +5799,8 @@ const server = http.createServer(async (req, res) => {
 
       jsonResponse(res, 200, { success: true, results: myResults });
 
-    // ====== TRANSACTIONS ======
+    // ====== END NETFLIX ENDPOINTS ======
+
     } else if (parsedUrl.pathname === '/api/transaction/create' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, vipId, vipName, vipPrice, vipDays } = JSON.parse(body);
@@ -6992,7 +6467,6 @@ const server = http.createServer(async (req, res) => {
       const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
       if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false });
       await saveServerStatusToDb(status);
-      currentServerStatus = status;
       jsonResponse(res, 200, { success: true, status });
 
     } else if (parsedUrl.pathname === '/api/admin/set-vip' && req.method === 'POST') {
@@ -7231,26 +6705,8 @@ const server = http.createServer(async (req, res) => {
       const userObj = await getUserFromDb(cleanUser);
 
       if (!userObj) return jsonResponse(res, 400, { success: false, message: 'User tidak ditemukan.' });
-      
-      // ====== CEK SERVER OFFLINE (kecuali admin) ======
       if (currentServerStatus !== 'online' && !userObj.isAdmin) {
-        const orderId = generateOrderId('am');
-        await saveOrderToDb(orderId, {
-          orderId,
-          username: cleanUser,
-          type: 'am',
-          status: 'failed',
-          errorMessage: 'Server sedang offline',
-          detail: { email },
-          resultUrl: null,
-          timestamp: Date.now(),
-          refunded: false
-        });
-        return jsonResponse(res, 403, { 
-          success: false, 
-          message: '❌ Server sedang OFFLINE! Fitur generator tidak tersedia. Kuota TIDAK berkurang.',
-          orderId
-        });
+        return jsonResponse(res, 403, { success: false, message: 'Server sedang offline.' });
       }
 
       const now = Date.now();
@@ -7271,77 +6727,29 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      // Generate Order ID
-      const orderId = generateOrderId('am');
-      const quotaId = email; // untuk AM, quota ID = email
+      const result = await am.magiclink(email);
 
-      try {
-        const result = await am.magiclink(email);
-
-        // SUKSES: Kurangi quota (jika belum pernah aktivasi email ini)
-        if (!userObj.isAdmin && !isVipActive && !userObj.activatedEmails.includes(email)) {
-          userObj.activatedEmails.push(email);
-          await saveUserToDb(cleanUser, userObj);
-        }
-
-        // Simpan order sukses
-        await saveOrderToDb(orderId, {
-          orderId,
-          username: cleanUser,
-          type: 'am',
-          status: 'success',
-          detail: { email },
-          resultUrl: null,
-          timestamp: now,
-          refunded: false,
-          quotaId: quotaId
-        });
-
-        jsonResponse(res, 200, {
-          success: true, 
-          orderId,
-          result,
-          quotaInfo: { usedQuota: userObj.activatedEmails.length, bonusQuota: userObj.bonusQuota }
-        });
-      } catch (err) {
-        // GAGAL: Tidak kurangi quota, simpan order gagal
-        await saveOrderToDb(orderId, {
-          orderId,
-          username: cleanUser,
-          type: 'am',
-          status: 'failed',
-          errorMessage: err.message || 'Gagal kirim magic link',
-          detail: { email },
-          resultUrl: null,
-          timestamp: now,
-          refunded: !userObj.isAdmin && !isVipActive
-        });
-
-        jsonResponse(res, 500, {
-          success: false,
-          message: err.message || 'Gagal kirim magic link',
-          orderId,
-          refunded: !userObj.isAdmin && !isVipActive
-        });
+      if (!userObj.isAdmin && !isVipActive && !userObj.activatedEmails.includes(email)) {
+        userObj.activatedEmails.push(email);
+        await saveUserToDb(cleanUser, userObj);
       }
+
+      jsonResponse(res, 200, {
+        success: true, result,
+        quotaInfo: { usedQuota: userObj.activatedEmails.length, bonusQuota: userObj.bonusQuota }
+      });
 
     } else if (parsedUrl.pathname === '/api/verif' && req.method === 'POST') {
       const body = await readBody(req);
       const { email, url: verifyUrl, username } = JSON.parse(body);
       let userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-      
       if (currentServerStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
-        return jsonResponse(res, 403, { error: '❌ Server sedang OFFLINE! Fitur verifikasi tidak tersedia.' });
+        return jsonResponse(res, 403, { error: 'Server sedang offline.' });
       }
-      
       if (!email || !verifyUrl) return jsonResponse(res, 400, { error: 'Parameter email dan url diperlukan.' });
 
-      try {
-        const result = await am.verif(email, verifyUrl);
-        jsonResponse(res, 200, result);
-      } catch (err) {
-        jsonResponse(res, 500, { error: err.message || 'Gagal verifikasi' });
-      }
+      const result = await am.verif(email, verifyUrl);
+      jsonResponse(res, 200, result);
 
     } else {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -7357,7 +6765,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v5.0                                  ║');
+  console.log('║  🚀 AM Premium Banggus v4.0                                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
   console.log('║  💳 Pembayaran via DANA: ' + DANA_ADMIN_NUMBER + '              ║');
   console.log('║  🛒 VIP Shop + Upload Bukti Transfer DANA                   ║');
@@ -7378,10 +6786,5 @@ server.listen(PORT, () => {
   console.log('║  📱 APK MOD GENERATOR (Download Link)                       ║');
   console.log('║  🆕 Admin bisa tambah/edit/hapus APK MOD                    ║');
   console.log('║  📊 Quota SAMA untuk semua fitur (AM, Netflix & APK MOD)    ║');
-  console.log('║  🆕 SERVER OFFLINE → Generator GAGAL, Kuota TIDAK berkurang ║');
-  console.log('║  🆕 ADMIN bypass → tetap bisa generate walau server offline  ║');
-  console.log('║  🆕 ORDER ID otomatis setiap generate                        ║');
-  console.log('║  🆕 User bisa lihat Orderan Saya                             ║');
-  console.log('║  🆕 Admin bisa lihat Semua Orderan User                      ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
