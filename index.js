@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const tls = require('tls');
+const crypto = require('crypto');
 const Go = require('@xof/fetch');
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, get, set, child, remove } = require('firebase/database');
@@ -43,6 +44,14 @@ const NETFLIX_COUNTRY = {
   BD:'BANGLADESH',NG:'NIGERIA',EG:'EGYPT',ZA:'SOUTH AFRICA',VN:'VIETNAM',
   RU:'RUSSIA',UA:'UKRAINE',
 };
+
+// ====== TEMP MAIL CONFIG ======
+const TEMP_MAIL_BASE_URL = "https://temp-mail.app";
+const TEMP_MAIL_MAX_RETRIES = 20;
+const TEMP_MAIL_RETRY_DELAY = 3000;
+
+// Temp Mail session state (per user)
+const tempMailSessions = {};
 
 const go = Go.create({
   baseURL: config.base,
@@ -237,7 +246,7 @@ async function removeApkRequestFromDb(id) {
   await set(ref(db, `apkRequests/${id}`), null);
 }
 
-// ====== ORDER HELPERS (NEW) ======
+// ====== ORDER HELPERS ======
 async function getOrdersFromDb() {
   const snapshot = await get(child(ref(db), `orders`));
   return snapshot.exists() ? snapshot.val() : {};
@@ -253,7 +262,23 @@ async function removeOrderFromDb(id) {
   await set(ref(db, `orders/${id}`), null);
 }
 
-// ====== GENERATE ORDER ID (NEW) ======
+// ====== TEMP MAIL HELPERS ======
+async function saveTempMailToDb(id, data) {
+  await set(ref(db, `tempMails/${id}`), data);
+}
+async function getTempMailFromDb(id) {
+  const snapshot = await get(child(ref(db), `tempMails/${id}`));
+  return snapshot.exists() ? snapshot.val() : null;
+}
+async function getTempMailsFromDb() {
+  const snapshot = await get(child(ref(db), `tempMails`));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+async function removeTempMailFromDb(id) {
+  await set(ref(db, `tempMails/${id}`), null);
+}
+
+// ====== GENERATE ORDER ID ======
 function generateOrderId(prefix = 'ORD') {
   const now = new Date();
   const dateStr = now.getFullYear().toString() +
@@ -266,7 +291,7 @@ function generateOrderId(prefix = 'ORD') {
   return `${prefix}-${dateStr}-${timeStr}-${random}`;
 }
 
-// ====== AUTO REFILL QUOTA (NEW) ======
+// ====== AUTO REFILL QUOTA ======
 async function refillQuotaIfNeeded(username, quotaEntry) {
   try {
     const userObj = await getUserFromDb(username);
@@ -363,6 +388,161 @@ const am = {
     return data;
   }
 };
+
+// ====== TEMP MAIL FUNCTIONS ======
+function tempMailApiRequest(sessionState, path, params = {}) {
+  const urlObj = new URL(`${TEMP_MAIL_BASE_URL}${path}`);
+  Object.keys(params).forEach(key => urlObj.searchParams.append(key, params[key]));
+
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: urlObj.hostname,
+      path: urlObj.pathname + urlObj.search,
+      method: 'GET',
+      headers: {
+        'Accept': '*/*',
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
+        'Cache-Control': 'no-cache',
+        'Visitor-Id': sessionState.visitorId,
+        'Cookie': sessionState.cookie
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      if (res.headers['set-cookie']) {
+        sessionState.cookie = res.headers['set-cookie'].join('; ');
+      }
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch (e) { reject(new Error("Invalid JSON response from Temp Mail")); }
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+const tempMailSleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Simple HTML parser without cheerio (to avoid dependency)
+function parseEmailContent(htmlString) {
+  if (!htmlString) return { clean_text: "", links: [] };
+
+  const links = [];
+  const linkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>/gi;
+  let match;
+  while ((match = linkRegex.exec(htmlString)) !== null) {
+    const href = match[1];
+    if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+      links.push(href);
+    }
+  }
+
+  // Remove script and style tags
+  let cleanHtml = htmlString.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+  cleanHtml = cleanHtml.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+  // Remove all HTML tags
+  let cleanText = cleanHtml.replace(/<[^>]+>/g, ' ');
+  // Decode common entities
+  cleanText = cleanText.replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+  // Normalize whitespace
+  cleanText = cleanText.replace(/\n\s*\n/g, '\n').replace(/\s+/g, ' ').trim();
+
+  return { clean_text: cleanText, links: links };
+}
+
+async function generateTempMail(sessionState) {
+  const addrRes = await tempMailApiRequest(sessionState, '/api/mail/address', {
+    refresh: 'true', expire: '1440', part: 'main'
+  });
+
+  if (!addrRes.address) throw new Error("Gagal generate email temporary");
+  sessionState.currentEmail = addrRes.address;
+  return addrRes.address;
+}
+
+async function checkTempMailInbox(sessionState, maxRetries = TEMP_MAIL_MAX_RETRIES) {
+  for (let i = 1; i <= maxRetries; i++) {
+    await tempMailSleep(TEMP_MAIL_RETRY_DELAY);
+
+    const inboxRes = await tempMailApiRequest(sessionState, '/api/mail/list', { part: 'main' });
+    const messages = inboxRes.message || [];
+
+    if (messages.length > 0) {
+      const detailedMessages = messages.map(msg => {
+        const parsed = parseEmailContent(msg.content);
+
+        return {
+          id: msg.id,
+          from: msg.fromName || msg.fromAddress,
+          fromAddress: msg.fromAddress,
+          subject: msg.subject,
+          date: msg.date,
+          preview: msg.preview,
+          clean_content: parsed.clean_text,
+          extracted_links: parsed.links
+        };
+      });
+
+      return {
+        status: "success",
+        email: sessionState.currentEmail,
+        message_count: detailedMessages.length,
+        messages: detailedMessages
+      };
+    }
+  }
+
+  return {
+    status: "empty",
+    email: sessionState.currentEmail,
+    message_count: 0,
+    messages: []
+  };
+}
+
+async function quickCheckTempMailInbox(sessionState) {
+  const inboxRes = await tempMailApiRequest(sessionState, '/api/mail/list', { part: 'main' });
+  const messages = inboxRes.message || [];
+
+  if (messages.length > 0) {
+    const detailedMessages = messages.map(msg => {
+      const parsed = parseEmailContent(msg.content);
+
+      return {
+        id: msg.id,
+        from: msg.fromName || msg.fromAddress,
+        fromAddress: msg.fromAddress,
+        subject: msg.subject,
+        date: msg.date,
+        preview: msg.preview,
+        clean_content: parsed.clean_text,
+        extracted_links: parsed.links
+      };
+    });
+
+    return {
+      status: "success",
+      email: sessionState.currentEmail,
+      message_count: detailedMessages.length,
+      messages: detailedMessages
+    };
+  }
+
+  return {
+    status: "empty",
+    email: sessionState.currentEmail,
+    message_count: 0,
+    messages: []
+  };
+}
 
 // ====== NETFLIX GENERATOR FUNCTIONS ======
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -521,6 +701,7 @@ const htmlTemplate = `<!DOCTYPE html>
     --amber: #f59e0b;
     --netflix-red: #e50914;
     --apk-green: #22c55e;
+    --mail-blue: #3b82f6;
   }
   * { -webkit-tap-highlight-color: transparent; }
   html, body {
@@ -639,6 +820,23 @@ const htmlTemplate = `<!DOCTYPE html>
   .btn-apk:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(34,197,94,0.8); }
   .btn-apk:disabled { opacity: 0.6; cursor: not-allowed; }
 
+  .btn-mail {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    box-shadow: 0 12px 30px -10px rgba(59,130,246,0.6), inset 0 1px 0 rgba(255,255,255,0.2);
+    transition: all 0.25s ease;
+    border-radius: 1rem;
+    padding: 0.95rem 1rem;
+    font-weight: 700;
+    color: white;
+    width: 100%;
+    border: none;
+    cursor: pointer;
+    font-size: 0.92rem;
+    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  }
+  .btn-mail:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(59,130,246,0.8); }
+  .btn-mail:disabled { opacity: 0.6; cursor: not-allowed; }
+
   .btn-success {
     background: linear-gradient(135deg, #10b981 0%, #059669 100%);
     box-shadow: 0 12px 30px -10px rgba(16,185,129,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
@@ -711,6 +909,11 @@ const htmlTemplate = `<!DOCTYPE html>
     color: #86efac;
     border-color: rgba(34,197,94,0.4);
   }
+  .nav-item.mail-nav.active {
+    background: linear-gradient(135deg, rgba(59,130,246,0.2), rgba(37,99,235,0.1));
+    color: #93c5fd;
+    border-color: rgba(59,130,246,0.4);
+  }
   .nav-item.orders-nav.active {
     background: linear-gradient(135deg, rgba(6,182,212,0.2), rgba(8,145,178,0.1));
     color: #67e8f9;
@@ -751,6 +954,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .toast-info { background: rgba(168,85,247,0.95); color: white; }
   .toast-netflix { background: rgba(229,9,20,0.95); color: white; }
   .toast-apk { background: rgba(34,197,94,0.95); color: white; }
+  .toast-mail { background: rgba(59,130,246,0.95); color: white; }
   .toast-order { background: rgba(6,182,212,0.95); color: white; }
 
   .progress-bar {
@@ -780,6 +984,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .badge-user { background: rgba(148,163,184,0.1); border-color: rgba(148,163,184,0.3); color: #cbd5e1; }
   .badge-netflix { background: rgba(229,9,20,0.15); border-color: rgba(229,9,20,0.4); color: #fca5a5; }
   .badge-apk { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.4); color: #86efac; }
+  .badge-mail { background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.4); color: #93c5fd; }
   .badge-order { background: rgba(6,182,212,0.15); border-color: rgba(6,182,212,0.4); color: #67e8f9; }
 
   .divider {
@@ -1298,6 +1503,91 @@ const htmlTemplate = `<!DOCTYPE html>
     font-weight: 700;
   }
 
+  /* TEMP MAIL STYLES */
+  .mail-card {
+    background: linear-gradient(135deg, rgba(59,130,246,0.12), rgba(37,99,235,0.06));
+    border: 1px solid rgba(59,130,246,0.35);
+    border-radius: 1.25rem;
+    padding: 1rem;
+    animation: slide-up 0.3s ease;
+  }
+  .mail-logo {
+    width: 42px; height: 42px;
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; color: white; font-size: 1rem;
+    box-shadow: 0 8px 25px -5px rgba(59,130,246,0.5);
+  }
+  .mail-email-box {
+    background: rgba(7,4,15,0.7);
+    border: 1px solid rgba(59,130,246,0.3);
+    border-radius: 1rem;
+    padding: 1rem;
+    margin-top: 0.75rem;
+    text-align: center;
+    animation: slide-up 0.3s ease;
+  }
+  .mail-email-display {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #93c5fd;
+    word-break: break-all;
+    margin: 0.5rem 0;
+    padding: 0.75rem;
+    background: rgba(59,130,246,0.1);
+    border-radius: 0.75rem;
+    border: 1px solid rgba(59,130,246,0.2);
+  }
+  .mail-message-card {
+    background: rgba(7,4,15,0.7);
+    border: 1px solid rgba(59,130,246,0.25);
+    border-radius: 1rem;
+    padding: 1rem;
+    margin-top: 0.75rem;
+    animation: slide-up 0.3s ease;
+  }
+  .mail-message-card .subject {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #93c5fd;
+    margin-bottom: 0.35rem;
+  }
+  .mail-message-card .from {
+    font-size: 0.72rem;
+    color: #94a3b8;
+    margin-bottom: 0.35rem;
+  }
+  .mail-message-card .preview {
+    font-size: 0.78rem;
+    color: #cbd5e1;
+    line-height: 1.4;
+  }
+  .mail-message-card .links {
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid rgba(59,130,246,0.15);
+  }
+  .mail-link {
+    display: block;
+    font-size: 0.7rem;
+    font-family: 'JetBrains Mono', monospace;
+    color: #60a5fa;
+    word-break: break-all;
+    padding: 0.4rem 0.6rem;
+    background: rgba(59,130,246,0.08);
+    border-radius: 0.5rem;
+    margin-bottom: 0.35rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid rgba(59,130,246,0.15);
+  }
+  .mail-link:hover {
+    background: rgba(59,130,246,0.18);
+    border-color: rgba(59,130,246,0.4);
+  }
+
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(168,85,247,0.3); border-radius: 999px; }
@@ -1365,6 +1655,11 @@ const htmlTemplate = `<!DOCTYPE html>
         <button onclick="switchView('apkmod')" data-nav="apkmod" class="nav-item apk-nav">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
           Generator APK MOD
+        </button>
+        <button onclick="switchView('tempmail')" data-nav="tempmail" class="nav-item mail-nav">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          Temp Mail
+          <span class="ml-auto text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(59,130,246,0.2); color: #93c5fd;">NEW</span>
         </button>
         <button onclick="switchView('orders')" data-nav="orders" class="nav-item orders-nav">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>
@@ -1623,7 +1918,123 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- VIEW: ORDERS (NEW) -->
+    <!-- VIEW: TEMP MAIL (NEW) -->
+    <div id="section-tempmail" class="space-y-3 hidden">
+      
+      <div class="glass-panel py-2.5 px-3.5 flex items-center justify-between" style="border-color: rgba(59,130,246,0.3);">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="mail-logo">@</div>
+          <div class="min-w-0">
+            <p class="text-xs font-bold text-white truncate">Temp Mail Generator</p>
+            <p class="text-[10px] text-blue-300">Email Sementara</p>
+          </div>
+        </div>
+        <span class="badge badge-mail">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
+          READY
+        </span>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2.5">
+        <div class="stat-card" style="border-color: rgba(59,130,246,0.25);">
+          <div>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-blue-300">Kuota Tersisa</p>
+            <p id="mail-quota-display" class="text-sm font-extrabold text-white mono mt-0.5">0</p>
+          </div>
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(59,130,246,0.15);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+        </div>
+        <div class="stat-card" style="border-color: rgba(59,130,246,0.25);">
+          <div>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-blue-300">Reset</p>
+            <p id="mail-reset-display" class="text-sm font-extrabold text-white mono mt-0.5">24 Jam</p>
+          </div>
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(59,130,246,0.15);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="p-3 rounded-xl" style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25);">
+        <p class="text-[10px] text-blue-300 flex items-center gap-1.5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <strong>Quota SAMA</strong> dengan Alight Motion, Netflix & APK MOD — setiap generate mengurangi 1 quota
+        </p>
+      </div>
+
+      <div class="glass-panel space-y-3" style="border-color: rgba(59,130,246,0.3);">
+        <div class="section-title" style="color: #93c5fd;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          Generate Email Sementara
+        </div>
+
+        <p class="text-xs text-slate-400">Buat email sementara untuk menerima email verifikasi, OTP, dan lainnya secara gratis.</p>
+
+        <button id="btn-generate-mail" onclick="handleGenerateTempMail()" class="btn-mail">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          <span id="mail-btn-text">Generate Email Sementara</span>
+        </button>
+      </div>
+
+      <div id="mail-loading" class="hidden glass-panel" style="border-color: rgba(59,130,246,0.3);">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: rgba(59,130,246,0.2);">
+            <svg class="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
+          </div>
+          <div>
+            <p class="text-xs font-bold text-white">Memproses...</p>
+            <p id="mail-status-text" class="text-[10px] text-slate-400">Menyiapkan email sementara</p>
+          </div>
+        </div>
+        <div class="progress-bar">
+          <div id="mail-progress-fill" class="progress-fill" style="background: linear-gradient(90deg, #3b82f6, #2563eb, #3b82f6);"></div>
+        </div>
+        <p id="mail-log-text" class="text-[10px] text-slate-500 mono mt-2 text-center">Initializing...</p>
+      </div>
+
+      <!-- Email Display & Inbox -->
+      <div id="mail-result-container" class="hidden space-y-3">
+        <div class="mail-email-box">
+          <p class="text-[10px] font-bold uppercase tracking-wider text-blue-300 mb-1">Email Anda</p>
+          <div class="mail-email-display" id="mail-email-display">-</div>
+          <div class="flex gap-2 justify-center mt-2">
+            <button onclick="copyTempMailEmail()" class="btn-secondary" style="font-size: 0.72rem; padding: 0.5rem 0.85rem;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy Email
+            </button>
+            <button onclick="checkTempMailInbox()" class="btn-mail" style="width: auto; padding: 0.5rem 0.85rem; font-size: 0.72rem;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Cek Inbox
+            </button>
+          </div>
+        </div>
+
+        <!-- Inbox Messages -->
+        <div class="glass-panel" style="border-color: rgba(59,130,246,0.25);">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-blue-300">Inbox</span>
+            <span id="mail-message-count" class="text-[10px] text-slate-500">0 pesan</span>
+          </div>
+          <div id="mail-inbox-list" class="space-y-2 max-h-80 overflow-y-auto">
+            <p class="text-slate-500 italic text-xs text-center py-3">Menunggu email masuk...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Riwayat Temp Mail -->
+      <div class="glass-panel" style="border-color: rgba(59,130,246,0.2);">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-blue-300">Riwayat Email</span>
+          <button onclick="loadTempMailHistory()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+        </div>
+        <div id="mail-history-list" class="space-y-2 max-h-60 overflow-y-auto">
+          <p class="text-slate-500 italic text-xs text-center py-2">Memuat riwayat...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: ORDERS -->
     <div id="section-orders" class="glass-panel space-y-4 hidden">
       <div class="flex items-center justify-between pb-3 border-b border-cyan-500/20">
         <h2 class="section-title" style="margin: 0; color: #67e8f9;">
@@ -1633,7 +2044,7 @@ const htmlTemplate = `<!DOCTYPE html>
         <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
       </div>
 
-      <div class="grid grid-cols-3 gap-2">
+      <div class="grid grid-cols-4 gap-2">
         <div class="p-2 rounded-xl text-center" style="background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.2);">
           <p class="text-[9px] text-cyan-300 font-bold uppercase">Total</p>
           <p id="my-orders-total" class="text-sm font-extrabold text-white mono">0</p>
@@ -1645,6 +2056,10 @@ const htmlTemplate = `<!DOCTYPE html>
         <div class="p-2 rounded-xl text-center" style="background: rgba(229,9,20,0.08); border: 1px solid rgba(229,9,20,0.2);">
           <p class="text-[9px] text-red-300 font-bold uppercase">Netflix</p>
           <p id="my-orders-netflix" class="text-sm font-extrabold text-white mono">0</p>
+        </div>
+        <div class="p-2 rounded-xl text-center" style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2);">
+          <p class="text-[9px] text-blue-300 font-bold uppercase">Mail</p>
+          <p id="my-orders-mail" class="text-sm font-extrabold text-white mono">0</p>
         </div>
       </div>
 
@@ -1701,7 +2116,7 @@ const htmlTemplate = `<!DOCTYPE html>
       <div class="p-3 rounded-xl" style="background: rgba(229,9,20,0.08); border: 1px solid rgba(229,9,20,0.25);">
         <p class="text-[10px] text-red-300 flex items-center gap-1.5">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          <strong>Quota SAMA</strong> dengan Alight Motion & APK MOD — setiap generate mengurangi 1 quota
+          <strong>Quota SAMA</strong> dengan Alight Motion, APK MOD & Temp Mail — setiap generate mengurangi 1 quota
         </p>
       </div>
 
@@ -1822,7 +2237,7 @@ const htmlTemplate = `<!DOCTYPE html>
       <div class="p-3 rounded-xl" style="background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.25);">
         <p class="text-[10px] text-green-300 flex items-center gap-1.5">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          <strong>Quota SAMA</strong> dengan Alight Motion & Netflix — setiap request APK MOD mengurangi 1 quota
+          <strong>Quota SAMA</strong> dengan Alight Motion, Netflix & Temp Mail — setiap request APK MOD mengurangi 1 quota
         </p>
       </div>
 
@@ -1907,11 +2322,11 @@ const htmlTemplate = `<!DOCTYPE html>
           </div>
           <div class="vip-benefit">
             <span class="vip-benefit-icon">✦</span>
-            <span><strong class="text-amber-200">KUOTA MENJADI UNLIMITED</strong></span>
+            <span><strong class="text-amber-200">BISA GENERATE TEMP MAIL TANPA BATAS</strong></span>
           </div>
           <div class="vip-benefit">
             <span class="vip-benefit-icon">✦</span>
-            <span><strong class="text-amber-200">BISA MENJUAL AM PREMIUM TANPA BATAS</strong></span>
+            <span><strong class="text-amber-200">KUOTA MENJADI UNLIMITED</strong></span>
           </div>
           <div class="vip-benefit">
             <span class="vip-benefit-icon">✦</span>
@@ -2320,7 +2735,7 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- KELOLA ORDERAN (NEW) -->
+      <!-- KELOLA ORDERAN -->
       <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(6,182,212,0.1), rgba(168,85,247,0.06)); border: 1px solid rgba(6,182,212,0.35);">
         <div class="flex justify-between items-center mb-2">
           <p class="section-title" style="color: #67e8f9; margin: 0;">
@@ -2338,6 +2753,7 @@ const htmlTemplate = `<!DOCTYPE html>
           <button onclick="setAdminOrderFilter('am')" data-afilter="am" class="admin-order-filter btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.65rem;">🎨 AM</button>
           <button onclick="setAdminOrderFilter('netflix')" data-afilter="netflix" class="admin-order-filter btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.65rem;">🎬 Netflix</button>
           <button onclick="setAdminOrderFilter('apk')" data-afilter="apk" class="admin-order-filter btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.65rem;">📱 APK</button>
+          <button onclick="setAdminOrderFilter('mail')" data-afilter="mail" class="admin-order-filter btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.65rem;">📧 Mail</button>
         </div>
 
         <input type="text" id="admin-order-search" oninput="renderAdminOrders()" placeholder="Cari Order ID / Username..." class="input-glow mono mb-2" style="padding: 0.5rem 0.75rem; font-size: 0.78rem;">
@@ -2510,33 +2926,37 @@ const htmlTemplate = `<!DOCTYPE html>
           <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">2</div>
           <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Untuk Alight Motion: Beralih ke menu Generator AM untuk mulai memproses.</p>
         </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">3</div>
+        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(229,9,20,0.05); border: 1px solid rgba(229,9,20,0.12);">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #e50914, #b20710); color: white;">3</div>
           <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Untuk Netflix: Beralih ke menu Generator Netflix, pilih plan, lalu generate token.</p>
         </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(34,197,94,0.05); border: 1px solid rgba(34,197,94,0.12);">
           <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #22c55e, #16a34a); color: white;">4</div>
           <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Untuk APK MOD: Beralih ke menu Generator APK MOD, pilih APK yang diinginkan, lalu kirim untuk mendapatkan link download.</p>
         </div>
+        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(59,130,246,0.05); border: 1px solid rgba(59,130,246,0.12);">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white;">5</div>
+          <p class="text-xs text-slate-300 leading-relaxed pt-0.5"><strong class="text-blue-300">Temp Mail:</strong> Beralih ke menu Temp Mail untuk membuat email sementara. Gunakan untuk menerima OTP, verifikasi, dll.</p>
+        </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(6,182,212,0.05); border: 1px solid rgba(6,182,212,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #06b6d4, #0891b2); color: white;">5</div>
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #06b6d4, #0891b2); color: white;">6</div>
           <p class="text-xs text-slate-300 leading-relaxed pt-0.5"><strong class="text-cyan-300">Setiap generator otomatis membuat ID Orderan!</strong> Lihat di menu "Orderan Saya".</p>
         </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">6</div>
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">7</div>
           <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Masukkan email target Google/Gmail pada kolom yang tersedia (untuk AM).</p>
         </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">7</div>
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">8</div>
           <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klik tombol Kirim Magic Link untuk memicu token verifikasi (AM).</p>
         </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">8</div>
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">9</div>
           <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Salin tautan Magic Link dari email, paste di kolom URL, lalu klik Verifikasi (AM).</p>
         </div>
         <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(6,182,212,0.05); border: 1px solid rgba(6,182,212,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #06b6d4, #0891b2); color: white;">9</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klaim kode redeem untuk dapat kuota bonus. Quota berlaku untuk SEMUA fitur (AM, Netflix & APK MOD).</p>
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #06b6d4, #0891b2); color: white;">10</div>
+          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klaim kode redeem untuk dapat kuota bonus. <strong class="text-cyan-300">Quota berlaku untuk SEMUA fitur (AM, Netflix, APK MOD & Temp Mail).</strong></p>
         </div>
       </div>
     </div>
@@ -2625,12 +3045,17 @@ let selectedApkId = null;
 let apkResults = [];
 let cachedApkMods = [];
 
-// Orders state (NEW)
+// Temp Mail state
+let tempMailSession = null;
+let tempMailResults = [];
+let tempMailCheckInterval = null;
+
+// Orders state
 let myOrders = [];
 let allOrders = [];
 let currentAdminOrderFilter = 'all';
 
-// Server status state (NEW)
+// Server status state
 let serverOnline = true;
 
 // ============ OPTIMASI KUOTA ============
@@ -2645,6 +3070,7 @@ let lastRedeemsFetch = 0;
 let lastAnnouncementsFetch = 0;
 let lastNetflixHistoryFetch = 0;
 let lastApkHistoryFetch = 0;
+let lastMailHistoryFetch = 0;
 let lastMyOrdersFetch = 0;
 let lastAdminOrdersFetch = 0;
 
@@ -2657,6 +3083,7 @@ const CACHE_DURATION = {
   announcements: 60000,
   netflixHistory: 30000,
   apkHistory: 30000,
+  mailHistory: 30000,
   myOrders: 15000,
   adminOrders: 15000
 };
@@ -2695,6 +3122,9 @@ document.addEventListener('visibilitychange', () => {
     if (currentView === 'apkmod') {
       loadApkHistory(true);
     }
+    if (currentView === 'tempmail') {
+      loadTempMailHistory(true);
+    }
     if (currentView === 'orders') {
       loadMyOrders(true);
     }
@@ -2712,6 +3142,7 @@ function showToast(message, type = 'info', duration = 3000) {
     info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
     netflix: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
     apk: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>',
+    mail: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>',
     order: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>'
   };
   toast.innerHTML = (icons[type] || icons.info) + '<span>' + message + '</span>';
@@ -2735,7 +3166,7 @@ function switchView(viewName) {
     el.classList.toggle('active', el.dataset.nav === viewName);
   });
   toggleMenu();
-  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request', 'section-vipshop', 'section-netflix', 'section-apkmod', 'section-orders'].forEach(id => {
+  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request', 'section-vipshop', 'section-netflix', 'section-apkmod', 'section-tempmail', 'section-orders'].forEach(id => {
     document.getElementById(id).classList.add('hidden');
   });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hidden');
@@ -2753,6 +3184,11 @@ function switchView(viewName) {
     loadApkMods();
     loadApkHistory();
     updateApkQuotaDisplay();
+  }
+  else if (viewName === 'tempmail') {
+    document.getElementById('section-tempmail').classList.remove('hidden');
+    loadTempMailHistory();
+    updateMailQuotaDisplay();
   }
   else if (viewName === 'vipshop') {
     document.getElementById('section-vipshop').classList.remove('hidden');
@@ -2805,7 +3241,7 @@ function copyDanaNumber() {
   });
 }
 
-// ============ CHECK SERVER ONLINE (NEW) ============
+// ============ CHECK SERVER ONLINE ============
 function isServerOnline() {
   return serverOnline;
 }
@@ -2817,7 +3253,7 @@ function guardServerOnline(featureName) {
   return false;
 }
 
-// ============ MY ORDERS (NEW) ============
+// ============ MY ORDERS ============
 async function loadMyOrders(force = false) {
   if (!loggedInUsername) return;
   const now = Date.now();
@@ -2864,6 +3300,7 @@ function renderMyOrders() {
   document.getElementById('my-orders-total').innerText = myOrders.length;
   document.getElementById('my-orders-am').innerText = myOrders.filter(o => o.type === 'am').length;
   document.getElementById('my-orders-netflix').innerText = myOrders.filter(o => o.type === 'netflix').length;
+  document.getElementById('my-orders-mail').innerText = myOrders.filter(o => o.type === 'mail').length;
 
   if (filtered.length === 0) {
     container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">' + 
@@ -2872,10 +3309,10 @@ function renderMyOrders() {
   }
 
   container.innerHTML = filtered.map(o => {
-    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : '📱';
-    const typeLabel = o.type === 'am' ? 'Alight Motion' : o.type === 'netflix' ? 'Netflix' : 'APK MOD';
-    const typeColor = o.type === 'am' ? '#c4b5fd' : o.type === 'netflix' ? '#fca5a5' : '#86efac';
-    const typeBadge = o.type === 'am' ? 'badge-vip' : o.type === 'netflix' ? 'badge-netflix' : 'badge-apk';
+    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'mail' ? '📧' : '📱';
+    const typeLabel = o.type === 'am' ? 'Alight Motion' : o.type === 'netflix' ? 'Netflix' : o.type === 'mail' ? 'Temp Mail' : 'APK MOD';
+    const typeColor = o.type === 'am' ? '#c4b5fd' : o.type === 'netflix' ? '#fca5a5' : o.type === 'mail' ? '#93c5fd' : '#86efac';
+    const typeBadge = o.type === 'am' ? 'badge-vip' : o.type === 'netflix' ? 'badge-netflix' : o.type === 'mail' ? 'badge-mail' : 'badge-apk';
     
     const timeStr = new Date(o.timestamp).toLocaleString('id-ID', {
       day: '2-digit', month: 'short', year: 'numeric',
@@ -2906,7 +3343,7 @@ function renderMyOrders() {
   }).join('');
 }
 
-// ============ ADMIN ORDERS (NEW) ============
+// ============ ADMIN ORDERS ============
 async function loadAdminOrders(force = false) {
   if (!isAdminUser) return;
   const now = Date.now();
@@ -2976,8 +3413,8 @@ function renderAdminOrders() {
   }
 
   container.innerHTML = filtered.slice(0, 100).map(o => {
-    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : '📱';
-    const typeColor = o.type === 'am' ? '#c4b5fd' : o.type === 'netflix' ? '#fca5a5' : '#86efac';
+    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'mail' ? '📧' : '📱';
+    const typeColor = o.type === 'am' ? '#c4b5fd' : o.type === 'netflix' ? '#fca5a5' : o.type === 'mail' ? '#93c5fd' : '#86efac';
     const timeStr = new Date(o.timestamp).toLocaleString('id-ID', {
       day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
     });
@@ -2994,6 +3431,271 @@ function renderAdminOrders() {
       '<p class="text-[8px] text-slate-500 mt-1">' + timeStr + '</p>' +
     '</div>';
   }).join('');
+}
+
+// ============ TEMP MAIL FUNCTIONS ============
+function updateMailQuotaDisplay() {
+  const el = document.getElementById('mail-quota-display');
+  if (el) {
+    if (isAdminUser || isVipUser) {
+      el.innerText = '∞';
+      el.style.color = '#93c5fd';
+    } else {
+      const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota);
+      el.innerText = remain;
+      el.style.color = remain > 0 ? 'white' : '#fda4af';
+    }
+  }
+  const resetEl = document.getElementById('mail-reset-display');
+  if (resetEl) {
+    if (isAdminUser || isVipUser) {
+      resetEl.innerText = '∞';
+    } else {
+      resetEl.innerText = '24 Jam';
+    }
+  }
+}
+
+async function handleGenerateTempMail() {
+  if (!loggedInUsername) return showToast('Harus login dulu!', 'error');
+  
+  // CHECK SERVER ONLINE
+  if (!guardServerOnline('Temp Mail Generator')) return;
+
+  const btn = document.getElementById('btn-generate-mail');
+  const btnText = document.getElementById('mail-btn-text');
+  const loadingEl = document.getElementById('mail-loading');
+  const statusText = document.getElementById('mail-status-text');
+  const logText = document.getElementById('mail-log-text');
+  const progressFill = document.getElementById('mail-progress-fill');
+  const resultContainer = document.getElementById('mail-result-container');
+
+  btn.disabled = true;
+  btnText.innerText = 'Memproses...';
+  loadingEl.classList.remove('hidden');
+  progressFill.style.width = '0%';
+  statusText.innerText = 'Menyiapkan email sementara';
+  logText.innerText = 'Initializing...';
+
+  try {
+    // Check quota
+    const quotaRes = await fetch('/api/tempmail/check-quota?username=' + encodeURIComponent(loggedInUsername));
+    const quotaData = await quotaRes.json();
+    
+    if (!quotaData.success) {
+      throw new Error(quotaData.message || 'Gagal cek quota');
+    }
+    
+    if (!quotaData.allowed) {
+      throw new Error(quotaData.message || 'Quota habis!');
+    }
+
+    statusText.innerText = 'Menggenerate email...';
+    logText.innerText = 'Creating temp mail session...';
+    progressFill.style.width = '40%';
+
+    // Generate temp mail via server
+    const genRes = await fetch('/api/tempmail/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername })
+    });
+
+    const genData = await genRes.json();
+    progressFill.style.width = '100%';
+
+    if (genData.success && genData.email) {
+      statusText.innerText = '✅ Berhasil!';
+      logText.innerText = 'Email generated successfully';
+      
+      // Store session for this user
+      tempMailSession = genData.sessionId || genData.email;
+      
+      // Display email
+      document.getElementById('mail-email-display').innerText = genData.email;
+      resultContainer.classList.remove('hidden');
+      
+      // Clear inbox
+      document.getElementById('mail-inbox-list').innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Menunggu email masuk...</p>';
+      document.getElementById('mail-message-count').innerText = '0 pesan';
+      
+      // Update quota
+      if (genData.quotaInfo) {
+        userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota;
+        updateQuotaDisplay(genData.quotaInfo);
+        updateMailQuotaDisplay();
+      }
+      
+      // Show order ID
+      if (genData.orderId) {
+        showToast('✅ Order ID: ' + genData.orderId + ' — Email sementara berhasil!', 'order', 5000);
+      } else {
+        showToast('Email sementara berhasil di-generate!', 'mail');
+      }
+      
+      loadTempMailHistory(true);
+      
+      setTimeout(() => {
+        loadingEl.classList.add('hidden');
+      }, 2000);
+    } else {
+      // GAGAL - REFILL QUOTA
+      if (genData.refilled) {
+        showToast(genData.message || 'Generate gagal! Kuota Anda dikembalikan.', 'error', 4000);
+      } else {
+        showToast(genData.message || genData.error || 'Gagal generate email', 'error');
+      }
+      if (genData.quotaInfo) {
+        updateQuotaDisplay(genData.quotaInfo);
+        updateMailQuotaDisplay();
+      } else {
+        loadVerifiedEmails(true);
+      }
+      throw new Error(genData.message || genData.error || 'Gagal generate email');
+    }
+  } catch (err) {
+    statusText.innerText = '❌ Gagal';
+    logText.innerText = err.message;
+    if (!err.message.includes('dikembalikan')) {
+      showToast(err.message, 'error');
+    }
+    setTimeout(() => {
+      loadingEl.classList.add('hidden');
+    }, 3000);
+  } finally {
+    btn.disabled = false;
+    btnText.innerText = 'Generate Email Sementara';
+  }
+}
+
+async function checkTempMailInbox() {
+  if (!tempMailSession) return showToast('Generate email terlebih dahulu!', 'error');
+  if (!guardServerOnline('Temp Mail Inbox')) return;
+
+  const inboxList = document.getElementById('mail-inbox-list');
+  const messageCount = document.getElementById('mail-message-count');
+  
+  inboxList.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3 animate-pulse">Memeriksa inbox...</p>';
+
+  try {
+    const res = await fetch('/api/tempmail/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        username: loggedInUsername,
+        sessionId: tempMailSession
+      })
+    });
+
+    const data = await res.json();
+    
+    if (data.success) {
+      if (data.messages && data.messages.length > 0) {
+        messageCount.innerText = data.messages.length + ' pesan';
+        renderTempMailInbox(data.messages);
+        showToast('📧 ' + data.messages.length + ' pesan baru!', 'mail');
+      } else {
+        inboxList.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada email masuk. Coba lagi nanti.</p>';
+        messageCount.innerText = '0 pesan';
+      }
+    } else {
+      inboxList.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-3">' + (data.message || 'Gagal cek inbox') + '</p>';
+    }
+  } catch(e) {
+    inboxList.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-3">Gagal memuat inbox</p>';
+  }
+}
+
+function renderTempMailInbox(messages) {
+  const container = document.getElementById('mail-inbox-list');
+  if (!container) return;
+
+  if (!messages || messages.length === 0) {
+    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Tidak ada pesan</p>';
+    return;
+  }
+
+  container.innerHTML = messages.map(msg => {
+    const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
+      ? '<div class="links">' + msg.extracted_links.map(link => 
+          '<div class="mail-link" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>'
+        ).join('') + '</div>'
+      : '';
+
+    return '<div class="mail-message-card">' +
+      '<div class="subject">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div>' +
+      '<div class="from">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div>' +
+      '<div class="preview">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' +
+      linksHtml +
+    '</div>';
+  }).join('');
+}
+
+function copyTempMailEmail() {
+  const email = document.getElementById('mail-email-display').innerText;
+  if (email && email !== '-') {
+    navigator.clipboard.writeText(email).then(() => {
+      showToast('Email tersalin!', 'mail');
+    });
+  }
+}
+
+function copyMailLink(link) {
+  navigator.clipboard.writeText(link).then(() => {
+    showToast('Link tersalin!', 'mail');
+  });
+}
+
+async function loadTempMailHistory(force = false) {
+  if (!loggedInUsername) return;
+  const now = Date.now();
+  if (!force && now - lastMailHistoryFetch < CACHE_DURATION.mailHistory) {
+    const cached = getCached('mailHistory');
+    if (cached) { renderTempMailHistory(cached); return; }
+  }
+  
+  const container = document.getElementById('mail-history-list');
+  if (!container) return;
+  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2 animate-pulse">Memuat riwayat...</p>';
+  
+  try {
+    const res = await fetch('/api/tempmail/history?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+    lastMailHistoryFetch = now;
+    setCache('mailHistory', data, CACHE_DURATION.mailHistory);
+    renderTempMailHistory(data);
+  } catch(e) {
+    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-2">Gagal memuat riwayat</p>';
+  }
+}
+
+function renderTempMailHistory(data) {
+  const container = document.getElementById('mail-history-list');
+  if (!container) return;
+  
+  if (data.success && data.results && data.results.length > 0) {
+    container.innerHTML = data.results.map(r => {
+      return '<div class="p-2.5 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(59,130,246,0.2);">' +
+        '<div class="flex justify-between items-start mb-1">' +
+          '<span class="text-xs font-bold text-blue-300">📧 Temp Mail</span>' +
+          '<span class="text-[9px] text-slate-500">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span>' +
+        '</div>' +
+        '<p class="text-[10px] text-blue-200 mono break-all">' + escapeHtml(r.email) + '</p>' +
+        '<div class="flex justify-between items-center mt-1.5">' +
+          '<span class="text-[9px] text-slate-500">Order: ' + escapeHtml(r.orderId || '-') + '</span>' +
+          '<button onclick="copyHistoryEmail(\\'' + escapeHtml(r.email).replace(/'/g, "\\\\'") + '\\')" class="text-[9px] text-blue-400 hover:text-blue-300 underline">Copy</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } else {
+    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada riwayat</p>';
+  }
+}
+
+function copyHistoryEmail(email) {
+  navigator.clipboard.writeText(email).then(() => {
+    showToast('Email tersalin!', 'mail');
+  });
 }
 
 // ============ NETFLIX FUNCTIONS ============
@@ -3795,6 +4497,7 @@ function applySession(data) {
   fetchFeaturedVideo(true);
   updateNetflixQuotaDisplay();
   updateApkQuotaDisplay();
+  updateMailQuotaDisplay();
 
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   loadGlobalChat();
@@ -3854,6 +4557,7 @@ async function handleRedeemCodeMain() {
       updateQuotaDisplay(data);
       updateNetflixQuotaDisplay();
       updateApkQuotaDisplay();
+      updateMailQuotaDisplay();
       loadVerifiedEmails(true);
       loadActiveRedeems(true);
     } else showToast(data.message, 'error');
@@ -4579,6 +5283,7 @@ function renderVerifiedEmails(data) {
   handleCountdown(data);
   updateNetflixQuotaDisplay();
   updateApkQuotaDisplay();
+  updateMailQuotaDisplay();
 
   const emails = data.activatedEmails || [];
   if (emails.length === 0) {
@@ -5832,6 +6537,7 @@ function handleLogout() {
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   if (statusPollInterval) clearInterval(statusPollInterval);
   if (videoPollInterval) clearInterval(videoPollInterval);
+  if (tempMailCheckInterval) clearInterval(tempMailCheckInterval);
   localStorage.removeItem('authToken');
   localStorage.removeItem('savedUsername');
   sessionStorage.clear();
@@ -5910,6 +6616,229 @@ const server = http.createServer(async (req, res) => {
     } else if (parsedUrl.pathname === '/api/vip-shop' && req.method === 'GET') {
       const items = await getVipShopFromDb();
       jsonResponse(res, 200, { success: true, items });
+
+    // ====== TEMP MAIL ENDPOINTS (NEW) ======
+    } else if (parsedUrl.pathname === '/api/tempmail/check-quota' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+
+      const cleanUser = username.toLowerCase();
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
+
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
+        userObj.activatedEmails = [];
+        userObj.lastResetTime = now;
+        await saveUserToDb(cleanUser, userObj);
+      }
+
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
+      const totalQuota = 1 + (userObj.bonusQuota || 0);
+      
+      if (userObj.isAdmin || isVipActive) {
+        return jsonResponse(res, 200, { 
+          success: true, 
+          allowed: true, 
+          message: 'Unlimited access',
+          quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
+        });
+      }
+
+      if (usedQuota >= totalQuota) {
+        return jsonResponse(res, 200, { 
+          success: true, 
+          allowed: false, 
+          message: 'Quota habis! Tunggu reset 24 jam atau klaim kode redeem.',
+          quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
+        });
+      }
+
+      jsonResponse(res, 200, { 
+        success: true, 
+        allowed: true, 
+        message: 'Quota tersedia',
+        quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
+      });
+
+    } else if (parsedUrl.pathname === '/api/tempmail/generate' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username } = JSON.parse(body);
+      
+      const cleanUser = username ? username.toLowerCase() : '';
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
+
+      // CHECK SERVER ONLINE (kecuali admin)
+      if (currentServerStatus !== 'online' && !userObj.isAdmin) {
+        return jsonResponse(res, 403, { 
+          success: false, 
+          message: 'Server sedang OFFLINE! Temp Mail Generator tidak tersedia.' 
+        });
+      }
+
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
+        userObj.activatedEmails = [];
+        userObj.lastResetTime = now;
+      }
+
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
+      const totalQuota = 1 + (userObj.bonusQuota || 0);
+
+      if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) {
+        return jsonResponse(res, 403, { 
+          success: false, 
+          message: 'Quota habis! Tunggu reset 24 jam atau klaim kode redeem.' 
+        });
+      }
+
+      // Catat quota entry
+      const quotaEntry = 'tempmail_' + now + '_' + Math.random().toString(36).substring(2, 6);
+      if (!userObj.isAdmin && !isVipActive) {
+        if (!userObj.activatedEmails) userObj.activatedEmails = [];
+        userObj.activatedEmails.push(quotaEntry);
+        await saveUserToDb(cleanUser, userObj);
+      }
+
+      // Create temp mail session
+      const sessionId = 'mail_' + now + '_' + Math.random().toString(36).substring(2, 8);
+      const sessionState = {
+        cookie: "",
+        visitorId: crypto.randomUUID(),
+        currentEmail: null
+      };
+      
+      tempMailSessions[sessionId] = sessionState;
+
+      try {
+        // Generate email
+        const email = await generateTempMail(sessionState);
+        
+        // Generate Order ID
+        const orderId = generateOrderId('MAIL');
+
+        // Save order
+        await saveOrderToDb(orderId, {
+          orderId,
+          username: cleanUser,
+          type: 'mail',
+          detail: email,
+          result: 'Email sementara berhasil dibuat',
+          timestamp: now,
+          quotaEntry
+        });
+
+        // Save temp mail record
+        await saveTempMailToDb(sessionId, {
+          id: sessionId,
+          orderId,
+          username: cleanUser,
+          email: email,
+          createdAt: now,
+          sessionState: sessionState
+        });
+
+        jsonResponse(res, 200, {
+          success: true,
+          orderId,
+          email: email,
+          sessionId: sessionId,
+          quotaInfo: { 
+            usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, 
+            bonusQuota: userObj.bonusQuota || 0,
+            totalQuota,
+            isAdmin: userObj.isAdmin,
+            isVip: isVipActive
+          }
+        });
+      } catch (apiErr) {
+        // GAGAL - REFILL QUOTA
+        const refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
+        const refreshedUser = await getUserFromDb(cleanUser);
+        const refreshedUsed = refreshedUser.activatedEmails ? refreshedUser.activatedEmails.length : 0;
+        
+        // Clean up session
+        delete tempMailSessions[sessionId];
+        
+        jsonResponse(res, 500, {
+          success: false,
+          refilled,
+          message: refilled 
+            ? 'Generate gagal: ' + apiErr.message + '. Kuota Anda telah dikembalikan.'
+            : 'Generate gagal: ' + apiErr.message,
+          quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0, totalQuota }
+        });
+      }
+
+    } else if (parsedUrl.pathname === '/api/tempmail/check' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, sessionId } = JSON.parse(body);
+      
+      const cleanUser = username ? username.toLowerCase() : '';
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
+
+      if (currentServerStatus !== 'online' && !userObj.isAdmin) {
+        return jsonResponse(res, 403, { success: false, message: 'Server sedang OFFLINE!' });
+      }
+
+      // Get session state
+      let sessionState = tempMailSessions[sessionId];
+      
+      if (!sessionState) {
+        // Try to restore from DB
+        const dbRecord = await getTempMailFromDb(sessionId);
+        if (dbRecord && dbRecord.sessionState) {
+          sessionState = dbRecord.sessionState;
+          tempMailSessions[sessionId] = sessionState;
+        } else {
+          return jsonResponse(res, 404, { success: false, message: 'Sesi tidak ditemukan. Generate email baru.' });
+        }
+      }
+
+      try {
+        const result = await quickCheckTempMailInbox(sessionState);
+        
+        // Update session in DB
+        const dbRecord = await getTempMailFromDb(sessionId);
+        if (dbRecord) {
+          dbRecord.sessionState = sessionState;
+          dbRecord.lastChecked = Date.now();
+          await saveTempMailToDb(sessionId, dbRecord);
+        }
+        
+        jsonResponse(res, 200, {
+          success: true,
+          email: result.email,
+          messages: result.messages,
+          message_count: result.message_count
+        });
+      } catch (apiErr) {
+        jsonResponse(res, 500, {
+          success: false,
+          message: 'Gagal cek inbox: ' + apiErr.message
+        });
+      }
+
+    } else if (parsedUrl.pathname === '/api/tempmail/history' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+
+      const cleanUser = username.toLowerCase();
+      const allMails = await getTempMailsFromDb();
+      const myMails = Object.values(allMails)
+        .filter(m => m.username === cleanUser)
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, 20);
+
+      jsonResponse(res, 200, { success: true, results: myMails });
 
     // ====== APK MOD ENDPOINTS ======
     } else if (parsedUrl.pathname === '/api/apk-mods' && req.method === 'GET') {
@@ -6003,7 +6932,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       // Kurangi quota (kecuali admin/vip)
-      const quotaEntry = 'apk_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+      const quotaEntry = 'apk_' + now + '_' + Math.random().toString(36).substring(2, 6);
       if (!userObj.isAdmin && !isVipActive) {
         if (!userObj.activatedEmails) userObj.activatedEmails = [];
         userObj.activatedEmails.push(quotaEntry);
@@ -6025,7 +6954,7 @@ const server = http.createServer(async (req, res) => {
       });
 
       // Simpan history request
-      const reqId = 'apk_req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+      const reqId = 'apk_req_' + now + '_' + Math.random().toString(36).substring(2, 8);
       await saveApkRequestToDb(reqId, {
         id: reqId,
         orderId,
@@ -6115,7 +7044,7 @@ const server = http.createServer(async (req, res) => {
       await removeApkModFromDb(id);
       jsonResponse(res, 200, { success: true, message: 'APK MOD dihapus' });
 
-    // ====== ORDERS ENDPOINTS (NEW) ======
+    // ====== ORDERS ENDPOINTS ======
     } else if (parsedUrl.pathname === '/api/orders/my' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
@@ -6224,7 +7153,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       // Catat quota entry
-      const quotaEntry = 'netflix_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+      const quotaEntry = 'netflix_' + now + '_' + Math.random().toString(36).substring(2, 6);
       if (!userObj.isAdmin && !isVipActive) {
         if (!userObj.activatedEmails) userObj.activatedEmails = [];
         userObj.activatedEmails.push(quotaEntry);
@@ -6275,7 +7204,7 @@ const server = http.createServer(async (req, res) => {
       });
 
       // Simpan history
-      const historyId = 'nf_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+      const historyId = 'nf_' + now + '_' + Math.random().toString(36).substring(2, 8);
       await saveNetflixResultToDb(historyId, {
         id: historyId,
         orderId,
@@ -7319,30 +8248,29 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v5.0                                  ║');
+  console.log('║  🚀 AM Premium Banggus v6.0                                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
   console.log('║  💳 Pembayaran via DANA: ' + DANA_ADMIN_NUMBER + '              ║');
   console.log('║  ──────────────────────────────────────────────────────────  ║');
-  console.log('║  🆕 FITUR BARU v5.0:                                         ║');
-  console.log('║  ⛔ Server OFFLINE → semua generator GAGAL (kecuali admin)   ║');
-  console.log('║  🔄 Auto REFILL kuota jika generate gagal (bukan quota)     ║');
+  console.log('║  🆕 FITUR BARU v6.0:                                         ║');
+  console.log('║  📧 TEMP MAIL GENERATOR (Email Sementara)                   ║');
+  console.log('║  🔄 Quota SAMA untuk semua fitur (AM, Netflix, APK, Mail)   ║');
   console.log('║  🆔 Order ID otomatis setiap generate berhasil              ║');
   console.log('║  📋 User bisa lihat orderan sendiri                         ║');
   console.log('║  👑 Admin bisa lihat semua orderan user                     ║');
   console.log('║  ──────────────────────────────────────────────────────────  ║');
   console.log('║  ✅ Semua fitur lama dipertahankan:                          ║');
-  console.log('║  🛒 VIP Shop + Upload Bukti Transfer DANA                   ║');
-  console.log('║  🔧 Admin dapat mengatur layanan VIP                        ║');
-  console.log('║  💾 Optimasi: Cache 30-60s, Lazy Load, Visibility API       ║');
+  console.log('║  🎨 Alight Motion Generator                                  ║');
+  console.log('║  🎬 Netflix Generator                                        ║');
+  console.log('║  📱 APK MOD Generator                                        ║');
+  console.log('║  🛒 VIP Shop + Upload Bukti Transfer DANA                    ║');
+  console.log('║  💾 Optimasi: Cache 30-60s, Lazy Load, Visibility API        ║');
   console.log('║  📦 Chunked Upload Ready (>200MB)                            ║');
   console.log('║  👥 User List Viewer + Delete Account                        ║');
   console.log('║  📧 Gmail History + Reset Countdown                          ║');
   console.log('║  💬 Global Chat (Polling 15s, hemat kuota)                   ║');
   console.log('║  🔐 Change Password + Create VIP Account                     ║');
-  console.log('║  ⭐ VIP Account Generator                                    ║');
   console.log('║  🎁 Redeem Code (Fixed Quota per User)                       ║');
   console.log('║  💡 Request Fitur Baru (User → Admin)                        ║');
-  console.log('║  🎬 NETFLIX GENERATOR (Premium Token)                       ║');
-  console.log('║  📱 APK MOD GENERATOR (Download Link)                       ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
