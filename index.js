@@ -568,7 +568,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .card { background:var(--bg-1); border:1px solid var(--line); border-radius:14px; padding:16px; position:relative; }
   .card-elevated { background:linear-gradient(180deg,var(--bg-2) 0%,var(--bg-1) 100%); border:1px solid var(--line-2); border-radius:14px; padding:16px; }
   .topbar { display:flex; align-items:center; justify-content:space-between; padding:4px 0 16px 0; }
-  .brand-mark { width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:18px; color:white; box-shadow:0 4px 14px rgba(109,92,230,0.35); }
+  .brand-mark { width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:18px; color:white; box-shadow:0 4px 14px rgba(109,92,230,0.35); overflow:hidden; }
   .brand-text { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px; letter-spacing:-0.01em; }
   .brand-sub { font-size:10px; color:var(--text-2); letter-spacing:0.08em; text-transform:uppercase; font-weight:600; margin-top:1px; }
   .inp { width:100%; padding:11px 14px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; color:var(--text-0); font-size:13px; font-family:inherit; outline:none; transition:border-color 0.15s, box-shadow 0.15s; }
@@ -676,6 +676,60 @@ const htmlTemplate = `<!DOCTYPE html>
   ::-webkit-scrollbar-thumb { background:var(--line-2); border-radius:999px; }
   ::-webkit-scrollbar-thumb:hover { background:var(--text-2); }
   .hide { display:none !important; }
+
+  /* ====== ANIMASI LOGIN & REGISTER ====== */
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    50% { transform: translateX(5px); }
+    75% { transform: translateX(-5px); }
+  }
+  .shake-error { animation: shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; border-color: var(--err) !important; }
+  .auth-tab-content {
+    animation: fadeInScale 0.3s ease-out forwards;
+  }
+  @keyframes fadeInScale {
+    from { opacity: 0; transform: scale(0.95) translateY(5px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .btn-loading {
+    position: relative;
+    color: transparent !important;
+    pointer-events: none;
+  }
+  .btn-loading::after {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    top: 50%;
+    left: 50%;
+    margin-top: -9px;
+    margin-left: -9px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ====== ANIMASI INBOX TEMP MAIL ====== */
+  @keyframes slideInRight {
+    from { opacity: 0; transform: translateX(20px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  .mail-new {
+    animation: slideInRight 0.4s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+    border-left: 3px solid var(--info) !important;
+  }
+  .pulse-border {
+    animation: borderPulse 1.5s infinite;
+  }
+  @keyframes borderPulse {
+    0% { box-shadow: 0 0 0 0 rgba(96,165,250,0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(96,165,250,0); }
+    100% { box-shadow: 0 0 0 0 rgba(96,165,250,0); }
+  }
 </style>
 </head>
 <body>
@@ -683,7 +737,12 @@ const htmlTemplate = `<!DOCTYPE html>
 <div class="app-shell">
   <div class="topbar">
     <div style="display:flex; align-items:center; gap:10px;">
-      <div class="brand-mark">⚡</div>
+      <!-- Mengganti simbol petir dengan logo SVG rapi -->
+      <div class="brand-mark">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        </svg>
+      </div>
       <div>
         <div class="brand-text">AM Premium</div>
         <div class="brand-sub">by Banggus</div>
@@ -729,7 +788,7 @@ const htmlTemplate = `<!DOCTYPE html>
     <button id="nav-admin-btn" onclick="switchView('admin')" data-nav="admin" class="nav-link hide"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Panel Admin</button>
     <div style="margin-top:auto; padding-top:14px; border-top:1px solid var(--line-2);">
       <div style="display:flex; align-items:center; gap:10px; padding:9px; background:var(--bg-2); border-radius:10px; border:1px solid var(--line-2); margin-bottom:9px;">
-        <div class="brand-mark" style="width:34px; height:34px; font-size:14px;"><span id="drawer-avatar">?</span></div>
+        <div class="brand-mark" style="width:34px; height:34px; font-size:14px; background:var(--bg-1); border:1px solid var(--line-2); box-shadow:none;"><span id="drawer-avatar" style="color:var(--accent);">?</span></div>
         <div style="flex:1; min-width:0;">
           <div id="drawer-username" style="font-weight:700; font-size:12.5px; overflow:hidden; text-overflow:ellipsis;">Guest</div>
           <div id="drawer-role" style="font-size:10px; color:var(--text-2);">Belum login</div>
@@ -742,18 +801,28 @@ const htmlTemplate = `<!DOCTYPE html>
   <div style="flex:1; display:flex; flex-direction:column; justify-content:center; padding:8px 0; gap:12px;">
     <div id="offline-banner" class="card hide" style="background:var(--err-soft); border-color:rgba(248,113,113,0.3); padding:10px 13px; font-size:12px; color:var(--err); text-align:center;">⚠ Server offline — fitur generator dinonaktifkan</div>
 
+    <!-- AUTH VIEW DENGAN ANIMASI BARU -->
     <div id="auth-view" class="card-elevated" style="display:flex; flex-direction:column; gap:16px;">
       <div style="text-align:center; padding:8px 0 4px;">
-        <div style="width:54px; height:54px; border-radius:14px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:inline-flex; align-items:center; justify-content:center; font-size:24px; box-shadow:0 8px 24px rgba(109,92,230,0.4); margin-bottom:10px;">⚡</div>
+        <!-- Logo diganti menjadi SVG bersih, tanpa huruf A -->
+        <div style="width:54px; height:54px; border-radius:14px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:inline-flex; align-items:center; justify-content:center; box-shadow:0 8px 24px rgba(109,92,230,0.4); margin-bottom:10px;">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+        </div>
         <h1 class="display-font" style="font-size:22px; font-weight:800; margin:0 0 4px; color:var(--text-0);">Selamat datang</h1>
         <p style="font-size:12.5px; color:var(--text-2); margin:0;">Login atau daftar untuk mulai menggunakan layanan</p>
       </div>
+      
+      <!-- Tab Switch dengan indikator geser -->
       <div style="display:flex; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; padding:3px; position:relative;">
         <div id="tab-indicator" style="position:absolute; top:3px; bottom:3px; left:3px; width:calc(50% - 3px); background:var(--accent); border-radius:7px; transition:transform 0.25s cubic-bezier(0.32,0.72,0,1);"></div>
         <button onclick="switchAuthTab('login')" id="tab-login-btn" style="position:relative; z-index:1; flex:1; padding:8px; background:transparent; border:none; font-weight:600; font-size:12.5px; cursor:pointer; color:white; font-family:inherit; border-radius:7px;">Login</button>
         <button onclick="switchAuthTab('register')" id="tab-reg-btn" style="position:relative; z-index:1; flex:1; padding:8px; background:transparent; border:none; font-weight:600; font-size:12.5px; cursor:pointer; color:var(--text-1); font-family:inherit; border-radius:7px;">Daftar</button>
       </div>
-      <div style="display:flex; flex-direction:column; gap:12px;">
+      
+      <!-- Form container dengan efek transisi -->
+      <div id="auth-form-container" class="auth-tab-content" style="display:flex; flex-direction:column; gap:12px;">
         <div><label class="field-label">Username</label><input type="text" id="auth-username" placeholder="username_kamu" class="inp mono"></div>
         <div><label class="field-label">Password</label><input type="password" id="auth-password" placeholder="••••••••" class="inp"></div>
         <div id="email-field-container" class="hide">
@@ -771,7 +840,8 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
       <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between;">
         <div style="display:flex; align-items:center; gap:10px; min-width:0;">
-          <div class="brand-mark" style="width:34px; height:34px; font-size:14px;"><span id="user-avatar">U</span></div>
+          <!-- Avatar inisial, bukan huruf A hardcode -->
+          <div class="brand-mark" style="width:34px; height:34px; font-size:14px; background:var(--bg-2); border:1px solid var(--line-2); box-shadow:none;"><span id="user-avatar" style="color:var(--accent);">U</span></div>
           <div style="min-width:0;">
             <div id="logged-username" style="font-weight:700; font-size:13px; overflow:hidden; text-overflow:ellipsis;">-</div>
             <div style="margin-top:3px;"><span id="role-badge" class="badge badge-muted">User</span></div>
@@ -894,12 +964,12 @@ const htmlTemplate = `<!DOCTYPE html>
           <div id="mail-email-display" class="mono" style="font-size:13px; font-weight:700; color:var(--info); word-break:break-all; padding:10px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px; margin-bottom:8px;">-</div>
           <div style="display:flex; gap:7px; justify-content:center;">
             <button onclick="copyTempMailEmail()" class="btn btn-ghost btn-xs">Copy</button>
-            <button onclick="checkTempMailInbox()" class="btn btn-mail btn-xs">Cek Inbox</button>
+            <button id="btn-check-inbox" onclick="checkTempMailInbox()" class="btn btn-mail btn-xs pulse-border">Cek Inbox</button>
           </div>
         </div>
         <div class="card" style="border-color:rgba(96,165,250,0.25);">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em;">Inbox</div>
+            <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em;">Inbox (Auto-Refresh)</div>
             <span id="mail-message-count" style="font-size:10px; color:var(--text-2);">0 pesan</span>
           </div>
           <div id="mail-inbox-list" style="display:flex; flex-direction:column; gap:7px; max-height:320px; overflow-y:auto;">
@@ -1407,7 +1477,7 @@ const htmlTemplate = `<!DOCTYPE html>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">2</div><div style="font-size:12px; color:var(--text-1);"><strong>Alight Motion:</strong> Masukkan email target, kirim magic link, copy URL, verifikasi</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--netflix); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">3</div><div style="font-size:12px; color:var(--text-1);"><strong>Netflix:</strong> Pilih plan, klik Generate, tunggu proses</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--ok); color:#032a17; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">4</div><div style="font-size:12px; color:var(--text-1);"><strong>APK MOD:</strong> Pilih APK, klik Dapatkan Link</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">5</div><div style="font-size:12px; color:var(--text-1);"><strong>Temp Mail:</strong> Generate email, copy, cek inbox</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">5</div><div style="font-size:12px; color:var(--text-1);"><strong>Temp Mail:</strong> Generate email, copy, cek inbox (Otomatis Terbuka)</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">7</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai.</div></div>
       </div>
@@ -1501,6 +1571,10 @@ let lastMailHistoryFetch = 0;
 let lastMyOrdersFetch = 0;
 let lastAdminOrdersFetch = 0;
 
+// Variabel untuk Auto Refresh Temp Mail
+let mailAutoRefreshInterval = null;
+let lastMailMessageCount = 0;
+
 const CACHE_DURATION = { status:30000, video:60000, chat:15000, emails:30000, redeems:60000, announcements:60000, netflixHistory:30000, apkHistory:30000, mailHistory:30000, myOrders:15000, adminOrders:15000, onlineUsers:15000 };
 const memoryCache = {};
 
@@ -1521,8 +1595,10 @@ document.addEventListener('visibilitychange', () => {
     if (currentView === 'vipshop') loadUserTransactions();
     if (currentView === 'netflix') loadNetflixHistory(true);
     if (currentView === 'apkmod') loadApkHistory(true);
-    if (currentView === 'tempmail') loadTempMailHistory(true);
+    if (currentView === 'tempmail') { loadTempMailHistory(true); if(tempMailSession) startMailAutoRefresh(); }
     if (currentView === 'orders') loadMyOrders(true);
+  } else {
+    stopMailAutoRefresh();
   }
 });
 
@@ -1604,7 +1680,12 @@ function switchView(viewName) {
   else if (viewName === 'orders') { document.getElementById('section-orders').classList.remove('hide'); loadMyOrders(); }
   else if (viewName === 'netflix') { document.getElementById('section-netflix').classList.remove('hide'); loadNetflixHistory(); updateNetflixQuotaDisplay(); }
   else if (viewName === 'apkmod') { document.getElementById('section-apkmod').classList.remove('hide'); loadApkMods(); loadApkHistory(); updateApkQuotaDisplay(); }
-  else if (viewName === 'tempmail') { document.getElementById('section-tempmail').classList.remove('hide'); loadTempMailHistory(); updateMailQuotaDisplay(); }
+  else if (viewName === 'tempmail') { 
+    document.getElementById('section-tempmail').classList.remove('hide'); 
+    loadTempMailHistory(); 
+    updateMailQuotaDisplay(); 
+    if (tempMailSession) startMailAutoRefresh(); 
+  }
   else if (viewName === 'vipshop') {
     document.getElementById('section-vipshop').classList.remove('hide');
     loadVipShopItems(); loadUserTransactions();
@@ -1620,6 +1701,11 @@ function switchView(viewName) {
     if (!isAdminUser) return showToast('Akses ditolak!', 'error');
     document.getElementById('section-admin').classList.remove('hide');
     loadAdminRedeems(); loadAdminAnnouncements(); loadAdminVipList(); loadAllUsers(); loadVipAccounts(); loadAdminFeatureRequests(); loadAdminVipShop(); loadAdminTransactions(); loadAdminApkList(); loadAdminOrders();
+  }
+  
+  // Matikan auto refresh jika pindah dari view tempmail
+  if (viewName !== 'tempmail') {
+    stopMailAutoRefresh();
   }
 }
 
@@ -1741,6 +1827,60 @@ function updateMailQuotaDisplay() {
   if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
 }
 
+// FUNGSI BARU: Auto Refresh Temp Mail
+function startMailAutoRefresh() {
+  if (mailAutoRefreshInterval) clearInterval(mailAutoRefreshInterval);
+  mailAutoRefreshInterval = setInterval(async () => {
+    if (!isPageVisible || !tempMailSession || currentView !== 'tempmail') return;
+    
+    try {
+      // Menggunakan endpoint check yang sudah ada
+      const res = await fetch('/api/tempmail/check', { 
+        method:'POST', 
+        headers:{'Content-Type':'application/json'}, 
+        body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession }) 
+      });
+      const data = await res.json();
+      
+      if (data.success && data.messages) {
+        // Cek apakah ada pesan baru berdasarkan jumlah
+        if (data.messages.length > lastMailMessageCount) {
+          showToast('📧 Pesan baru masuk!', 'mail');
+          lastMailMessageCount = data.messages.length;
+          
+          // Update list inbox
+          document.getElementById('mail-message-count').innerText = data.messages.length + ' pesan';
+          
+          // Render ulang dengan animasi
+          const inboxList = document.getElementById('mail-inbox-list');
+          if (data.messages.length > 0) {
+            inboxList.innerHTML = data.messages.map((msg, idx) => {
+              const isNew = idx === 0; // Asumsi pesan terbaru ada di index 0
+              const animClass = isNew ? 'mail-new' : '';
+              
+              const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
+                ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
+              
+              return '<div class="hist-item ' + animClass + '" style="border-color:rgba(96,165,250,0.25);"><div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div><div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' + linksHtml + '</div>';
+            }).join('');
+          } else {
+            inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada email</p>';
+          }
+        }
+      }
+    } catch (e) {
+      // Abaikan error silent agar tidak spam
+    }
+  }, 5000); // Cek setiap 5 detik
+}
+
+function stopMailAutoRefresh() {
+  if (mailAutoRefreshInterval) {
+    clearInterval(mailAutoRefreshInterval);
+    mailAutoRefreshInterval = null;
+  }
+}
+
 async function handleGenerateTempMail() {
   if (!loggedInUsername) return showToast('Harus login!', 'error');
   if (!guardServerOnline('Temp Mail')) return;
@@ -1751,6 +1891,11 @@ async function handleGenerateTempMail() {
   const logText = document.getElementById('mail-log-text');
   const progressFill = document.getElementById('mail-progress-fill');
   const resultContainer = document.getElementById('mail-result-container');
+  
+  // Reset state auto refresh
+  stopMailAutoRefresh();
+  lastMailMessageCount = 0;
+  
   btn.disabled = true; btnText.innerText = 'Memproses...';
   loadingEl.classList.remove('hide'); progressFill.style.width = '0%';
   statusText.innerText = 'Menyiapkan'; logText.innerText = 'Initializing...';
@@ -1768,8 +1913,12 @@ async function handleGenerateTempMail() {
       tempMailSession = genData.sessionId || genData.email;
       document.getElementById('mail-email-display').innerText = genData.email;
       resultContainer.classList.remove('hide');
-      document.getElementById('mail-inbox-list').innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Menunggu email...</p>';
+      document.getElementById('mail-inbox-list').innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Menunggu email (Auto-Refresh Aktif)...</p>';
       document.getElementById('mail-message-count').innerText = '0 pesan';
+      
+      // Memulai Auto refresh
+      startMailAutoRefresh();
+      
       if (genData.quotaInfo) { userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(genData.quotaInfo); updateMailQuotaDisplay(); }
       if (genData.orderId) showToast('✅ Order ID: ' + genData.orderId, 'order', 5000);
       else showToast('Email berhasil!', 'mail');
@@ -1799,7 +1948,12 @@ async function checkTempMailInbox() {
     const res = await fetch('/api/tempmail/check', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession }) });
     const data = await res.json();
     if (data.success) {
-      if (data.messages && data.messages.length > 0) { messageCount.innerText = data.messages.length + ' pesan'; renderTempMailInbox(data.messages); showToast('📧 ' + data.messages.length + ' pesan!', 'mail'); }
+      if (data.messages && data.messages.length > 0) { 
+        messageCount.innerText = data.messages.length + ' pesan'; 
+        renderTempMailInbox(data.messages); 
+        showToast('📧 ' + data.messages.length + ' pesan!', 'mail'); 
+        lastMailMessageCount = data.messages.length;
+      }
       else { inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada email</p>'; messageCount.innerText = '0 pesan'; }
     } else inboxList.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">' + (data.message || 'Gagal') + '</p>';
   } catch(e) { inboxList.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
@@ -1809,10 +1963,12 @@ function renderTempMailInbox(messages) {
   const container = document.getElementById('mail-inbox-list');
   if (!container) return;
   if (!messages || messages.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px;">Tidak ada</p>'; return; }
-  container.innerHTML = messages.map(msg => {
+  container.innerHTML = messages.map((msg, idx) => {
+    const isNew = idx === 0; 
+    const animClass = isNew ? 'mail-new' : '';
     const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
       ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
-    return '<div class="hist-item" style="border-color:rgba(96,165,250,0.25);"><div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div><div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' + linksHtml + '</div>';
+    return '<div class="hist-item ' + animClass + '" style="border-color:rgba(96,165,250,0.25);"><div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div><div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' + linksHtml + '</div>';
   }).join('');
 }
 
@@ -2175,6 +2331,13 @@ function switchAuthTab(mode) {
   const ind = document.getElementById('tab-indicator');
   const emailField = document.getElementById('email-field-container');
   const btnText = document.getElementById('auth-btn-text');
+  const formContainer = document.getElementById('auth-form-container');
+  
+  // Animasi form fade
+  formContainer.style.animation = 'none';
+  formContainer.offsetHeight; // trigger reflow
+  formContainer.style.animation = 'fadeInScale 0.3s ease-out forwards';
+
   if (mode === 'login') {
     ind.style.transform = 'translateX(0%)'; loginBtn.style.color = 'white'; regBtn.style.color = 'var(--text-1)';
     emailField.classList.add('hide'); btnText.innerText = 'Masuk';
@@ -2188,13 +2351,29 @@ async function handleAuthAction() {
   const username = document.getElementById('auth-username').value.trim();
   const password = document.getElementById('auth-password').value.trim();
   const email = document.getElementById('auth-email').value.trim();
-  if (!username || !password) return showToast('Username dan password wajib!', 'error');
+  const formContainer = document.getElementById('auth-form-container');
+  
+  if (!username || !password) {
+    formContainer.classList.add('shake-error');
+    setTimeout(() => formContainer.classList.remove('shake-error'), 500);
+    return showToast('Username dan password wajib!', 'error');
+  }
+  
   let deviceToken = localStorage.getItem('am_device_token');
-  if (currentAuthMode === 'register' && deviceToken) return showToast('Perangkat sudah terdaftar!', 'error');
+  if (currentAuthMode === 'register' && deviceToken) {
+    formContainer.classList.add('shake-error');
+    setTimeout(() => formContainer.classList.remove('shake-error'), 500);
+    return showToast('Perangkat sudah terdaftar!', 'error');
+  }
+  
   const btn = document.getElementById('auth-submit-btn');
   const originalText = document.getElementById('auth-btn-text').innerText;
-  document.getElementById('auth-btn-text').innerText = 'Memproses...';
+  
+  // Efek loading pada tombol
+  btn.classList.add('btn-loading');
   btn.disabled = true;
+  document.getElementById('auth-btn-text').innerText = '';
+  
   try {
     const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, email, deviceToken }) });
     const data = await res.json();
@@ -2202,10 +2381,30 @@ async function handleAuthAction() {
       if (currentAuthMode === 'register' && data.deviceToken) localStorage.setItem('am_device_token', data.deviceToken);
       if (data.token) { localStorage.setItem('authToken', data.token); localStorage.setItem('savedUsername', data.username); }
       showToast(data.message, 'success');
-      applySession(data);
-    } else showToast(data.message, 'error');
-  } catch (err) { showToast('Kesalahan koneksi', 'error'); }
-  finally { document.getElementById('auth-btn-text').innerText = originalText; btn.disabled = false; }
+      
+      // Animasi fade out sebelum masuk
+      document.getElementById('auth-view').style.transition = 'opacity 0.3s';
+      document.getElementById('auth-view').style.opacity = '0';
+      setTimeout(() => {
+        applySession(data);
+        document.getElementById('auth-view').style.opacity = '1';
+      }, 300);
+      
+    } else {
+      formContainer.classList.add('shake-error');
+      setTimeout(() => formContainer.classList.remove('shake-error'), 500);
+      showToast(data.message, 'error');
+    }
+  } catch (err) { 
+    formContainer.classList.add('shake-error');
+    setTimeout(() => formContainer.classList.remove('shake-error'), 500);
+    showToast('Kesalahan koneksi', 'error'); 
+  }
+  finally { 
+    btn.classList.remove('btn-loading');
+    document.getElementById('auth-btn-text').innerText = originalText; 
+    btn.disabled = false; 
+  }
 }
 
 function applySession(data) {
@@ -2216,8 +2415,11 @@ function applySession(data) {
   document.getElementById('terminal-view').classList.remove('hide');
   document.getElementById('menu-btn').classList.remove('hide');
   document.getElementById('logged-username').innerText = data.username;
+  
+  // Set avatar huruf depan, bukan hardcode 'A'
   document.getElementById('user-avatar').innerText = data.username.charAt(0).toUpperCase();
   document.getElementById('drawer-avatar').innerText = data.username.charAt(0).toUpperCase();
+  
   document.getElementById('drawer-username').innerText = data.username;
   document.getElementById('drawer-role').innerText = data.isAdmin ? 'Admin' : (data.isVip ? 'VIP Member' : 'User');
   document.getElementById('drawer-logout-btn').classList.remove('hide');
@@ -3326,6 +3528,7 @@ async function handleLogout() {
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   if (statusPollInterval) clearInterval(statusPollInterval);
   if (videoPollInterval) clearInterval(videoPollInterval);
+  if (mailAutoRefreshInterval) clearInterval(mailAutoRefreshInterval);
   localStorage.removeItem('authToken');
   localStorage.removeItem('savedUsername');
   sessionStorage.clear();
@@ -4284,18 +4487,13 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v7.0                                  ║');
+  console.log('║  🚀 AM Premium Banggus v7.1                                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
   console.log('║  💳 DANA Admin: ' + DANA_ADMIN_NUMBER + '                     ║');
   console.log('║  ──────────────────────────────────────────────────────────  ║');
-  console.log('║  🆕 FITUR BARU v7.0:                                         ║');
-  console.log('║  👥 USER ONLINE TRACKING (heartbeat 20s + auto cleanup)     ║');
-  console.log('║  ⏰ BONUS QUOTA EXPIRY (2 hari tanpa pakai = hangus)        ║');
-  console.log('║  📊 Base Quota = 2 (kuota awal akun baru)                   ║');
-  console.log('║  🎨 UI REDESIGN (Inter + Space Grotesk, natural look)       ║');
-  console.log('║  ──────────────────────────────────────────────────────────  ║');
-  console.log('║  ✅ Semua fitur lama dipertahankan:                          ║');
-  console.log('║  🎨 Alight Motion • 🎬 Netflix • 📱 APK MOD • 📧 Temp Mail  ║');
-  console.log('║  🛒 VIP Shop • 💬 Chat • 📋 Orders • 🎁 Redeem • 👑 Admin   ║');
+  console.log('║  ✨ UPDATE v7.1:                                             ║');
+  console.log('║  📧 TEMP MAIL AUTO-REFRESH (Pesan otomatis terbuka)         ║');
+  console.log('║  🎨 UI AUTH REDESIGN (Animasi login/register baru)          ║');
+  console.log('║  🗑️ HAPUS IKON PETIR & HURUF "A" HARDCODE                   ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
