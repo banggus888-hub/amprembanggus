@@ -32,6 +32,14 @@ const db = getDatabase(firebaseApp);
 const DANA_ADMIN_NUMBER = '085377788830';
 const DANA_ADMIN_NAME = 'L,S';
 
+// ====== KONFIGURASI ONLINE TRACKING ======
+const ONLINE_TIMEOUT = 45 * 1000;
+const ONLINE_CLEANUP_INTERVAL = 60 * 1000;
+
+// ====== KONFIGURASI BONUS QUOTA EXPIRY ======
+const BONUS_EXPIRY_MS = 2 * 24 * 60 * 60 * 1000;
+const BASE_QUOTA = 2;
+
 // ====== NETFLIX CONFIG ======
 const NETFLIX_BASE = 'https://nftools.aroshi.my.id';
 const NETFLIX_COUNTRY = {
@@ -50,15 +58,12 @@ const TEMP_MAIL_BASE_URL = "https://temp-mail.app";
 const TEMP_MAIL_MAX_RETRIES = 20;
 const TEMP_MAIL_RETRY_DELAY = 3000;
 
-// Temp Mail session state (per user)
 const tempMailSessions = {};
 
 const go = Go.create({
   baseURL: config.base,
   browser: true,
-  headers: {
-    'X-apikey': config.kyzznekooApiKey
-  },
+  headers: { 'X-apikey': config.kyzznekooApiKey },
   cookieJar: true,
   keepAlive: true
 });
@@ -76,11 +81,8 @@ setInterval(() => {
       try {
         const stat = fs.statSync(fp);
         if (now - stat.mtimeMs > 3600000) {
-          if (fs.statSync(fp).isDirectory()) {
-            fs.rmSync(fp, { recursive: true, force: true });
-          } else {
-            fs.unlinkSync(fp);
-          }
+          if (fs.statSync(fp).isDirectory()) fs.rmSync(fp, { recursive: true, force: true });
+          else fs.unlinkSync(fp);
         }
       } catch (e) {}
     });
@@ -92,30 +94,20 @@ async function getServerStatusFromDb() {
   const snapshot = await get(child(ref(db), `settings/serverStatus`));
   return snapshot.exists() ? snapshot.val() : 'online';
 }
-async function saveServerStatusToDb(status) {
-  await set(ref(db, `settings/serverStatus`), status);
-}
+async function saveServerStatusToDb(status) { await set(ref(db, `settings/serverStatus`), status); }
 async function getUserFromDb(username) {
   if (!username) return null;
   const snapshot = await get(child(ref(db), `users/${username}`));
   return snapshot.exists() ? snapshot.val() : null;
 }
-async function saveUserToDb(username, userData) {
-  await set(ref(db, `users/${username}`), userData);
-}
-async function deleteUserFromDb(username) {
-  await set(ref(db, `users/${username}`), null);
-}
+async function saveUserToDb(username, userData) { await set(ref(db, `users/${username}`), userData); }
+async function deleteUserFromDb(username) { await set(ref(db, `users/${username}`), null); }
 async function getRedeemFromDb(code) {
   const snapshot = await get(child(ref(db), `redeems/${code}`));
   return snapshot.exists() ? snapshot.val() : null;
 }
-async function saveRedeemToDb(code, data) {
-  await set(ref(db, `redeems/${code}`), data);
-}
-async function removeRedeemFromDb(code) {
-  await set(ref(db, `redeems/${code}`), null);
-}
+async function saveRedeemToDb(code, data) { await set(ref(db, `redeems/${code}`), data); }
+async function removeRedeemFromDb(code) { await set(ref(db, `redeems/${code}`), null); }
 async function getAllRedeemsFromDb() {
   const snapshot = await get(child(ref(db), `redeems`));
   return snapshot.exists() ? snapshot.val() : {};
@@ -124,12 +116,8 @@ async function getAllAnnouncementsFromDb() {
   const snapshot = await get(child(ref(db), `announcements`));
   return snapshot.exists() ? snapshot.val() : {};
 }
-async function saveAnnouncementToDb(id, data) {
-  await set(ref(db, `announcements/${id}`), data);
-}
-async function removeAnnouncementFromDb(id) {
-  await set(ref(db, `announcements/${id}`), null);
-}
+async function saveAnnouncementToDb(id, data) { await set(ref(db, `announcements/${id}`), data); }
+async function removeAnnouncementFromDb(id) { await set(ref(db, `announcements/${id}`), null); }
 async function getAllUsersFromDb() {
   const snapshot = await get(child(ref(db), `users`));
   return snapshot.exists() ? snapshot.val() : {};
@@ -138,57 +126,39 @@ async function getVideoFromDb() {
   const snapshot = await get(child(ref(db), `settings/featuredVideo`));
   return snapshot.exists() ? snapshot.val() : 'https://assets.mixkit.co/videos/preview/mixkit-digital-animation-of-screens-and-lights-31910-large.mp4';
 }
-async function saveVideoToDb(videoUrl) {
-  await set(ref(db, `settings/featuredVideo`), videoUrl);
-}
+async function saveVideoToDb(videoUrl) { await set(ref(db, `settings/featuredVideo`), videoUrl); }
 
 // ====== GLOBAL CHAT HELPERS ======
 async function getGlobalChatFromDb() {
   const snapshot = await get(child(ref(db), `globalChat`));
   return snapshot.exists() ? snapshot.val() : {};
 }
-async function saveGlobalChatMessageToDb(id, data) {
-  await set(ref(db, `globalChat/${id}`), data);
-}
-async function deleteGlobalChatMessageFromDb(id) {
-  await set(ref(db, `globalChat/${id}`), null);
-}
+async function saveGlobalChatMessageToDb(id, data) { await set(ref(db, `globalChat/${id}`), data); }
+async function deleteGlobalChatMessageFromDb(id) { await set(ref(db, `globalChat/${id}`), null); }
 
 // ====== VIP ACCOUNTS HELPERS ======
 async function getVipAccountsFromDb() {
   const snapshot = await get(child(ref(db), `vipAccounts`));
   return snapshot.exists() ? snapshot.val() : {};
 }
-async function saveVipAccountToDb(id, data) {
-  await set(ref(db, `vipAccounts/${id}`), data);
-}
-async function removeVipAccountFromDb(id) {
-  await set(ref(db, `vipAccounts/${id}`), null);
-}
+async function saveVipAccountToDb(id, data) { await set(ref(db, `vipAccounts/${id}`), data); }
+async function removeVipAccountFromDb(id) { await set(ref(db, `vipAccounts/${id}`), null); }
 
 // ====== FEATURE REQUESTS HELPERS ======
 async function getFeatureRequestsFromDb() {
   const snapshot = await get(child(ref(db), `featureRequests`));
   return snapshot.exists() ? snapshot.val() : {};
 }
-async function saveFeatureRequestToDb(id, data) {
-  await set(ref(db, `featureRequests/${id}`), data);
-}
-async function removeFeatureRequestFromDb(id) {
-  await set(ref(db, `featureRequests/${id}`), null);
-}
+async function saveFeatureRequestToDb(id, data) { await set(ref(db, `featureRequests/${id}`), data); }
+async function removeFeatureRequestFromDb(id) { await set(ref(db, `featureRequests/${id}`), null); }
 
 // ====== VIP SHOP HELPERS ======
 async function getVipShopFromDb() {
   const snapshot = await get(child(ref(db), `vipShop`));
   return snapshot.exists() ? snapshot.val() : {};
 }
-async function saveVipShopToDb(id, data) {
-  await set(ref(db, `vipShop/${id}`), data);
-}
-async function removeVipShopFromDb(id) {
-  await set(ref(db, `vipShop/${id}`), null);
-}
+async function saveVipShopToDb(id, data) { await set(ref(db, `vipShop/${id}`), data); }
+async function removeVipShopFromDb(id) { await set(ref(db, `vipShop/${id}`), null); }
 
 // ====== TRANSACTIONS HELPERS ======
 async function getTransactionsFromDb() {
@@ -199,24 +169,15 @@ async function getTransactionFromDb(id) {
   const snapshot = await get(child(ref(db), `transactions/${id}`));
   return snapshot.exists() ? snapshot.val() : null;
 }
-async function saveTransactionToDb(id, data) {
-  await set(ref(db, `transactions/${id}`), data);
-}
-async function removeTransactionFromDb(id) {
-  await set(ref(db, `transactions/${id}`), null);
-}
+async function saveTransactionToDb(id, data) { await set(ref(db, `transactions/${id}`), data); }
+async function removeTransactionFromDb(id) { await set(ref(db, `transactions/${id}`), null); }
 
 // ====== NETFLIX RESULTS HELPERS ======
 async function getNetflixResultsFromDb() {
   const snapshot = await get(child(ref(db), `netflixResults`));
   return snapshot.exists() ? snapshot.val() : {};
 }
-async function saveNetflixResultToDb(id, data) {
-  await set(ref(db, `netflixResults/${id}`), data);
-}
-async function removeNetflixResultFromDb(id) {
-  await set(ref(db, `netflixResults/${id}`), null);
-}
+async function saveNetflixResultToDb(id, data) { await set(ref(db, `netflixResults/${id}`), data); }
 
 // ====== APK MOD HELPERS ======
 async function getApkModsFromDb() {
@@ -227,45 +188,25 @@ async function getApkModFromDb(id) {
   const snapshot = await get(child(ref(db), `apkMods/${id}`));
   return snapshot.exists() ? snapshot.val() : null;
 }
-async function saveApkModToDb(id, data) {
-  await set(ref(db, `apkMods/${id}`), data);
-}
-async function removeApkModFromDb(id) {
-  await set(ref(db, `apkMods/${id}`), null);
-}
+async function saveApkModToDb(id, data) { await set(ref(db, `apkMods/${id}`), data); }
+async function removeApkModFromDb(id) { await set(ref(db, `apkMods/${id}`), null); }
 
 // ====== APK MOD REQUESTS HELPERS ======
 async function getApkRequestsFromDb() {
   const snapshot = await get(child(ref(db), `apkRequests`));
   return snapshot.exists() ? snapshot.val() : {};
 }
-async function saveApkRequestToDb(id, data) {
-  await set(ref(db, `apkRequests/${id}`), data);
-}
-async function removeApkRequestFromDb(id) {
-  await set(ref(db, `apkRequests/${id}`), null);
-}
+async function saveApkRequestToDb(id, data) { await set(ref(db, `apkRequests/${id}`), data); }
 
 // ====== ORDER HELPERS ======
 async function getOrdersFromDb() {
   const snapshot = await get(child(ref(db), `orders`));
   return snapshot.exists() ? snapshot.val() : {};
 }
-async function getOrderFromDb(id) {
-  const snapshot = await get(child(ref(db), `orders/${id}`));
-  return snapshot.exists() ? snapshot.val() : null;
-}
-async function saveOrderToDb(id, data) {
-  await set(ref(db, `orders/${id}`), data);
-}
-async function removeOrderFromDb(id) {
-  await set(ref(db, `orders/${id}`), null);
-}
+async function saveOrderToDb(id, data) { await set(ref(db, `orders/${id}`), data); }
 
 // ====== TEMP MAIL HELPERS ======
-async function saveTempMailToDb(id, data) {
-  await set(ref(db, `tempMails/${id}`), data);
-}
+async function saveTempMailToDb(id, data) { await set(ref(db, `tempMails/${id}`), data); }
 async function getTempMailFromDb(id) {
   const snapshot = await get(child(ref(db), `tempMails/${id}`));
   return snapshot.exists() ? snapshot.val() : null;
@@ -274,19 +215,57 @@ async function getTempMailsFromDb() {
   const snapshot = await get(child(ref(db), `tempMails`));
   return snapshot.exists() ? snapshot.val() : {};
 }
-async function removeTempMailFromDb(id) {
-  await set(ref(db, `tempMails/${id}`), null);
+
+// ====== ONLINE TRACKING HELPERS ======
+async function getOnlineUsersFromDb() {
+  const snapshot = await get(child(ref(db), `onlineUsers`));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+async function saveOnlineUserToDb(username, data) { await set(ref(db, `onlineUsers/${username}`), data); }
+async function removeOnlineUserFromDb(username) { await set(ref(db, `onlineUsers/${username}`), null); }
+
+// ====== BONUS QUOTA EXPIRY ======
+async function checkAndExpireBonusQuota(username) {
+  try {
+    const userObj = await getUserFromDb(username);
+    if (!userObj) return null;
+    const now = Date.now();
+    let changed = false;
+
+    if (userObj.baseQuota === undefined) {
+      userObj.baseQuota = BASE_QUOTA;
+      changed = true;
+    }
+
+    if (userObj.bonusQuota > 0) {
+      const bonusGrantedAt = userObj.bonusGrantedAt || 0;
+      const lastBonusActivity = userObj.lastBonusActivity || bonusGrantedAt;
+
+      if (lastBonusActivity > 0 && (now - lastBonusActivity) >= BONUS_EXPIRY_MS) {
+        userObj.bonusQuota = 0;
+        userObj.bonusGrantedAt = 0;
+        userObj.lastBonusActivity = 0;
+        if (userObj.activatedEmails && userObj.activatedEmails.length > userObj.baseQuota) {
+          userObj.activatedEmails = userObj.activatedEmails.slice(0, userObj.baseQuota);
+        }
+        changed = true;
+        console.log(`[BONUS EXPIRED] User ${username} - bonus expired (2 hari)`);
+      }
+    }
+
+    if (changed) await saveUserToDb(username, userObj);
+    return userObj;
+  } catch (e) {
+    console.error('[BONUS EXPIRY] Error:', e.message);
+    return null;
+  }
 }
 
 // ====== GENERATE ORDER ID ======
 function generateOrderId(prefix = 'ORD') {
   const now = new Date();
-  const dateStr = now.getFullYear().toString() +
-    String(now.getMonth() + 1).padStart(2, '0') +
-    String(now.getDate()).padStart(2, '0');
-  const timeStr = String(now.getHours()).padStart(2, '0') +
-    String(now.getMinutes()).padStart(2, '0') +
-    String(now.getSeconds()).padStart(2, '0');
+  const dateStr = now.getFullYear().toString() + String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0');
+  const timeStr = String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0') + String(now.getSeconds()).padStart(2, '0');
   const random = Math.random().toString(36).substring(2, 6).toUpperCase();
   return `${prefix}-${dateStr}-${timeStr}-${random}`;
 }
@@ -296,13 +275,12 @@ async function refillQuotaIfNeeded(username, quotaEntry) {
   try {
     const userObj = await getUserFromDb(username);
     if (!userObj) return false;
-    
     if (userObj.activatedEmails && quotaEntry) {
       const idx = userObj.activatedEmails.indexOf(quotaEntry);
       if (idx > -1) {
         userObj.activatedEmails.splice(idx, 1);
         await saveUserToDb(username, userObj);
-        console.log(`[QUOTA REFILL] User ${username} - quota entry "${quotaEntry}" dikembalikan`);
+        console.log(`[QUOTA REFILL] User ${username} - "${quotaEntry}" dikembalikan`);
         return true;
       }
     }
@@ -317,18 +295,13 @@ async function initAdmin() {
   const adminData = await getUserFromDb('adminbaguss');
   if (!adminData) {
     await saveUserToDb('adminbaguss', {
-      password: 'baguss',
-      isAdmin: true,
-      activatedEmails: [],
-      bonusQuota: 0,
-      lastResetTime: Date.now(),
-      vipUntil: 0
+      password: 'baguss', isAdmin: true, activatedEmails: [], bonusQuota: 0,
+      baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0
     });
   }
 }
 initAdmin();
 
-// ====== INIT DEFAULT VIP SHOP ======
 async function initDefaultVipShop() {
   const shop = await getVipShopFromDb();
   if (Object.keys(shop).length === 0) {
@@ -337,14 +310,11 @@ async function initDefaultVipShop() {
       { id: 'vip_30d', name: 'VIP 30 Hari', price: 5000, days: 30, active: true, order: 2 },
       { id: 'vip_90d', name: 'VIP 90 Hari', price: 12000, days: 90, active: true, order: 3 }
     ];
-    for (const item of defaultItems) {
-      await saveVipShopToDb(item.id, item);
-    }
+    for (const item of defaultItems) await saveVipShopToDb(item.id, item);
   }
 }
 initDefaultVipShop();
 
-// ====== INIT DEFAULT APK MODS ======
 async function initDefaultApkMods() {
   const apks = await getApkModsFromDb();
   if (Object.keys(apks).length === 0) {
@@ -352,14 +322,26 @@ async function initDefaultApkMods() {
       { id: 'apk_netflix', name: 'Netflix Mod', link: 'https://example.com/netflix-mod.apk', description: 'Netflix Premium MOD APK', active: true, order: 1 },
       { id: 'apk_spotify', name: 'Spotify Mod', link: 'https://example.com/spotify-mod.apk', description: 'Spotify Premium MOD APK', active: true, order: 2 }
     ];
-    for (const apk of defaultApks) {
-      await saveApkModToDb(apk.id, apk);
-    }
+    for (const apk of defaultApks) await saveApkModToDb(apk.id, apk);
   }
 }
 initDefaultApkMods();
 
-// ====== ALOKASI QUOTA UNTUK SETIAP FITUR ======
+// ====== CLEANUP ONLINE USERS ======
+setInterval(async () => {
+  try {
+    const onlineUsers = await getOnlineUsersFromDb();
+    const now = Date.now();
+    for (const [username, data] of Object.entries(onlineUsers)) {
+      if (now - (data.lastSeen || 0) > ONLINE_TIMEOUT) {
+        await removeOnlineUserFromDb(username);
+        console.log(`[ONLINE CLEANUP] ${username} timeout`);
+      }
+    }
+  } catch (e) { console.error('[ONLINE CLEANUP]', e.message); }
+}, ONLINE_CLEANUP_INTERVAL);
+
+// ====== ALIGHT MOTION API ======
 const am = {
   async magiclink(email) {
     if (!email.includes("@") || !email.includes(".")) throw new Error("Invalid email.");
@@ -375,10 +357,7 @@ const am = {
   },
   async verif(email, url) {
     const { data } = await go.post('/api/alightmotion/v5/premium', {
-      body: {
-        email: email,
-        url: url
-      },
+      body: { email, url },
       headers: {
         'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36',
         'Content-Type': 'application/json',
@@ -393,7 +372,6 @@ const am = {
 function tempMailApiRequest(sessionState, path, params = {}) {
   const urlObj = new URL(`${TEMP_MAIL_BASE_URL}${path}`);
   Object.keys(params).forEach(key => urlObj.searchParams.append(key, params[key]));
-
   return new Promise((resolve, reject) => {
     const options = {
       hostname: urlObj.hostname,
@@ -407,12 +385,9 @@ function tempMailApiRequest(sessionState, path, params = {}) {
         'Cookie': sessionState.cookie
       }
     };
-
     const req = https.request(options, (res) => {
       let data = '';
-      if (res.headers['set-cookie']) {
-        sessionState.cookie = res.headers['set-cookie'].join('; ');
-      }
+      if (res.headers['set-cookie']) sessionState.cookie = res.headers['set-cookie'].join('; ');
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
         try { resolve(JSON.parse(data)); }
@@ -426,43 +401,25 @@ function tempMailApiRequest(sessionState, path, params = {}) {
 
 const tempMailSleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// Simple HTML parser without cheerio (to avoid dependency)
 function parseEmailContent(htmlString) {
   if (!htmlString) return { clean_text: "", links: [] };
-
   const links = [];
   const linkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>/gi;
   let match;
   while ((match = linkRegex.exec(htmlString)) !== null) {
     const href = match[1];
-    if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
-      links.push(href);
-    }
+    if (href && (href.startsWith('http://') || href.startsWith('https://'))) links.push(href);
   }
-
-  // Remove script and style tags
   let cleanHtml = htmlString.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
   cleanHtml = cleanHtml.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
-  // Remove all HTML tags
   let cleanText = cleanHtml.replace(/<[^>]+>/g, ' ');
-  // Decode common entities
-  cleanText = cleanText.replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
-  // Normalize whitespace
+  cleanText = cleanText.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
   cleanText = cleanText.replace(/\n\s*\n/g, '\n').replace(/\s+/g, ' ').trim();
-
   return { clean_text: cleanText, links: links };
 }
 
 async function generateTempMail(sessionState) {
-  const addrRes = await tempMailApiRequest(sessionState, '/api/mail/address', {
-    refresh: 'true', expire: '1440', part: 'main'
-  });
-
+  const addrRes = await tempMailApiRequest(sessionState, '/api/mail/address', { refresh: 'true', expire: '1440', part: 'main' });
   if (!addrRes.address) throw new Error("Gagal generate email temporary");
   sessionState.currentEmail = addrRes.address;
   return addrRes.address;
@@ -471,92 +428,37 @@ async function generateTempMail(sessionState) {
 async function checkTempMailInbox(sessionState, maxRetries = TEMP_MAIL_MAX_RETRIES) {
   for (let i = 1; i <= maxRetries; i++) {
     await tempMailSleep(TEMP_MAIL_RETRY_DELAY);
-
     const inboxRes = await tempMailApiRequest(sessionState, '/api/mail/list', { part: 'main' });
     const messages = inboxRes.message || [];
-
     if (messages.length > 0) {
       const detailedMessages = messages.map(msg => {
         const parsed = parseEmailContent(msg.content);
-
-        return {
-          id: msg.id,
-          from: msg.fromName || msg.fromAddress,
-          fromAddress: msg.fromAddress,
-          subject: msg.subject,
-          date: msg.date,
-          preview: msg.preview,
-          clean_content: parsed.clean_text,
-          extracted_links: parsed.links
-        };
+        return { id: msg.id, from: msg.fromName || msg.fromAddress, fromAddress: msg.fromAddress, subject: msg.subject, date: msg.date, preview: msg.preview, clean_content: parsed.clean_text, extracted_links: parsed.links };
       });
-
-      return {
-        status: "success",
-        email: sessionState.currentEmail,
-        message_count: detailedMessages.length,
-        messages: detailedMessages
-      };
+      return { status: "success", email: sessionState.currentEmail, message_count: detailedMessages.length, messages: detailedMessages };
     }
   }
-
-  return {
-    status: "empty",
-    email: sessionState.currentEmail,
-    message_count: 0,
-    messages: []
-  };
+  return { status: "empty", email: sessionState.currentEmail, message_count: 0, messages: [] };
 }
 
 async function quickCheckTempMailInbox(sessionState) {
   const inboxRes = await tempMailApiRequest(sessionState, '/api/mail/list', { part: 'main' });
   const messages = inboxRes.message || [];
-
   if (messages.length > 0) {
     const detailedMessages = messages.map(msg => {
       const parsed = parseEmailContent(msg.content);
-
-      return {
-        id: msg.id,
-        from: msg.fromName || msg.fromAddress,
-        fromAddress: msg.fromAddress,
-        subject: msg.subject,
-        date: msg.date,
-        preview: msg.preview,
-        clean_content: parsed.clean_text,
-        extracted_links: parsed.links
-      };
+      return { id: msg.id, from: msg.fromName || msg.fromAddress, fromAddress: msg.fromAddress, subject: msg.subject, date: msg.date, preview: msg.preview, clean_content: parsed.clean_text, extracted_links: parsed.links };
     });
-
-    return {
-      status: "success",
-      email: sessionState.currentEmail,
-      message_count: detailedMessages.length,
-      messages: detailedMessages
-    };
+    return { status: "success", email: sessionState.currentEmail, message_count: detailedMessages.length, messages: detailedMessages };
   }
-
-  return {
-    status: "empty",
-    email: sessionState.currentEmail,
-    message_count: 0,
-    messages: []
-  };
+  return { status: "empty", email: sessionState.currentEmail, message_count: 0, messages: [] };
 }
 
-// ====== NETFLIX GENERATOR FUNCTIONS ======
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
+// ====== NETFLIX ======
 function TestProxy(proxy) {
   return new Promise((resolve) => {
     const [proxyHost, proxyPort] = proxy.split(':');
-    const opts = {
-      host: proxyHost,
-      port: parseInt(proxyPort),
-      method: 'CONNECT',
-      path: `${proxyHost}:443`,
-      timeout: 4000,
-    };
+    const opts = { host: proxyHost, port: parseInt(proxyPort), method: 'CONNECT', path: `${proxyHost}:443`, timeout: 4000 };
     const req = http.request(opts);
     req.on('connect', (res, socket) => {
       if (res.statusCode === 200) {
@@ -578,10 +480,9 @@ async function getHttpProxies() {
     const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
     if (!r.ok) throw new Error(`Status ${r.status}`);
     const data = await r.json();
-    const proxies = data.data.filter(p => p.protocol === 'http').map(p => `${p.ip}:${p.port}`).filter(p => /^\d+\.\d+\.\d+\.\d+:\d+$/.test(p));
-    return proxies;
+    return data.data.filter(p => p.protocol === 'http').map(p => `${p.ip}:${p.port}`).filter(p => /^\d+\.\d+\.\d+\.\d+:\d+$/.test(p));
   } catch (e) {
-    console.error('Failed to fetch proxies:', e.message);
+    console.error('Failed proxies:', e.message);
     return [];
   }
 }
@@ -591,87 +492,44 @@ async function findWorkingProxies(proxyList, count) {
   const batchSize = Math.min(shuffled.length, 500);
   const batch = shuffled.slice(0, batchSize);
   const results = await Promise.allSettled(batch.map(p => TestProxy(p)));
-  const working = results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
-  return working;
+  return results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
 }
 
 async function generateNetflixToken(plan, proxy) {
   try {
-    const sessionRes = await fetch(`${NETFLIX_BASE}/api/session`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
-    
-    if (!sessionRes.ok) {
-      throw new Error('Failed to create session');
-    }
-    
+    const sessionRes = await fetch(`${NETFLIX_BASE}/api/session`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    if (!sessionRes.ok) throw new Error('Failed to create session');
     const sessionData = await sessionRes.json();
-    if (!sessionData.success) {
-      throw new Error(sessionData.error || 'Session failed');
-    }
-    
+    if (!sessionData.success) throw new Error(sessionData.error || 'Session failed');
     const tokenRes = await fetch(`${NETFLIX_BASE}/api/random`, {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'X-NFToken-Session': sessionData.token
-      },
+      headers: { 'Content-Type': 'application/json', 'X-NFToken-Session': sessionData.token },
       body: JSON.stringify({ plan })
     });
-    
     const tokenData = await tokenRes.json();
-    
     if (tokenData.success && tokenData.url) {
-      return {
-        success: true,
-        plan: tokenData.plan || plan,
-        quality: tokenData.quality || 'HD',
-        country: tokenData.country || 'US',
-        url: tokenData.url,
-        expires: tokenData.expires || null,
-        pool: tokenData.pool || null
-      };
+      return { success: true, plan: tokenData.plan || plan, quality: tokenData.quality || 'HD', country: tokenData.country || 'US', url: tokenData.url, expires: tokenData.expires || null, pool: tokenData.pool || null };
     }
-    
     if (tokenData.powChallenge) {
       const enc = new TextEncoder();
       let proof = null;
       for (let n = 0; n < 2000000; n++) {
         const h = await crypto.subtle.digest('SHA-256', enc.encode(tokenData.powChallenge + n));
         const hex = Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, '0')).join('');
-        if (hex.startsWith('0000')) {
-          proof = tokenData.powChallenge + ':' + n;
-          break;
-        }
+        if (hex.startsWith('0000')) { proof = tokenData.powChallenge + ':' + n; break; }
       }
-      
       if (proof) {
         const retryRes = await fetch(`${NETFLIX_BASE}/api/random`, {
           method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'X-NFToken-Session': sessionData.token,
-            'X-PoW-Proof': proof
-          },
+          headers: { 'Content-Type': 'application/json', 'X-NFToken-Session': sessionData.token, 'X-PoW-Proof': proof },
           body: JSON.stringify({ plan })
         });
-        
         const retryData = await retryRes.json();
         if (retryData.success && retryData.url) {
-          return {
-            success: true,
-            plan: retryData.plan || plan,
-            quality: retryData.quality || 'HD',
-            country: retryData.country || 'US',
-            url: retryData.url,
-            expires: retryData.expires || null,
-            pool: retryData.pool || null
-          };
+          return { success: true, plan: retryData.plan || plan, quality: retryData.quality || 'HD', country: retryData.country || 'US', url: retryData.url, expires: retryData.expires || null, pool: retryData.pool || null };
         }
       }
     }
-    
     return { success: false, error: tokenData.error || 'Unknown error' };
   } catch (e) {
     return { success: false, error: e.message };
@@ -688,2333 +546,914 @@ const htmlTemplate = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>AM Premium • Banggus</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg-primary: #07040f;
-    --bg-secondary: #0f0a1e;
-    --purple: #a855f7;
-    --purple-dark: #7e22ce;
-    --cyan: #06b6d4;
-    --emerald: #10b981;
-    --rose: #f43f5e;
-    --amber: #f59e0b;
-    --netflix-red: #e50914;
-    --apk-green: #22c55e;
-    --mail-blue: #3b82f6;
-  }
-  * { -webkit-tap-highlight-color: transparent; }
-  html, body {
-    width: 100%; max-width: 100%; overflow-x: hidden; margin: 0; padding: 0;
-    background: var(--bg-primary);
-    color: #e2e8f0;
-    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-  }
-  body::before {
-    content: '';
-    position: fixed; inset: 0;
-    background:
-      radial-gradient(ellipse at 20% 0%, rgba(168,85,247,0.15) 0%, transparent 50%),
-      radial-gradient(ellipse at 80% 100%, rgba(6,182,212,0.12) 0%, transparent 50%),
-      radial-gradient(ellipse at 50% 50%, rgba(126,34,206,0.05) 0%, transparent 70%);
-    pointer-events: none; z-index: 0;
-  }
-  .mono { font-family: 'JetBrains Mono', monospace; }
-  
-  .phone-wrapper {
-    width: 100%; max-width: 540px; margin: 0 auto;
-    min-height: 100vh; display: flex; flex-direction: column;
-    padding: 1rem; position: relative; z-index: 1; box-sizing: border-box;
-  }
-
-  .glass-panel {
-    background: linear-gradient(145deg, rgba(20,14,38,0.85), rgba(12,8,24,0.75));
-    backdrop-filter: blur(24px) saturate(140%);
-    -webkit-backdrop-filter: blur(24px) saturate(140%);
-    border: 1px solid rgba(168,85,247,0.18);
-    box-shadow: 0 20px 60px -20px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.04);
-    border-radius: 1.5rem;
-    padding: 1.5rem;
-    position: relative;
-  }
-  .glass-panel::before {
-    content: '';
-    position: absolute; inset: 0;
-    border-radius: inherit;
-    padding: 1px;
-    background: linear-gradient(135deg, rgba(168,85,247,0.4), transparent 40%, transparent 60%, rgba(6,182,212,0.3));
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    pointer-events: none;
-  }
-
-  .input-glow {
-    background: rgba(7,4,15,0.85);
-    border: 1.5px solid rgba(168,85,247,0.18);
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    border-radius: 1rem;
-    padding: 0.85rem 1.15rem;
-    font-size: 0.92rem;
-    color: #e2e8f0;
-    width: 100%;
-    box-sizing: border-box;
-  }
-  .input-glow:focus {
-    border-color: rgba(168,85,247,0.8);
-    box-shadow: 0 0 0 4px rgba(168,85,247,0.12), 0 0 30px rgba(168,85,247,0.2);
-    outline: none;
-    background: rgba(7,4,15,0.95);
-  }
-  .input-glow::placeholder { color: #4b5563; }
-
-  .btn-primary {
-    background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);
-    box-shadow: 0 12px 30px -10px rgba(168,85,247,0.6), inset 0 1px 0 rgba(255,255,255,0.2);
-    transition: all 0.25s ease;
-    border-radius: 1rem;
-    padding: 0.95rem 1rem;
-    font-weight: 700;
-    color: white;
-    width: 100%;
-    border: none;
-    cursor: pointer;
-    font-size: 0.92rem;
-    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
-  }
-  .btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(168,85,247,0.8); }
-  .btn-primary:active:not(:disabled) { transform: translateY(0); }
-  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
-
-  .btn-netflix {
-    background: linear-gradient(135deg, #e50914 0%, #b20710 100%);
-    box-shadow: 0 12px 30px -10px rgba(229,9,20,0.6), inset 0 1px 0 rgba(255,255,255,0.2);
-    transition: all 0.25s ease;
-    border-radius: 1rem;
-    padding: 0.95rem 1rem;
-    font-weight: 700;
-    color: white;
-    width: 100%;
-    border: none;
-    cursor: pointer;
-    font-size: 0.92rem;
-    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
-  }
-  .btn-netflix:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(229,9,20,0.8); }
-  .btn-netflix:disabled { opacity: 0.6; cursor: not-allowed; }
-
-  .btn-apk {
-    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-    box-shadow: 0 12px 30px -10px rgba(34,197,94,0.6), inset 0 1px 0 rgba(255,255,255,0.2);
-    transition: all 0.25s ease;
-    border-radius: 1rem;
-    padding: 0.95rem 1rem;
-    font-weight: 700;
-    color: white;
-    width: 100%;
-    border: none;
-    cursor: pointer;
-    font-size: 0.92rem;
-    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
-  }
-  .btn-apk:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(34,197,94,0.8); }
-  .btn-apk:disabled { opacity: 0.6; cursor: not-allowed; }
-
-  .btn-mail {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-    box-shadow: 0 12px 30px -10px rgba(59,130,246,0.6), inset 0 1px 0 rgba(255,255,255,0.2);
-    transition: all 0.25s ease;
-    border-radius: 1rem;
-    padding: 0.95rem 1rem;
-    font-weight: 700;
-    color: white;
-    width: 100%;
-    border: none;
-    cursor: pointer;
-    font-size: 0.92rem;
-    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
-  }
-  .btn-mail:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(59,130,246,0.8); }
-  .btn-mail:disabled { opacity: 0.6; cursor: not-allowed; }
-
-  .btn-success {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    box-shadow: 0 12px 30px -10px rgba(16,185,129,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
-    border-radius: 1rem; padding: 0.95rem 1rem;
-    font-weight: 700; color: #031a12; width: 100%; border: none;
-    cursor: pointer; font-size: 0.92rem;
-    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
-    transition: all 0.25s ease;
-  }
-  .btn-success:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(16,185,129,0.7); }
-
-  .btn-danger {
-    background: linear-gradient(135deg, #f43f5e 0%, #dc2626 100%);
-    box-shadow: 0 12px 30px -10px rgba(244,63,94,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
-    border-radius: 1rem; padding: 0.95rem 1rem;
-    font-weight: 700; color: white; width: 100%; border: none;
-    cursor: pointer; font-size: 0.92rem;
-    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
-    transition: all 0.25s ease;
-  }
-  .btn-danger:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 40px -10px rgba(244,63,94,0.7); }
-
-  .btn-secondary {
-    background: rgba(168,85,247,0.1);
-    border: 1px solid rgba(168,85,247,0.25);
-    color: #c4b5fd;
-    border-radius: 0.85rem; padding: 0.65rem 1rem;
-    font-weight: 600; font-size: 0.82rem;
-    cursor: pointer; transition: all 0.2s;
-    display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
-  }
-  .btn-secondary:hover { background: rgba(168,85,247,0.2); border-color: rgba(168,85,247,0.5); }
-
-  #nav-drawer {
-    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-    transform: translateX(105%);
-    width: 85%; max-width: 340px;
-    padding: 1.5rem;
-    background: linear-gradient(180deg, rgba(15,10,30,0.98), rgba(7,4,15,0.99));
-    backdrop-filter: blur(30px);
-    border-left: 1px solid rgba(168,85,247,0.2);
-    overflow-y: auto;
-  }
-  #nav-drawer.open { transform: translateX(0); }
-
-  .nav-item {
-    width: 100%; display: flex; align-items: center; gap: 0.85rem;
-    padding: 0.85rem 1rem; border-radius: 0.9rem;
-    color: #94a3b8; font-weight: 600; font-size: 0.88rem;
-    transition: all 0.2s; text-align: left; background: transparent;
-    border: 1px solid transparent; cursor: pointer;
-  }
-  .nav-item:hover {
-    background: rgba(168,85,247,0.08);
-    color: #c4b5fd;
-    border-color: rgba(168,85,247,0.15);
-  }
-  .nav-item.active {
-    background: linear-gradient(135deg, rgba(168,85,247,0.18), rgba(126,34,206,0.1));
-    color: #e9d5ff;
-    border-color: rgba(168,85,247,0.35);
-  }
-  .nav-item.netflix-nav.active {
-    background: linear-gradient(135deg, rgba(229,9,20,0.2), rgba(178,7,16,0.1));
-    color: #fca5a5;
-    border-color: rgba(229,9,20,0.4);
-  }
-  .nav-item.apk-nav.active {
-    background: linear-gradient(135deg, rgba(34,197,94,0.2), rgba(22,163,74,0.1));
-    color: #86efac;
-    border-color: rgba(34,197,94,0.4);
-  }
-  .nav-item.mail-nav.active {
-    background: linear-gradient(135deg, rgba(59,130,246,0.2), rgba(37,99,235,0.1));
-    color: #93c5fd;
-    border-color: rgba(59,130,246,0.4);
-  }
-  .nav-item.orders-nav.active {
-    background: linear-gradient(135deg, rgba(6,182,212,0.2), rgba(8,145,178,0.1));
-    color: #67e8f9;
-    border-color: rgba(6,182,212,0.4);
-  }
-
-  @keyframes pulse-glow {
-    0%, 100% { opacity: 0.4; transform: scale(1); }
-    50% { opacity: 0.8; transform: scale(1.05); }
-  }
-  @keyframes slide-up {
-    from { opacity: 0; transform: translateY(12px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
-  }
-  @keyframes pulse-ring {
-    0% { transform: scale(0.95); opacity: 1; }
-    100% { transform: scale(1.3); opacity: 0; }
-  }
-  .animate-slide-up { animation: slide-up 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
-  .pulse-ring { animation: pulse-ring 1.5s ease-out infinite; }
-  
-  .toast {
-    position: fixed; top: 1.25rem; left: 50%; transform: translateX(-50%) translateY(-120%);
-    padding: 0.85rem 1.25rem; border-radius: 1rem;
-    font-weight: 600; font-size: 0.85rem;
-    z-index: 9999; transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    max-width: 90%; display: flex; align-items: center; gap: 0.6rem;
-    box-shadow: 0 20px 40px -10px rgba(0,0,0,0.7);
-    backdrop-filter: blur(20px);
-  }
-  .toast.show { transform: translateX(-50%) translateY(0); }
-  .toast-success { background: rgba(16,185,129,0.95); color: #031a12; }
-  .toast-error { background: rgba(244,63,94,0.95); color: white; }
-  .toast-info { background: rgba(168,85,247,0.95); color: white; }
-  .toast-netflix { background: rgba(229,9,20,0.95); color: white; }
-  .toast-apk { background: rgba(34,197,94,0.95); color: white; }
-  .toast-mail { background: rgba(59,130,246,0.95); color: white; }
-  .toast-order { background: rgba(6,182,212,0.95); color: white; }
-
-  .progress-bar {
-    width: 100%; height: 8px; background: rgba(168,85,247,0.1);
-    border-radius: 999px; overflow: hidden; position: relative;
-  }
-  .progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #a855f7, #06b6d4, #a855f7);
-    background-size: 200% 100%;
-    animation: shimmer 2s linear infinite;
-    border-radius: 999px;
-    transition: width 0.3s ease;
-    width: 0%;
-  }
-
-  .badge {
-    display: inline-flex; align-items: center; gap: 0.35rem;
-    padding: 0.3rem 0.7rem; border-radius: 999px;
-    font-size: 0.7rem; font-weight: 700;
-    border: 1px solid;
-  }
-  .badge-online { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.35); color: #6ee7b7; }
-  .badge-offline { background: rgba(244,63,94,0.12); border-color: rgba(244,63,94,0.35); color: #fda4af; }
-  .badge-admin { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.4); color: #fbbf24; }
-  .badge-vip { background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.4); color: #d8b4fe; }
-  .badge-user { background: rgba(148,163,184,0.1); border-color: rgba(148,163,184,0.3); color: #cbd5e1; }
-  .badge-netflix { background: rgba(229,9,20,0.15); border-color: rgba(229,9,20,0.4); color: #fca5a5; }
-  .badge-apk { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.4); color: #86efac; }
-  .badge-mail { background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.4); color: #93c5fd; }
-  .badge-order { background: rgba(6,182,212,0.15); border-color: rgba(6,182,212,0.4); color: #67e8f9; }
-
-  .divider {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(168,85,247,0.25), transparent);
-    margin: 0.75rem 0;
-  }
-
-  .section-title {
-    font-size: 0.72rem; font-weight: 800;
-    text-transform: uppercase; letter-spacing: 0.1em;
-    color: #a78bfa; margin-bottom: 0.6rem;
-    display: flex; align-items: center; gap: 0.4rem;
-  }
-
-  .stat-card {
-    background: rgba(7,4,15,0.6);
-    border: 1px solid rgba(168,85,247,0.15);
-    border-radius: 1rem; padding: 0.85rem 1rem;
-    display: flex; align-items: center; justify-content: space-between;
-  }
-
-  .file-drop {
-    border: 2px dashed rgba(168,85,247,0.3);
-    border-radius: 1rem; padding: 1.5rem 1rem;
-    text-align: center; transition: all 0.25s;
-    cursor: pointer; background: rgba(7,4,15,0.4);
-  }
-  .file-drop:hover, .file-drop.dragover {
-    border-color: rgba(168,85,247,0.7);
-    background: rgba(168,85,247,0.08);
-  }
-
-  .video-container {
-    width: 100%; height: 180px; border-radius: 1.25rem;
-    overflow: hidden; position: relative;
-    border: 1px solid rgba(168,85,247,0.3);
-    box-shadow: 0 0 40px rgba(168,85,247,0.15);
-    background: black;
-  }
-  .video-container video { width: 100%; height: 100%; object-fit: cover; }
-
-  .icon-btn {
-    width: 2.75rem; height: 2.75rem;
-    display: flex; align-items: center; justify-content: center;
-    border-radius: 0.85rem;
-    background: rgba(15,10,30,0.9);
-    border: 1px solid rgba(168,85,247,0.25);
-    color: #c4b5fd; cursor: pointer;
-    transition: all 0.25s ease;
-  }
-  .icon-btn:hover {
-    border-color: rgba(168,85,247,0.6);
-    color: white;
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px -5px rgba(168,85,247,0.4);
-  }
-
-  .countdown-box {
-    background: rgba(7,4,15,0.6);
-    border: 1px solid rgba(244,63,94,0.25);
-    border-radius: 0.75rem;
-    padding: 0.5rem;
-    text-align: center;
-  }
-  .countdown-num {
-    font-size: 1.15rem; font-weight: 800;
-    color: white; font-family: 'JetBrains Mono', monospace;
-    line-height: 1;
-  }
-  .countdown-label {
-    font-size: 0.6rem; color: #94a3b8;
-    text-transform: uppercase; font-weight: 700;
-    margin-top: 0.25rem;
-    letter-spacing: 0.05em;
-  }
-
-  .chat-container {
-    display: flex; flex-direction: column;
-    height: 420px;
-    background: rgba(7,4,15,0.5);
-    border-radius: 1rem;
-    border: 1px solid rgba(168,85,247,0.15);
-    overflow: hidden;
-  }
-  .chat-messages {
-    flex: 1; overflow-y: auto;
-    padding: 0.85rem;
-    display: flex; flex-direction: column;
-    gap: 0.6rem;
-  }
-  .chat-bubble {
-    max-width: 85%;
-    padding: 0.6rem 0.85rem;
-    border-radius: 1rem;
-    font-size: 0.82rem;
-    line-height: 1.4;
-    word-wrap: break-word;
-    animation: slide-up 0.3s ease;
-  }
-  .chat-bubble-other {
-    align-self: flex-start;
-    background: rgba(30,20,55,0.9);
-    border: 1px solid rgba(168,85,247,0.2);
-    color: #e2e8f0;
-    border-bottom-left-radius: 0.25rem;
-  }
-  .chat-bubble-me {
-    align-self: flex-end;
-    background: linear-gradient(135deg, #a855f7, #7e22ce);
-    color: white;
-    border-bottom-right-radius: 0.25rem;
-    box-shadow: 0 4px 15px -5px rgba(168,85,247,0.5);
-  }
-  .chat-bubble-admin {
-    border: 1px solid rgba(245,158,11,0.5);
-  }
-  .chat-bubble-vip {
-    border: 1px solid rgba(168,85,247,0.5);
-  }
-  .chat-meta {
-    font-size: 0.65rem;
-    opacity: 0.7;
-    margin-bottom: 0.25rem;
-    display: flex; align-items: center; gap: 0.35rem;
-    font-weight: 700;
-  }
-  .chat-input-row {
-    display: flex; gap: 0.5rem;
-    padding: 0.65rem;
-    border-top: 1px solid rgba(168,85,247,0.15);
-    background: rgba(7,4,15,0.7);
-  }
-  .chat-input-row input {
-    flex: 1;
-    background: rgba(30,20,55,0.6);
-    border: 1px solid rgba(168,85,247,0.2);
-    border-radius: 0.75rem;
-    padding: 0.6rem 0.85rem;
-    font-size: 0.85rem;
-    color: #e2e8f0;
-    outline: none;
-  }
-  .chat-input-row input:focus {
-    border-color: rgba(168,85,247,0.6);
-  }
-  .chat-input-row button {
-    background: linear-gradient(135deg, #a855f7, #7e22ce);
-    border: none;
-    border-radius: 0.75rem;
-    padding: 0.6rem 1rem;
-    color: white;
-    font-weight: 700;
-    cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    transition: all 0.2s;
-  }
-  .chat-input-row button:hover { transform: translateY(-1px); box-shadow: 0 8px 20px -5px rgba(168,85,247,0.5); }
-
-  .chat-timestamp {
-    font-size: 0.6rem;
-    opacity: 0.55;
-    margin-top: 0.2rem;
-  }
-
-  .vip-account-card {
-    background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(168,85,247,0.06));
-    border: 1px solid rgba(245,158,11,0.3);
-    border-radius: 1rem;
-    padding: 0.85rem;
-    animation: slide-up 0.3s ease;
-  }
-
-  .delete-btn {
-    background: rgba(244,63,94,0.15);
-    border: 1px solid rgba(244,63,94,0.3);
-    color: #fda4af;
-    border-radius: 0.6rem;
-    padding: 0.35rem 0.7rem;
-    font-size: 0.7rem;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  .delete-btn:hover {
-    background: rgba(244,63,94,0.3);
-    border-color: rgba(244,63,94,0.6);
-  }
-
-  .redeem-card {
-    background: linear-gradient(135deg, rgba(6,182,212,0.08), rgba(168,85,247,0.06));
-    border: 1px solid rgba(6,182,212,0.3);
-    border-radius: 1rem;
-    padding: 0.85rem;
-    animation: slide-up 0.3s ease;
-  }
-
-  .feature-request-card {
-    background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(6,182,212,0.06));
-    border: 1px solid rgba(16,185,129,0.3);
-    border-radius: 1rem;
-    padding: 0.85rem;
-    animation: slide-up 0.3s ease;
-  }
-
-  .vip-shop-card {
-    background: linear-gradient(145deg, rgba(20,14,38,0.9), rgba(12,8,24,0.8));
-    border: 1px solid rgba(245,158,11,0.3);
-    border-radius: 1.25rem;
-    padding: 1.15rem;
-    animation: slide-up 0.4s ease;
-    position: relative;
-    overflow: hidden;
-    transition: all 0.3s ease;
-  }
-  .vip-shop-card:hover {
-    border-color: rgba(245,158,11,0.7);
-    transform: translateY(-3px);
-    box-shadow: 0 20px 40px -15px rgba(245,158,11,0.4);
-  }
-  .vip-shop-card::before {
-    content: '';
-    position: absolute; top: -50%; right: -50%;
-    width: 200%; height: 200%;
-    background: radial-gradient(circle, rgba(245,158,11,0.1) 0%, transparent 60%);
-    pointer-events: none;
-  }
-
-  .vip-benefit {
-    display: flex; align-items: flex-start; gap: 0.5rem;
-    font-size: 0.78rem; color: #cbd5e1;
-    margin-bottom: 0.4rem;
-  }
-  .vip-benefit-icon {
-    color: #fbbf24; flex-shrink: 0; margin-top: 0.1rem;
-  }
-
-  .dana-box {
-    background: linear-gradient(135deg, rgba(0,123,255,0.12), rgba(0,123,255,0.05));
-    border: 2px solid rgba(0,123,255,0.4);
-    border-radius: 1.25rem;
-    padding: 1.25rem;
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-  }
-  .dana-box::before {
-    content: '';
-    position: absolute; top: -50%; right: -50%;
-    width: 200%; height: 200%;
-    background: radial-gradient(circle, rgba(0,123,255,0.15) 0%, transparent 60%);
-    pointer-events: none;
-  }
-  .dana-logo {
-    width: 48px; height: 48px;
-    background: linear-gradient(135deg, #007BFF, #0056b3);
-    border-radius: 14px;
-    display: flex; align-items: center; justify-content: center;
-    margin: 0 auto 0.75rem;
-    font-weight: 900; color: white; font-size: 1.1rem;
-    box-shadow: 0 8px 25px -5px rgba(0,123,255,0.5);
-  }
-  .dana-number {
-    font-size: 1.6rem; font-weight: 900;
-    color: #4DA6FF;
-    font-family: 'JetBrains Mono', monospace;
-    letter-spacing: 0.05em;
-    text-shadow: 0 0 30px rgba(0,123,255,0.4);
-    margin: 0.5rem 0;
-  }
-  .copy-dana-btn {
-    background: rgba(0,123,255,0.2);
-    border: 1px solid rgba(0,123,255,0.5);
-    color: #4DA6FF;
-    border-radius: 0.75rem;
-    padding: 0.5rem 1.25rem;
-    font-weight: 700;
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: all 0.25s;
-    display: inline-flex; align-items: center; gap: 0.5rem;
-    margin-top: 0.5rem;
-  }
-  .copy-dana-btn:hover {
-    background: rgba(0,123,255,0.35);
-    border-color: rgba(0,123,255,0.8);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px -5px rgba(0,123,255,0.5);
-  }
-  .dana-steps {
-    text-align: left;
-    background: rgba(7,4,15,0.6);
-    border-radius: 1rem;
-    padding: 0.85rem 1rem;
-    margin-top: 1rem;
-    border: 1px solid rgba(0,123,255,0.15);
-  }
-  .dana-step {
-    display: flex; align-items: flex-start; gap: 0.6rem;
-    margin-bottom: 0.5rem;
-    font-size: 0.78rem;
-    color: #cbd5e1;
-  }
-  .dana-step:last-child { margin-bottom: 0; }
-  .dana-step-num {
-    width: 1.4rem; height: 1.4rem;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #007BFF, #0056b3);
-    color: white;
-    font-size: 0.7rem;
-    font-weight: 800;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-    margin-top: 0.05rem;
-  }
-
-  .payment-status-badge {
-    display: inline-flex; align-items: center; gap: 0.35rem;
-    padding: 0.4rem 0.85rem; border-radius: 999px;
-    font-size: 0.72rem; font-weight: 800;
-    text-transform: uppercase; letter-spacing: 0.05em;
-  }
-  .status-pending { background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.4); color: #fbbf24; }
-  .status-process { background: rgba(6,182,212,0.15); border: 1px solid rgba(6,182,212,0.4); color: #67e8f9; }
-  .status-success { background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.4); color: #6ee7b7; }
-  .status-failed { background: rgba(244,63,94,0.15); border: 1px solid rgba(244,63,94,0.4); color: #fda4af; }
-
-  .order-card {
-    background: linear-gradient(135deg, rgba(6,182,212,0.06), rgba(168,85,247,0.04));
-    border: 1px solid rgba(6,182,212,0.3);
-    border-radius: 1rem;
-    padding: 1rem;
-    animation: slide-up 0.3s ease;
-    transition: all 0.2s;
-  }
-  .order-card:hover {
-    border-color: rgba(6,182,212,0.6);
-    box-shadow: 0 8px 25px -8px rgba(6,182,212,0.4);
-  }
-  .order-id {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.8rem;
-    font-weight: 800;
-    color: #67e8f9;
-    background: rgba(6,182,212,0.1);
-    padding: 0.2rem 0.6rem;
-    border-radius: 0.5rem;
-    display: inline-block;
-  }
-
-  /* NETFLIX STYLES */
-  .netflix-card {
-    background: linear-gradient(135deg, rgba(229,9,20,0.12), rgba(178,7,16,0.06));
-    border: 1px solid rgba(229,9,20,0.35);
-    border-radius: 1.25rem;
-    padding: 1rem;
-    animation: slide-up 0.3s ease;
-  }
-  .netflix-logo {
-    width: 42px; height: 42px;
-    background: linear-gradient(135deg, #e50914, #b20710);
-    border-radius: 12px;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 900; color: white; font-size: 1rem;
-    box-shadow: 0 8px 25px -5px rgba(229,9,20,0.5);
-  }
-  .netflix-result {
-    background: rgba(7,4,15,0.7);
-    border: 1px solid rgba(229,9,20,0.25);
-    border-radius: 1rem;
-    padding: 1rem;
-    margin-top: 0.75rem;
-    animation: slide-up 0.3s ease;
-  }
-  .netflix-result .label {
-    font-size: 0.65rem;
-    color: #94a3b8;
-    text-transform: uppercase;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-  }
-  .netflix-result .value {
-    font-size: 0.85rem;
-    color: #e2e8f0;
-    font-weight: 600;
-  }
-  .netflix-result .link-box {
-    background: rgba(229,9,20,0.1);
-    border: 1px solid rgba(229,9,20,0.3);
-    border-radius: 0.75rem;
-    padding: 0.75rem;
-    margin-top: 0.5rem;
-    word-break: break-all;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    color: #fca5a5;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  .netflix-result .link-box:hover {
-    background: rgba(229,9,20,0.2);
-    border-color: rgba(229,9,20,0.6);
-  }
-  .plan-option {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 1rem;
-    border-radius: 0.9rem;
-    border: 1px solid rgba(148,163,184,0.2);
-    background: rgba(7,4,15,0.5);
-    cursor: pointer;
-    transition: all 0.2s;
-    margin-bottom: 0.5rem;
-  }
-  .plan-option:hover {
-    border-color: rgba(229,9,20,0.5);
-    background: rgba(229,9,20,0.08);
-  }
-  .plan-option.selected {
-    border-color: rgba(229,9,20,0.8);
-    background: rgba(229,9,20,0.15);
-  }
-  .plan-option .plan-name {
-    font-weight: 700;
-    font-size: 0.85rem;
-    color: #e2e8f0;
-  }
-  .plan-option .plan-price {
-    font-size: 0.75rem;
-    color: #fca5a5;
-    font-weight: 700;
-  }
-
-  /* APK MOD STYLES */
-  .apk-card {
-    background: linear-gradient(135deg, rgba(34,197,94,0.12), rgba(22,163,74,0.06));
-    border: 1px solid rgba(34,197,94,0.35);
-    border-radius: 1.25rem;
-    padding: 1rem;
-    animation: slide-up 0.3s ease;
-  }
-  .apk-logo {
-    width: 42px; height: 42px;
-    background: linear-gradient(135deg, #22c55e, #16a34a);
-    border-radius: 12px;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 900; color: white; font-size: 1rem;
-    box-shadow: 0 8px 25px -5px rgba(34,197,94,0.5);
-  }
-  .apk-result {
-    background: rgba(7,4,15,0.7);
-    border: 1px solid rgba(34,197,94,0.25);
-    border-radius: 1rem;
-    padding: 1rem;
-    margin-top: 0.75rem;
-    animation: slide-up 0.3s ease;
-  }
-  .apk-result .label {
-    font-size: 0.65rem;
-    color: #94a3b8;
-    text-transform: uppercase;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-  }
-  .apk-result .value {
-    font-size: 0.85rem;
-    color: #e2e8f0;
-    font-weight: 600;
-  }
-  .apk-result .link-box {
-    background: rgba(34,197,94,0.1);
-    border: 1px solid rgba(34,197,94,0.3);
-    border-radius: 0.75rem;
-    padding: 0.75rem;
-    margin-top: 0.5rem;
-    word-break: break-all;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    color: #86efac;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  .apk-result .link-box:hover {
-    background: rgba(34,197,94,0.2);
-    border-color: rgba(34,197,94,0.6);
-  }
-  .apk-option {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 1rem;
-    border-radius: 0.9rem;
-    border: 1px solid rgba(148,163,184,0.2);
-    background: rgba(7,4,15,0.5);
-    cursor: pointer;
-    transition: all 0.2s;
-    margin-bottom: 0.5rem;
-  }
-  .apk-option:hover {
-    border-color: rgba(34,197,94,0.5);
-    background: rgba(34,197,94,0.08);
-  }
-  .apk-option.selected {
-    border-color: rgba(34,197,94,0.8);
-    background: rgba(34,197,94,0.15);
-  }
-  .apk-option .apk-name {
-    font-weight: 700;
-    font-size: 0.85rem;
-    color: #e2e8f0;
-  }
-  .apk-option .apk-price {
-    font-size: 0.75rem;
-    color: #86efac;
-    font-weight: 700;
-  }
-
-  /* TEMP MAIL STYLES */
-  .mail-card {
-    background: linear-gradient(135deg, rgba(59,130,246,0.12), rgba(37,99,235,0.06));
-    border: 1px solid rgba(59,130,246,0.35);
-    border-radius: 1.25rem;
-    padding: 1rem;
-    animation: slide-up 0.3s ease;
-  }
-  .mail-logo {
-    width: 42px; height: 42px;
-    background: linear-gradient(135deg, #3b82f6, #2563eb);
-    border-radius: 12px;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 900; color: white; font-size: 1rem;
-    box-shadow: 0 8px 25px -5px rgba(59,130,246,0.5);
-  }
-  .mail-email-box {
-    background: rgba(7,4,15,0.7);
-    border: 1px solid rgba(59,130,246,0.3);
-    border-radius: 1rem;
-    padding: 1rem;
-    margin-top: 0.75rem;
-    text-align: center;
-    animation: slide-up 0.3s ease;
-  }
-  .mail-email-display {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.9rem;
-    font-weight: 700;
-    color: #93c5fd;
-    word-break: break-all;
-    margin: 0.5rem 0;
-    padding: 0.75rem;
-    background: rgba(59,130,246,0.1);
-    border-radius: 0.75rem;
-    border: 1px solid rgba(59,130,246,0.2);
-  }
-  .mail-message-card {
-    background: rgba(7,4,15,0.7);
-    border: 1px solid rgba(59,130,246,0.25);
-    border-radius: 1rem;
-    padding: 1rem;
-    margin-top: 0.75rem;
-    animation: slide-up 0.3s ease;
-  }
-  .mail-message-card .subject {
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: #93c5fd;
-    margin-bottom: 0.35rem;
-  }
-  .mail-message-card .from {
-    font-size: 0.72rem;
-    color: #94a3b8;
-    margin-bottom: 0.35rem;
-  }
-  .mail-message-card .preview {
-    font-size: 0.78rem;
-    color: #cbd5e1;
-    line-height: 1.4;
-  }
-  .mail-message-card .links {
-    margin-top: 0.6rem;
-    padding-top: 0.6rem;
-    border-top: 1px solid rgba(59,130,246,0.15);
-  }
-  .mail-link {
-    display: block;
-    font-size: 0.7rem;
-    font-family: 'JetBrains Mono', monospace;
-    color: #60a5fa;
-    word-break: break-all;
-    padding: 0.4rem 0.6rem;
-    background: rgba(59,130,246,0.08);
-    border-radius: 0.5rem;
-    margin-bottom: 0.35rem;
-    cursor: pointer;
-    transition: all 0.2s;
-    border: 1px solid rgba(59,130,246,0.15);
-  }
-  .mail-link:hover {
-    background: rgba(59,130,246,0.18);
-    border-color: rgba(59,130,246,0.4);
-  }
-
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: rgba(168,85,247,0.3); border-radius: 999px; }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(168,85,247,0.5); }
-
-  @media (max-width: 480px) {
-    .phone-wrapper { padding: 0.75rem; }
-    .glass-panel { padding: 1.15rem; border-radius: 1.25rem; }
-    .chat-container { height: 380px; }
-  }
+    --bg-0: #0a0a0f; --bg-1: #12121a; --bg-2: #1a1a24;
+    --line: #26262f; --line-2: #33333f;
+    --text-0: #f0f0f5; --text-1: #a8a8b8; --text-2: #6c6c7c;
+    --accent: #8b7cf6; --accent-2: #6d5ce6; --accent-soft: rgba(139,124,246,0.12);
+    --ok: #4ade80; --ok-soft: rgba(74,222,128,0.12);
+    --warn: #fbbf24; --warn-soft: rgba(251,191,36,0.12);
+    --err: #f87171; --err-soft: rgba(248,113,113,0.12);
+    --info: #60a5fa; --info-soft: rgba(96,165,250,0.12);
+    --netflix: #e50914; --apk: #4ade80; --mail: #60a5fa;
+  }
+  * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+  html, body { width:100%; max-width:100%; overflow-x:hidden; margin:0; padding:0; background:var(--bg-0); color:var(--text-0); font-family:'Inter',system-ui,sans-serif; font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  body { background-image: linear-gradient(rgba(139,124,246,0.015) 1px, transparent 1px), linear-gradient(90deg, rgba(139,124,246,0.015) 1px, transparent 1px); background-size: 32px 32px; min-height:100vh; }
+  .mono { font-family:'IBM Plex Mono','Courier New',monospace; }
+  .display-font { font-family:'Space Grotesk',sans-serif; letter-spacing:-0.02em; }
+  .app-shell { width:100%; max-width:520px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; padding:12px; position:relative; }
+  .card { background:var(--bg-1); border:1px solid var(--line); border-radius:14px; padding:16px; position:relative; }
+  .card-elevated { background:linear-gradient(180deg,var(--bg-2) 0%,var(--bg-1) 100%); border:1px solid var(--line-2); border-radius:14px; padding:16px; }
+  .topbar { display:flex; align-items:center; justify-content:space-between; padding:4px 0 16px 0; }
+  .brand-mark { width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:18px; color:white; box-shadow:0 4px 14px rgba(109,92,230,0.35); }
+  .brand-text { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px; letter-spacing:-0.01em; }
+  .brand-sub { font-size:10px; color:var(--text-2); letter-spacing:0.08em; text-transform:uppercase; font-weight:600; margin-top:1px; }
+  .inp { width:100%; padding:11px 14px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; color:var(--text-0); font-size:13px; font-family:inherit; outline:none; transition:border-color 0.15s, box-shadow 0.15s; }
+  .inp:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .inp::placeholder { color:var(--text-2); }
+  .inp.mono { font-family:'IBM Plex Mono',monospace; font-size:12.5px; }
+  label.field-label { display:block; font-size:11px; font-weight:600; color:var(--text-1); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px; }
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:11px 16px; border-radius:10px; font-size:13px; font-weight:600; font-family:inherit; border:none; cursor:pointer; transition:transform 0.1s, box-shadow 0.15s, background 0.15s, border-color 0.15s; width:100%; color:white; background:var(--accent); }
+  .btn:hover:not(:disabled) { background:var(--accent-2); }
+  .btn:active:not(:disabled) { transform:translateY(1px); }
+  .btn:disabled { opacity:0.5; cursor:not-allowed; }
+  .btn-ghost { background:var(--bg-2); color:var(--text-0); border:1px solid var(--line-2); }
+  .btn-ghost:hover:not(:disabled) { background:var(--line); border-color:var(--line-2); }
+  .btn-sm { padding:7px 12px; font-size:12px; width:auto; border-radius:8px; }
+  .btn-xs { padding:5px 10px; font-size:11px; width:auto; border-radius:6px; font-weight:600; }
+  .btn-ok { background:var(--ok); color:#032a17; }
+  .btn-ok:hover:not(:disabled) { background:#3ecf70; }
+  .btn-err { background:var(--err); color:white; }
+  .btn-err:hover:not(:disabled) { background:#e85c5c; }
+  .btn-netflix { background:var(--netflix); }
+  .btn-netflix:hover:not(:disabled) { background:#c4070f; }
+  .btn-apk { background:var(--apk); color:#032a17; }
+  .btn-apk:hover:not(:disabled) { background:#3ecf70; }
+  .btn-mail { background:var(--mail); }
+  .btn-mail:hover:not(:disabled) { background:#4a90e2; }
+  .btn-warn { background:var(--warn); color:#3a2800; }
+  .btn-warn:hover:not(:disabled) { background:#e6ac1e; }
+  .btn-info { background:var(--info); }
+  .btn-info:hover:not(:disabled) { background:#4a90e2; }
+  .badge { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border-radius:6px; font-size:10.5px; font-weight:600; letter-spacing:0.02em; }
+  .badge-ok { background:var(--ok-soft); color:var(--ok); border:1px solid rgba(74,222,128,0.25); }
+  .badge-err { background:var(--err-soft); color:var(--err); border:1px solid rgba(248,113,113,0.25); }
+  .badge-warn { background:var(--warn-soft); color:var(--warn); border:1px solid rgba(251,191,36,0.25); }
+  .badge-info { background:var(--info-soft); color:var(--info); border:1px solid rgba(96,165,250,0.25); }
+  .badge-accent { background:var(--accent-soft); color:var(--accent); border:1px solid rgba(139,124,246,0.25); }
+  .badge-muted { background:var(--bg-2); color:var(--text-1); border:1px solid var(--line-2); }
+  #nav-drawer { position:fixed; top:0; bottom:0; right:0; width:86%; max-width:340px; background:var(--bg-1); border-left:1px solid var(--line-2); z-index:50; transform:translateX(105%); transition:transform 0.25s cubic-bezier(0.32,0.72,0,1); display:flex; flex-direction:column; padding:16px; overflow-y:auto; }
+  #nav-drawer.open { transform:translateX(0); }
+  .nav-link { display:flex; align-items:center; gap:10px; width:100%; padding:10px 12px; border-radius:9px; background:transparent; color:var(--text-1); font-size:13px; font-weight:500; border:1px solid transparent; cursor:pointer; text-align:left; font-family:inherit; transition:background 0.12s, color 0.12s, border-color 0.12s; }
+  .nav-link:hover { background:var(--bg-2); color:var(--text-0); }
+  .nav-link.active { background:var(--accent-soft); color:var(--accent); border-color:rgba(139,124,246,0.3); font-weight:600; }
+  .nav-link.netflix-nav.active { background:rgba(229,9,20,0.12); color:#ff6b6b; border-color:rgba(229,9,20,0.3); }
+  .nav-link.apk-nav.active { background:var(--ok-soft); color:var(--ok); border-color:rgba(74,222,128,0.3); }
+  .nav-link.mail-nav.active { background:var(--info-soft); color:var(--info); border-color:rgba(96,165,250,0.3); }
+  .nav-link.orders-nav.active { background:rgba(96,165,250,0.12); color:#7dd3fc; border-color:rgba(96,165,250,0.3); }
+  .nav-section-label { font-size:10px; font-weight:700; color:var(--text-2); text-transform:uppercase; letter-spacing:0.1em; padding:14px 12px 6px 12px; }
+  .stat { background:var(--bg-2); border:1px solid var(--line-2); border-radius:10px; padding:11px 13px; display:flex; align-items:center; justify-content:space-between; }
+  .stat-label { font-size:10px; color:var(--text-2); text-transform:uppercase; letter-spacing:0.06em; font-weight:700; }
+  .stat-value { font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:15px; margin-top:2px; color:var(--text-0); }
+  .divider { height:1px; background:var(--line); margin:14px 0; }
+  .section-head { display:flex; align-items:center; gap:7px; font-size:11px; font-weight:700; color:var(--text-1); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:9px; }
+  .toast { position:fixed; top:14px; left:50%; transform:translateX(-50%) translateY(-140%); padding:11px 16px; border-radius:10px; font-size:12.5px; font-weight:600; z-index:9999; transition:transform 0.28s cubic-bezier(0.32,0.72,0,1); display:flex; align-items:center; gap:8px; max-width:calc(100vw - 28px); box-shadow:0 10px 40px rgba(0,0,0,0.6); }
+  .toast.show { transform:translateX(-50%) translateY(0); }
+  .toast-success { background:#1a3a26; color:#a7f3c8; border:1px solid #2d5f3f; }
+  .toast-error { background:#3a1a1f; color:#fecaca; border:1px solid #5f2d33; }
+  .toast-info { background:#1f1a3a; color:#ddd6fe; border:1px solid #3d2f5f; }
+  .toast-netflix { background:#3a0a0c; color:#fecaca; border:1px solid #5f0a0d; }
+  .toast-apk { background:#1a3a26; color:#a7f3c8; border:1px solid #2d5f3f; }
+  .toast-mail { background:#0a1f3a; color:#bfdbfe; border:1px solid #0a3d5f; }
+  .toast-order { background:#0a2a3a; color:#bae6fd; border:1px solid #0a4a5f; }
+  .prog { height:6px; background:var(--bg-0); border-radius:999px; overflow:hidden; }
+  .prog-fill { height:100%; background:var(--accent); border-radius:999px; transition:width 0.25s; width:0%; }
+  .dropzone { border:1.5px dashed var(--line-2); border-radius:10px; padding:20px 12px; text-align:center; cursor:pointer; transition:border-color 0.15s, background 0.15s; }
+  .dropzone:hover, .dropzone.dragover { border-color:var(--accent); background:var(--accent-soft); }
+  .chat-wrap { height:400px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; display:flex; flex-direction:column; overflow:hidden; }
+  .chat-stream { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; }
+  .chat-msg { max-width:82%; padding:8px 11px; border-radius:10px; font-size:12.5px; line-height:1.45; word-wrap:break-word; animation:fadeUp 0.25s; }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+  .chat-msg-them { align-self:flex-start; background:var(--bg-2); border:1px solid var(--line-2); border-bottom-left-radius:3px; }
+  .chat-msg-me { align-self:flex-end; background:var(--accent); color:white; border-bottom-right-radius:3px; }
+  .chat-msg-header { font-size:10px; font-weight:700; opacity:0.85; margin-bottom:3px; display:flex; align-items:center; gap:4px; }
+  .chat-time { font-size:9.5px; opacity:0.55; margin-top:3px; }
+  .chat-input-bar { display:flex; gap:8px; padding:10px; border-top:1px solid var(--line-2); background:var(--bg-1); }
+  .chat-input-bar input { flex:1; }
+  .chat-input-bar button { width:40px; height:40px; border-radius:9px; background:var(--accent); border:none; color:white; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background 0.15s; }
+  .chat-input-bar button:hover { background:var(--accent-2); }
+  .opt-row { display:flex; align-items:center; justify-content:space-between; padding:11px 13px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:10px; cursor:pointer; margin-bottom:7px; transition:border-color 0.15s, background 0.15s; }
+  .opt-row:hover { border-color:var(--line); background:var(--line); }
+  .opt-row.selected { border-color:var(--accent); background:var(--accent-soft); }
+  .opt-row.netflix.selected { border-color:var(--netflix); background:rgba(229,9,20,0.1); }
+  .opt-row.apk.selected { border-color:var(--apk); background:var(--ok-soft); }
+  .dana-card { background:linear-gradient(180deg,#0a1a2e,#08121d); border:1px solid #10385c; border-radius:12px; padding:16px; text-align:center; }
+  .dana-chip { display:inline-flex; align-items:center; justify-content:center; padding:4px 12px; background:#0084ff; color:white; border-radius:6px; font-weight:800; font-size:12px; letter-spacing:0.04em; margin-bottom:10px; }
+  .dana-number { font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:800; color:#60c4ff; letter-spacing:0.03em; margin:8px 0; }
+  .dana-copy { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; background:#0084ff; color:white; border:none; border-radius:8px; font-weight:600; font-size:12px; cursor:pointer; transition:background 0.15s; }
+  .dana-copy:hover { background:#0070db; }
+  .dana-step { display:flex; gap:8px; align-items:flex-start; font-size:11.5px; color:var(--text-1); margin-bottom:7px; }
+  .dana-step-num { width:20px; height:20px; border-radius:50%; background:#10385c; color:#60c4ff; font-size:10px; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px; }
+  .countdown-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .countdown-cell { background:var(--bg-0); border:1px solid var(--line-2); border-radius:8px; padding:8px 4px; text-align:center; }
+  .countdown-num { font-family:'IBM Plex Mono',monospace; font-size:18px; font-weight:800; color:var(--err); line-height:1; }
+  .countdown-lbl { font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700; margin-top:3px; letter-spacing:0.06em; }
+  .shop-item { background:var(--bg-2); border:1px solid var(--line-2); border-radius:12px; padding:14px; transition:border-color 0.15s, transform 0.15s; }
+  .shop-item:hover { border-color:var(--warn); transform:translateY(-1px); }
+  .online-pill { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; background:var(--ok-soft); border:1px solid rgba(74,222,128,0.3); border-radius:999px; font-size:11px; font-weight:600; color:var(--ok); }
+  .online-dot { width:6px; height:6px; border-radius:50%; background:var(--ok); box-shadow:0 0 6px var(--ok); animation:pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  .hist-item { background:var(--bg-2); border:1px solid var(--line-2); border-radius:10px; padding:12px; }
+  .hist-item-order-id { font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700; color:var(--info); background:var(--info-soft); padding:2px 7px; border-radius:5px; display:inline-block; }
+  .link-line { font-family:'IBM Plex Mono',monospace; font-size:11px; word-break:break-all; color:var(--text-1); background:var(--bg-0); border:1px solid var(--line-2); border-radius:7px; padding:8px 10px; cursor:pointer; transition:border-color 0.15s, background 0.15s; }
+  .link-line:hover { border-color:var(--accent); background:var(--accent-soft); }
+  @media (max-width:480px) { .app-shell { padding:10px; } .card, .card-elevated { padding:13px; } .chat-wrap { height:360px; } }
+  ::-webkit-scrollbar { width:5px; height:5px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--line-2); border-radius:999px; }
+  ::-webkit-scrollbar-thumb:hover { background:var(--text-2); }
+  .hide { display:none !important; }
 </style>
 </head>
 <body>
-
 <div id="toast-container"></div>
-
-<div class="phone-wrapper">
-
-  <header class="flex items-center justify-between py-2 mb-3">
-    <div class="flex items-center gap-2.5">
-      <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: linear-gradient(135deg, rgba(168,85,247,0.25), rgba(6,182,212,0.15)); border: 1px solid rgba(168,85,247,0.3);">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-        </svg>
-      </div>
+<div class="app-shell">
+  <div class="topbar">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div class="brand-mark">⚡</div>
       <div>
-        <p class="text-[10px] font-bold uppercase tracking-widest text-purple-400">Premium Access</p>
-        <p class="text-sm font-extrabold text-white">AM BANGGUS</p>
+        <div class="brand-text">AM Premium</div>
+        <div class="brand-sub">by Banggus</div>
       </div>
     </div>
-    <button id="header-menu-btn" onclick="toggleMenu()" class="icon-btn hidden">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-        <line x1="3" y1="6" x2="21" y2="6"/>
-        <line x1="3" y1="12" x2="21" y2="12"/>
-        <line x1="3" y1="18" x2="21" y2="18"/>
-      </svg>
-    </button>
-  </header>
-
-  <div id="drawer-overlay" onclick="toggleMenu()" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 hidden transition-opacity"></div>
-
-  <div id="nav-drawer" class="fixed inset-y-0 right-0 z-50 flex flex-col justify-between">
-    <div>
-      <div class="flex items-center justify-between pb-4 mb-4 border-b border-purple-500/20">
-        <div>
-          <p class="text-[10px] font-bold uppercase tracking-widest text-purple-400">Dashboard</p>
-          <h3 class="text-base font-extrabold text-white">MENU</h3>
-        </div>
-        <button onclick="toggleMenu()" class="icon-btn" style="width:2.25rem;height:2.25rem;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
-        </button>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <div id="online-pill-top" class="online-pill hide" title="User online">
+        <span class="online-dot"></span>
+        <span id="online-count-top">0</span> online
       </div>
-
-      <nav class="space-y-1.5">
-        <button onclick="switchView('generator')" data-nav="generator" class="nav-item active">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-          Generator AM
-        </button>
-        <button onclick="switchView('netflix')" data-nav="netflix" class="nav-item netflix-nav">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
-          Generator Netflix
-        </button>
-        <button onclick="switchView('apkmod')" data-nav="apkmod" class="nav-item apk-nav">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-          Generator APK MOD
-        </button>
-        <button onclick="switchView('tempmail')" data-nav="tempmail" class="nav-item mail-nav">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-          Temp Mail
-          <span class="ml-auto text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(59,130,246,0.2); color: #93c5fd;">NEW</span>
-        </button>
-        <button onclick="switchView('orders')" data-nav="orders" class="nav-item orders-nav">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>
-          Orderan Saya
-        </button>
-        <button onclick="switchView('vipshop')" data-nav="vipshop" class="nav-item">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
-          Beli VIP
-          <span class="ml-auto text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(245,158,11,0.2); color: #fbbf24;">HOT</span>
-        </button>
-        <button onclick="switchView('chat')" data-nav="chat" class="nav-item">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          Chat Global
-          <span id="chat-unread-badge" class="ml-auto hidden text-[9px] px-1.5 py-0.5 rounded-full" style="background: #f43f5e; color: white;">0</span>
-        </button>
-        <button onclick="switchView('profile')" data-nav="profile" class="nav-item">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-          Akun & Profil
-        </button>
-        <button onclick="switchView('guide')" data-nav="guide" class="nav-item">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-          Panduan
-        </button>
-        <button onclick="switchView('announcement')" data-nav="announcement" class="nav-item">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
-          Pengumuman
-        </button>
-        <button onclick="switchView('request')" data-nav="request" class="nav-item">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-          Request Fitur
-        </button>
-        <button id="nav-admin-btn" onclick="switchView('admin')" data-nav="admin" class="nav-item hidden">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          Panel Admin
-        </button>
-      </nav>
-    </div>
-
-    <div class="pt-4 border-t border-purple-500/20 space-y-3">
-      <div class="flex items-center gap-2.5 p-3 rounded-xl" style="background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.15);">
-        <div class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-black" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">
-          <span id="drawer-avatar">?</span>
-        </div>
-        <div class="flex-1 min-w-0">
-          <p id="drawer-username" class="text-xs font-bold text-white truncate">Guest</p>
-          <p id="drawer-role" class="text-[10px] text-purple-400 font-semibold">Belum Login</p>
-        </div>
-      </div>
-      <button onclick="handleLogout()" id="drawer-logout-btn" class="w-full py-2.5 rounded-xl text-rose-400 text-xs font-bold transition hidden flex items-center justify-center gap-2" style="background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.25);">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        Keluar
+      <button id="menu-btn" onclick="toggleMenu()" class="btn-ghost btn btn-sm hide" style="width:auto; padding:7px 9px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
     </div>
   </div>
 
-  <div class="flex-1 flex flex-col justify-center py-2 space-y-3">
+  <div id="drawer-overlay" onclick="toggleMenu()" class="hide" style="position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:40;"></div>
 
-    <div id="offline-banner" class="p-3 rounded-2xl text-xs font-semibold text-center hidden animate-slide-up" style="background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.3); color: #fda4af;">
-      <div class="flex items-center justify-center gap-2">
-        <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-        Server sedang OFFLINE — Fitur premium dinonaktifkan
+  <aside id="nav-drawer">
+    <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:14px; border-bottom:1px solid var(--line-2); margin-bottom:10px;">
+      <div>
+        <div style="font-size:10px; color:var(--text-2); text-transform:uppercase; letter-spacing:0.1em; font-weight:700;">Navigation</div>
+        <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; margin-top:2px;">Menu</div>
       </div>
-    </div>
-
-    <!-- VIEW: AUTH -->
-    <div id="auth-view" class="glass-panel space-y-5 animate-slide-up">
-      <div class="text-center space-y-1.5">
-        <div class="inline-flex w-14 h-14 rounded-2xl items-center justify-center mb-1" style="background: linear-gradient(135deg, rgba(168,85,247,0.25), rgba(6,182,212,0.15)); border: 1px solid rgba(168,85,247,0.35);">
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-        </div>
-        <h1 class="text-xl font-extrabold text-white tracking-tight">Selamat Datang</h1>
-        <p class="text-xs text-slate-400">Masuk atau daftar untuk mengakses sistem premium</p>
-      </div>
-
-      <div class="relative flex rounded-2xl p-1" style="background: rgba(7,4,15,0.8); border: 1px solid rgba(168,85,247,0.15);">
-        <div id="tab-indicator" class="absolute top-1 bottom-1 left-1 w-[calc(50%-4px)] rounded-xl transition-all duration-300" style="background: linear-gradient(135deg, #a855f7, #7e22ce); box-shadow: 0 4px 15px rgba(168,85,247,0.4);"></div>
-        <button onclick="switchAuthTab('login')" id="tab-login-btn" class="relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-xl transition-colors text-white">LOGIN</button>
-        <button onclick="switchAuthTab('register')" id="tab-reg-btn" class="relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-xl transition-colors text-slate-400">REGISTER</button>
-      </div>
-
-      <div class="space-y-3.5">
-        <div class="space-y-1.5">
-          <label class="text-[10px] font-bold uppercase tracking-widest text-purple-300 pl-1">Username</label>
-          <input type="text" id="auth-username" placeholder="username_unik" class="input-glow mono">
-        </div>
-        <div class="space-y-1.5">
-          <label class="text-[10px] font-bold uppercase tracking-widest text-purple-300 pl-1">Password</label>
-          <input type="password" id="auth-password" placeholder="••••••••" class="input-glow">
-        </div>
-        <div id="email-field-container" class="space-y-1.5 hidden">
-          <label class="text-[10px] font-bold uppercase tracking-widest text-purple-300 pl-1">Recovery Email</label>
-          <input type="email" id="auth-email" placeholder="email@gmail.com" class="input-glow">
-          <p class="text-[10px] text-amber-400/90 pl-1 flex items-center gap-1.5">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            1 perangkat hanya bisa daftar 1 akun
-          </p>
-        </div>
-      </div>
-
-      <button onclick="handleAuthAction()" id="auth-submit-btn" class="btn-primary">
-        <span id="auth-btn-text">Masuk ke Terminal</span>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      <button onclick="toggleMenu()" class="btn-ghost btn btn-xs" style="width:32px; height:32px; padding:0;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-
-    <!-- VIEW: TERMINAL (GENERATOR UTAMA - ALIGHT MOTION) -->
-    <div id="terminal-view" class="space-y-3 hidden">
-
-      <div class="video-container">
-        <video id="main-display-video" src="" autoplay loop muted playsinline preload="none"></video>
-      </div>
-
-      <div class="glass-panel py-2.5 px-3.5 flex items-center justify-between">
-        <div class="flex items-center gap-2.5 min-w-0">
-          <div class="w-9 h-9 rounded-xl flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">
-            <span id="user-avatar">U</span>
-          </div>
-          <div class="min-w-0">
-            <p class="text-xs font-bold text-white truncate" id="logged-username">-</p>
-            <span id="role-badge" class="badge badge-user mt-0.5">User</span>
-          </div>
-        </div>
-        <div class="flex items-center gap-2 shrink-0">
-          <span id="server-status-indicator" class="badge badge-online">
-            <span id="server-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span id="server-status-text">...</span>
-          </span>
+    <div class="nav-section-label">Fitur</div>
+    <button onclick="switchView('generator')" data-nav="generator" class="nav-link active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Alight Motion</button>
+    <button onclick="switchView('netflix')" data-nav="netflix" class="nav-link netflix-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/></svg>Netflix Token</button>
+    <button onclick="switchView('apkmod')" data-nav="apkmod" class="nav-link apk-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>APK MOD</button>
+    <button onclick="switchView('tempmail')" data-nav="tempmail" class="nav-link mail-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>Temp Mail<span class="badge badge-info" style="margin-left:auto; font-size:9px; padding:1px 6px;">NEW</span></button>
+    <button onclick="switchView('orders')" data-nav="orders" class="nav-link orders-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>Orderan Saya</button>
+    <div class="nav-section-label">Akun</div>
+    <button onclick="switchView('vipshop')" data-nav="vipshop" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>Beli VIP<span class="badge badge-warn" style="margin-left:auto; font-size:9px; padding:1px 6px;">HOT</span></button>
+    <button onclick="switchView('chat')" data-nav="chat" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat Global<span id="chat-unread-badge" class="badge badge-err hide" style="margin-left:auto; font-size:9px; padding:1px 6px;">0</span></button>
+    <button onclick="switchView('profile')" data-nav="profile" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Profil Akun</button>
+    <div class="nav-section-label">Lainnya</div>
+    <button onclick="switchView('guide')" data-nav="guide" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Panduan</button>
+    <button onclick="switchView('announcement')" data-nav="announcement" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>Pengumuman</button>
+    <button onclick="switchView('request')" data-nav="request" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>Request Fitur</button>
+    <button id="nav-admin-btn" onclick="switchView('admin')" data-nav="admin" class="nav-link hide"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Panel Admin</button>
+    <div style="margin-top:auto; padding-top:14px; border-top:1px solid var(--line-2);">
+      <div style="display:flex; align-items:center; gap:10px; padding:9px; background:var(--bg-2); border-radius:10px; border:1px solid var(--line-2); margin-bottom:9px;">
+        <div class="brand-mark" style="width:34px; height:34px; font-size:14px;"><span id="drawer-avatar">?</span></div>
+        <div style="flex:1; min-width:0;">
+          <div id="drawer-username" style="font-weight:700; font-size:12.5px; overflow:hidden; text-overflow:ellipsis;">Guest</div>
+          <div id="drawer-role" style="font-size:10px; color:var(--text-2);">Belum login</div>
         </div>
       </div>
+      <button onclick="handleLogout()" id="drawer-logout-btn" class="btn btn-err btn-sm hide" style="width:100%;">Logout</button>
+    </div>
+  </aside>
 
-      <div id="vip-status-banner" class="p-3.5 rounded-2xl hidden animate-slide-up" style="background: linear-gradient(135deg, rgba(245,158,11,0.2), rgba(168,85,247,0.15)); border: 1px solid rgba(245,158,11,0.4);">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: rgba(245,158,11,0.2);">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
+  <div style="flex:1; display:flex; flex-direction:column; justify-content:center; padding:8px 0; gap:12px;">
+    <div id="offline-banner" class="card hide" style="background:var(--err-soft); border-color:rgba(248,113,113,0.3); padding:10px 13px; font-size:12px; color:var(--err); text-align:center;">⚠ Server offline — fitur generator dinonaktifkan</div>
+
+    <div id="auth-view" class="card-elevated" style="display:flex; flex-direction:column; gap:16px;">
+      <div style="text-align:center; padding:8px 0 4px;">
+        <div style="width:54px; height:54px; border-radius:14px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:inline-flex; align-items:center; justify-content:center; font-size:24px; box-shadow:0 8px 24px rgba(109,92,230,0.4); margin-bottom:10px;">⚡</div>
+        <h1 class="display-font" style="font-size:22px; font-weight:800; margin:0 0 4px; color:var(--text-0);">Selamat datang</h1>
+        <p style="font-size:12.5px; color:var(--text-2); margin:0;">Login atau daftar untuk mulai menggunakan layanan</p>
+      </div>
+      <div style="display:flex; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; padding:3px; position:relative;">
+        <div id="tab-indicator" style="position:absolute; top:3px; bottom:3px; left:3px; width:calc(50% - 3px); background:var(--accent); border-radius:7px; transition:transform 0.25s cubic-bezier(0.32,0.72,0,1);"></div>
+        <button onclick="switchAuthTab('login')" id="tab-login-btn" style="position:relative; z-index:1; flex:1; padding:8px; background:transparent; border:none; font-weight:600; font-size:12.5px; cursor:pointer; color:white; font-family:inherit; border-radius:7px;">Login</button>
+        <button onclick="switchAuthTab('register')" id="tab-reg-btn" style="position:relative; z-index:1; flex:1; padding:8px; background:transparent; border:none; font-weight:600; font-size:12.5px; cursor:pointer; color:var(--text-1); font-family:inherit; border-radius:7px;">Daftar</button>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <div><label class="field-label">Username</label><input type="text" id="auth-username" placeholder="username_kamu" class="inp mono"></div>
+        <div><label class="field-label">Password</label><input type="password" id="auth-password" placeholder="••••••••" class="inp"></div>
+        <div id="email-field-container" class="hide">
+          <label class="field-label">Recovery Email</label>
+          <input type="email" id="auth-email" placeholder="kamu@email.com" class="inp">
+          <p style="font-size:10.5px; color:var(--warn); margin-top:6px;">1 perangkat hanya bisa mendaftar 1 akun</p>
+        </div>
+      </div>
+      <button onclick="handleAuthAction()" id="auth-submit-btn" class="btn"><span id="auth-btn-text">Masuk</span></button>
+    </div>
+
+    <div id="terminal-view" class="hide" style="display:flex; flex-direction:column; gap:10px;">
+      <div style="width:100%; height:150px; border-radius:12px; overflow:hidden; border:1px solid var(--line-2); background:black;">
+        <video id="main-display-video" src="" autoplay loop muted playsinline preload="none" style="width:100%; height:100%; object-fit:cover;"></video>
+      </div>
+      <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between;">
+        <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+          <div class="brand-mark" style="width:34px; height:34px; font-size:14px;"><span id="user-avatar">U</span></div>
+          <div style="min-width:0;">
+            <div id="logged-username" style="font-weight:700; font-size:13px; overflow:hidden; text-overflow:ellipsis;">-</div>
+            <div style="margin-top:3px;"><span id="role-badge" class="badge badge-muted">User</span></div>
+          </div>
+        </div>
+        <span id="server-status-indicator" class="badge badge-ok"><span id="server-dot" class="online-dot"></span><span id="server-status-text">...</span></span>
+      </div>
+      <div id="vip-status-banner" class="hide" style="background:linear-gradient(135deg,var(--warn-soft),var(--accent-soft)); border:1px solid rgba(251,191,36,0.3); border-radius:12px; padding:12px 14px;">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div style="width:36px; height:36px; border-radius:9px; background:rgba(251,191,36,0.2); display:flex; align-items:center; justify-content:center;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2.2"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
             </div>
             <div>
-              <p class="text-xs font-extrabold text-amber-300">VIP PREMIUM MEMBER</p>
-              <p id="vip-expiry-text" class="text-[10px] text-slate-300">Aktif hingga: -</p>
+              <div style="font-size:12px; font-weight:800; color:var(--warn);">VIP Premium</div>
+              <div id="vip-expiry-text" style="font-size:10.5px; color:var(--text-1); margin-top:2px;">Aktif hingga: -</div>
             </div>
           </div>
-          <span class="badge badge-vip">ACTIVE</span>
+          <span class="badge badge-warn">Active</span>
         </div>
       </div>
-
-      <div id="reset-banner-main" class="p-3.5 rounded-2xl hidden animate-slide-up" style="background: linear-gradient(135deg, rgba(244,63,94,0.15), rgba(168,85,247,0.1)); border: 1px solid rgba(244,63,94,0.4);">
-        <div class="flex items-center gap-2.5 mb-2.5">
-          <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style="background: rgba(244,63,94,0.2);">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fda4af" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <div id="reset-banner-main" class="hide" style="background:var(--err-soft); border:1px solid rgba(248,113,113,0.3); border-radius:12px; padding:13px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+          <div style="width:34px; height:34px; border-radius:9px; background:rgba(248,113,113,0.2); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--err)" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           </div>
-          <div class="flex-1 min-w-0">
-            <p class="text-xs font-extrabold text-rose-300">KUOTA HABIS</p>
-            <p class="text-[10px] text-slate-300">Reset otomatis dalam:</p>
+          <div style="flex:1;">
+            <div style="font-size:12px; font-weight:800; color:var(--err);">Kuota habis</div>
+            <div style="font-size:10.5px; color:var(--text-1);">Reset otomatis dalam:</div>
           </div>
         </div>
-        <div class="grid grid-cols-3 gap-2">
-          <div class="countdown-box">
-            <p id="cd-hours-main" class="countdown-num">00</p>
-            <p class="countdown-label">Jam</p>
-          </div>
-          <div class="countdown-box">
-            <p id="cd-minutes-main" class="countdown-num">00</p>
-            <p class="countdown-label">Menit</p>
-          </div>
-          <div class="countdown-box">
-            <p id="cd-seconds-main" class="countdown-num">00</p>
-            <p class="countdown-label">Detik</p>
-          </div>
+        <div class="countdown-grid">
+          <div class="countdown-cell"><div id="cd-hours-main" class="countdown-num">00</div><div class="countdown-lbl">Jam</div></div>
+          <div class="countdown-cell"><div id="cd-minutes-main" class="countdown-num">00</div><div class="countdown-lbl">Menit</div></div>
+          <div class="countdown-cell"><div id="cd-seconds-main" class="countdown-num">00</div><div class="countdown-lbl">Detik</div></div>
         </div>
       </div>
-
-      <div class="grid grid-cols-2 gap-2.5">
-        <div class="stat-card">
-          <div>
-            <p class="text-[10px] font-bold uppercase tracking-wider text-purple-300">Kuota</p>
-            <p id="quota-display" class="text-sm font-extrabold text-white mono mt-0.5">0/1</p>
-          </div>
-          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(168,85,247,0.15);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-          </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="stat"><div><div class="stat-label">Kuota</div><div id="quota-display" class="stat-value">0/2</div></div>
+          <div style="width:30px; height:30px; border-radius:8px; background:var(--accent-soft); display:flex; align-items:center; justify-content:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
         </div>
-        <div class="stat-card">
-          <div>
-            <p class="text-[10px] font-bold uppercase tracking-wider text-cyan-300">Reset</p>
-            <p id="reset-timer-display" class="text-sm font-extrabold text-white mono mt-0.5">24 Jam</p>
-          </div>
-          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(6,182,212,0.15);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#67e8f9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          </div>
+        <div class="stat"><div><div class="stat-label">Reset</div><div id="reset-timer-display" class="stat-value">24 Jam</div></div>
+          <div style="width:30px; height:30px; border-radius:8px; background:rgba(96,165,250,0.15); display:flex; align-items:center; justify-content:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
         </div>
       </div>
-
-      <div class="glass-panel space-y-3.5">
+      <div class="card" style="display:flex; flex-direction:column; gap:14px;">
         <div>
-          <div class="section-title">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-            Kirim Magic Link (Alight Motion)
-          </div>
-          <input type="email" id="target-email" placeholder="target@gmail.com" class="input-glow">
+          <div class="section-head"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>Kirim Magic Link</div>
+          <input type="email" id="target-email" placeholder="target@gmail.com" class="inp">
         </div>
-
-        <button id="btn-send" onclick="handleSendEmail()" class="btn-primary">
-          <svg id="send-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          <span id="send-text">Kirim Magic Link</span>
-        </button>
-
+        <button id="btn-send" onclick="handleSendEmail()" class="btn"><span id="send-text">Kirim Magic Link</span></button>
         <div class="divider"></div>
-
         <div>
-          <div class="section-title" style="color: #6ee7b7;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            Verifikasi Magic URL
-          </div>
-          <input type="text" id="magic-url" placeholder="https://alight-creative.firebaseapp.com/_..." class="input-glow mono" style="font-size: 0.8rem;">
+          <div class="section-head" style="color:var(--ok);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>Verifikasi Magic URL</div>
+          <input type="text" id="magic-url" placeholder="https://alight-creative..." class="inp mono" style="font-size:11.5px;">
         </div>
-
-        <button onclick="handleActivate()" class="btn-success">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          Verifikasi Sekarang
-        </button>
+        <button onclick="handleActivate()" class="btn btn-ok">Verifikasi Sekarang</button>
       </div>
-
-      <!-- KLAIM KODE REDEEM -->
-      <div class="glass-panel space-y-3">
-        <div class="section-title" style="color: #67e8f9;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 12v10H4V12"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
-          Klaim Kode Redeem
+      <div class="card" style="display:flex; flex-direction:column; gap:12px;">
+        <div class="section-head" style="color:var(--info);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 12v10H4V12"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>Klaim Kode Redeem</div>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="redeem-code-input-main" placeholder="KODE-REDEEM" class="inp mono" style="flex:1; text-transform:uppercase; font-weight:700;">
+          <button onclick="handleRedeemCodeMain()" class="btn btn-sm">Klaim</button>
         </div>
-        <div class="flex gap-2">
-          <input type="text" id="redeem-code-input-main" placeholder="KODE-REDEEM" class="input-glow mono uppercase" style="flex: 1; padding: 0.7rem 1rem; font-size: 0.85rem; font-weight: 700;">
-          <button onclick="handleRedeemCodeMain()" class="btn-primary" style="width: auto; padding: 0.7rem 1rem; font-size: 0.8rem;">Klaim</button>
-        </div>
-
-        <div class="pt-2 border-t border-cyan-500/20">
-          <div class="flex justify-between items-center mb-2">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-300">Kode Redeem Aktif</span>
-            <button onclick="loadActiveRedeems()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+        <div style="border-top:1px solid var(--line); padding-top:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em;">Kode Aktif</div>
+            <button onclick="loadActiveRedeems()" class="btn btn-ghost btn-xs">Refresh</button>
           </div>
-          <div id="active-redeem-list" class="space-y-2 max-h-48 overflow-y-auto">
-            <p class="text-slate-500 italic text-xs text-center py-2">Memuat kode aktif...</p>
+          <div id="active-redeem-list" style="display:flex; flex-direction:column; gap:7px; max-height:180px; overflow-y:auto;">
+            <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
           </div>
         </div>
       </div>
-
-      <div id="result-box" class="hidden">
-        <div class="glass-panel" style="padding: 1rem;">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-[10px] font-bold uppercase tracking-widest text-purple-300">Response</span>
-            <button onclick="copyResult()" class="btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.68rem;">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              Copy
-            </button>
+      <div id="result-box" class="hide">
+        <div class="card" style="padding:12px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+            <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--text-1); letter-spacing:0.06em;">Response</div>
+            <button onclick="copyResult()" class="btn btn-ghost btn-xs">Copy</button>
           </div>
-          <pre id="result-text" class="mono text-[11px] text-purple-300 whitespace-pre-wrap break-all" style="max-height: 200px; overflow-y: auto;"></pre>
+          <pre id="result-text" class="mono" style="font-size:10.5px; color:var(--accent); white-space:pre-wrap; word-break:break-all; max-height:180px; overflow-y:auto; margin:0;"></pre>
         </div>
       </div>
     </div>
 
-    <!-- VIEW: TEMP MAIL (NEW) -->
-    <div id="section-tempmail" class="space-y-3 hidden">
-      
-      <div class="glass-panel py-2.5 px-3.5 flex items-center justify-between" style="border-color: rgba(59,130,246,0.3);">
-        <div class="flex items-center gap-2.5 min-w-0">
-          <div class="mail-logo">@</div>
-          <div class="min-w-0">
-            <p class="text-xs font-bold text-white truncate">Temp Mail Generator</p>
-            <p class="text-[10px] text-blue-300">Email Sementara</p>
-          </div>
+    <div id="section-tempmail" class="hide" style="display:flex; flex-direction:column; gap:10px;">
+      <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between; border-color:rgba(96,165,250,0.3);">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,var(--mail),#3b82f6); display:flex; align-items:center; justify-content:center; font-weight:900; color:white; font-size:14px;">@</div>
+          <div><div style="font-weight:700; font-size:13px;">Temp Mail</div><div style="font-size:10.5px; color:var(--info);">Email sementara</div></div>
         </div>
-        <span class="badge badge-mail">
-          <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
-          READY
-        </span>
+        <span class="badge badge-ok"><span class="online-dot"></span>Ready</span>
       </div>
-
-      <div class="grid grid-cols-2 gap-2.5">
-        <div class="stat-card" style="border-color: rgba(59,130,246,0.25);">
-          <div>
-            <p class="text-[10px] font-bold uppercase tracking-wider text-blue-300">Kuota Tersisa</p>
-            <p id="mail-quota-display" class="text-sm font-extrabold text-white mono mt-0.5">0</p>
-          </div>
-          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(59,130,246,0.15);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-          </div>
-        </div>
-        <div class="stat-card" style="border-color: rgba(59,130,246,0.25);">
-          <div>
-            <p class="text-[10px] font-bold uppercase tracking-wider text-blue-300">Reset</p>
-            <p id="mail-reset-display" class="text-sm font-extrabold text-white mono mt-0.5">24 Jam</p>
-          </div>
-          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(59,130,246,0.15);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          </div>
-        </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="stat" style="border-color:rgba(96,165,250,0.3);"><div><div class="stat-label">Kuota</div><div id="mail-quota-display" class="stat-value">0</div></div></div>
+        <div class="stat" style="border-color:rgba(96,165,250,0.3);"><div><div class="stat-label">Reset</div><div id="mail-reset-display" class="stat-value">24 Jam</div></div></div>
       </div>
-
-      <div class="p-3 rounded-xl" style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25);">
-        <p class="text-[10px] text-blue-300 flex items-center gap-1.5">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          <strong>Quota SAMA</strong> dengan Alight Motion, Netflix & APK MOD — setiap generate mengurangi 1 quota
-        </p>
+      <div style="padding:10px 12px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:10px; font-size:11px; color:var(--info); display:flex; gap:6px; align-items:flex-start;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-top:1px; flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span><strong>Quota sama</strong> dengan fitur lain — setiap generate = -1 quota</span>
       </div>
-
-      <div class="glass-panel space-y-3" style="border-color: rgba(59,130,246,0.3);">
-        <div class="section-title" style="color: #93c5fd;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-          Generate Email Sementara
-        </div>
-
-        <p class="text-xs text-slate-400">Buat email sementara untuk menerima email verifikasi, OTP, dan lainnya secara gratis.</p>
-
-        <button id="btn-generate-mail" onclick="handleGenerateTempMail()" class="btn-mail">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          <span id="mail-btn-text">Generate Email Sementara</span>
-        </button>
+      <div class="card" style="border-color:rgba(96,165,250,0.3); display:flex; flex-direction:column; gap:12px;">
+        <div class="section-head" style="color:var(--info);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>Generate Email</div>
+        <p style="font-size:12px; color:var(--text-1); margin:0;">Buat email sementara untuk menerima OTP, verifikasi, dll.</p>
+        <button id="btn-generate-mail" onclick="handleGenerateTempMail()" class="btn btn-mail"><span id="mail-btn-text">Generate Email</span></button>
       </div>
-
-      <div id="mail-loading" class="hidden glass-panel" style="border-color: rgba(59,130,246,0.3);">
-        <div class="flex items-center gap-3 mb-3">
-          <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: rgba(59,130,246,0.2);">
-            <svg class="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
+      <div id="mail-loading" class="hide card" style="border-color:rgba(96,165,250,0.3);">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+          <div style="width:34px; height:34px; border-radius:9px; background:var(--info-soft); display:flex; align-items:center; justify-content:center;">
+            <svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
           </div>
-          <div>
-            <p class="text-xs font-bold text-white">Memproses...</p>
-            <p id="mail-status-text" class="text-[10px] text-slate-400">Menyiapkan email sementara</p>
-          </div>
+          <div><div style="font-weight:700; font-size:12px;">Memproses...</div><div id="mail-status-text" style="font-size:10.5px; color:var(--text-2);">Menyiapkan email</div></div>
         </div>
-        <div class="progress-bar">
-          <div id="mail-progress-fill" class="progress-fill" style="background: linear-gradient(90deg, #3b82f6, #2563eb, #3b82f6);"></div>
-        </div>
-        <p id="mail-log-text" class="text-[10px] text-slate-500 mono mt-2 text-center">Initializing...</p>
+        <div class="prog"><div id="mail-progress-fill" class="prog-fill" style="background:var(--mail);"></div></div>
+        <p id="mail-log-text" class="mono" style="font-size:10px; color:var(--text-2); margin-top:8px; text-align:center;">Initializing...</p>
       </div>
-
-      <!-- Email Display & Inbox -->
-      <div id="mail-result-container" class="hidden space-y-3">
-        <div class="mail-email-box">
-          <p class="text-[10px] font-bold uppercase tracking-wider text-blue-300 mb-1">Email Anda</p>
-          <div class="mail-email-display" id="mail-email-display">-</div>
-          <div class="flex gap-2 justify-center mt-2">
-            <button onclick="copyTempMailEmail()" class="btn-secondary" style="font-size: 0.72rem; padding: 0.5rem 0.85rem;">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              Copy Email
-            </button>
-            <button onclick="checkTempMailInbox()" class="btn-mail" style="width: auto; padding: 0.5rem 0.85rem; font-size: 0.72rem;">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-              Cek Inbox
-            </button>
+      <div id="mail-result-container" class="hide" style="display:flex; flex-direction:column; gap:10px;">
+        <div class="card" style="text-align:center; border-color:rgba(96,165,250,0.3);">
+          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em; margin-bottom:6px;">Email Anda</div>
+          <div id="mail-email-display" class="mono" style="font-size:13px; font-weight:700; color:var(--info); word-break:break-all; padding:10px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px; margin-bottom:8px;">-</div>
+          <div style="display:flex; gap:7px; justify-content:center;">
+            <button onclick="copyTempMailEmail()" class="btn btn-ghost btn-xs">Copy</button>
+            <button onclick="checkTempMailInbox()" class="btn btn-mail btn-xs">Cek Inbox</button>
           </div>
         </div>
-
-        <!-- Inbox Messages -->
-        <div class="glass-panel" style="border-color: rgba(59,130,246,0.25);">
-          <div class="flex justify-between items-center mb-2">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-blue-300">Inbox</span>
-            <span id="mail-message-count" class="text-[10px] text-slate-500">0 pesan</span>
+        <div class="card" style="border-color:rgba(96,165,250,0.25);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em;">Inbox</div>
+            <span id="mail-message-count" style="font-size:10px; color:var(--text-2);">0 pesan</span>
           </div>
-          <div id="mail-inbox-list" class="space-y-2 max-h-80 overflow-y-auto">
-            <p class="text-slate-500 italic text-xs text-center py-3">Menunggu email masuk...</p>
+          <div id="mail-inbox-list" style="display:flex; flex-direction:column; gap:7px; max-height:320px; overflow-y:auto;">
+            <p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Menunggu email...</p>
           </div>
         </div>
       </div>
-
-      <!-- Riwayat Temp Mail -->
-      <div class="glass-panel" style="border-color: rgba(59,130,246,0.2);">
-        <div class="flex justify-between items-center mb-2">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-blue-300">Riwayat Email</span>
-          <button onclick="loadTempMailHistory()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+      <div class="card" style="border-color:rgba(96,165,250,0.2);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em;">Riwayat</div>
+          <button onclick="loadTempMailHistory()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
-        <div id="mail-history-list" class="space-y-2 max-h-60 overflow-y-auto">
-          <p class="text-slate-500 italic text-xs text-center py-2">Memuat riwayat...</p>
+        <div id="mail-history-list" style="display:flex; flex-direction:column; gap:7px; max-height:220px; overflow-y:auto;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
         </div>
       </div>
     </div>
 
-    <!-- VIEW: ORDERS -->
-    <div id="section-orders" class="glass-panel space-y-4 hidden">
-      <div class="flex items-center justify-between pb-3 border-b border-cyan-500/20">
-        <h2 class="section-title" style="margin: 0; color: #67e8f9;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>
-          Orderan Saya
-        </h2>
-        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+    <div id="section-orders" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
+        <div class="section-head" style="margin:0; color:var(--info);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>Orderan Saya</div>
+        <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
       </div>
-
-      <div class="grid grid-cols-4 gap-2">
-        <div class="p-2 rounded-xl text-center" style="background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.2);">
-          <p class="text-[9px] text-cyan-300 font-bold uppercase">Total</p>
-          <p id="my-orders-total" class="text-sm font-extrabold text-white mono">0</p>
-        </div>
-        <div class="p-2 rounded-xl text-center" style="background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.2);">
-          <p class="text-[9px] text-purple-300 font-bold uppercase">AM</p>
-          <p id="my-orders-am" class="text-sm font-extrabold text-white mono">0</p>
-        </div>
-        <div class="p-2 rounded-xl text-center" style="background: rgba(229,9,20,0.08); border: 1px solid rgba(229,9,20,0.2);">
-          <p class="text-[9px] text-red-300 font-bold uppercase">Netflix</p>
-          <p id="my-orders-netflix" class="text-sm font-extrabold text-white mono">0</p>
-        </div>
-        <div class="p-2 rounded-xl text-center" style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2);">
-          <p class="text-[9px] text-blue-300 font-bold uppercase">Mail</p>
-          <p id="my-orders-mail" class="text-sm font-extrabold text-white mono">0</p>
-        </div>
+      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px;">
+        <div style="padding:8px 4px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--info); font-weight:700; text-transform:uppercase;">Total</div><div id="my-orders-total" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
+        <div style="padding:8px 4px; background:var(--accent-soft); border:1px solid rgba(139,124,246,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--accent); font-weight:700; text-transform:uppercase;">AM</div><div id="my-orders-am" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
+        <div style="padding:8px 4px; background:var(--err-soft); border:1px solid rgba(248,113,113,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--err); font-weight:700; text-transform:uppercase;">NFLX</div><div id="my-orders-netflix" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
+        <div style="padding:8px 4px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--info); font-weight:700; text-transform:uppercase;">Mail</div><div id="my-orders-mail" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
       </div>
-
-      <div class="flex items-center gap-2">
-        <input type="text" id="order-search-input" oninput="renderMyOrders()" placeholder="Cari Order ID..." class="input-glow mono" style="flex:1; padding: 0.6rem 0.85rem; font-size: 0.82rem;">
-        <button onclick="loadMyOrders(true)" class="btn-secondary" style="padding: 0.6rem 0.85rem;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-        </button>
+      <div style="display:flex; gap:7px;">
+        <input type="text" id="order-search-input" oninput="renderMyOrders()" placeholder="Cari Order ID..." class="inp mono" style="flex:1;">
+        <button onclick="loadMyOrders(true)" class="btn btn-ghost btn-sm" style="width:auto;">↻</button>
       </div>
-
-      <div id="my-orders-list" class="space-y-3 max-h-[500px] overflow-y-auto">
-        <p class="text-slate-500 italic text-xs text-center py-3">Memuat orderan...</p>
+      <div id="my-orders-list" style="display:flex; flex-direction:column; gap:9px; max-height:460px; overflow-y:auto;">
+        <p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Memuat...</p>
       </div>
     </div>
 
-    <!-- VIEW: NETFLIX GENERATOR -->
-    <div id="section-netflix" class="space-y-3 hidden">
-      
-      <div class="glass-panel py-2.5 px-3.5 flex items-center justify-between" style="border-color: rgba(229,9,20,0.3);">
-        <div class="flex items-center gap-2.5 min-w-0">
-          <div class="netflix-logo">N</div>
-          <div class="min-w-0">
-            <p class="text-xs font-bold text-white truncate">Netflix Generator</p>
-            <p class="text-[10px] text-red-300">Premium Token</p>
-          </div>
+    <div id="section-netflix" class="hide" style="display:flex; flex-direction:column; gap:10px;">
+      <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between; border-color:rgba(229,9,20,0.3);">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,var(--netflix),#b20710); display:flex; align-items:center; justify-content:center; font-weight:900; color:white; font-size:15px;">N</div>
+          <div><div style="font-weight:700; font-size:13px;">Netflix Token</div><div style="font-size:10.5px; color:var(--err);">Premium access</div></div>
         </div>
-        <span class="badge badge-netflix">
-          <span class="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse"></span>
-          READY
-        </span>
+        <span class="badge badge-ok"><span class="online-dot"></span>Ready</span>
       </div>
-
-      <div class="grid grid-cols-2 gap-2.5">
-        <div class="stat-card" style="border-color: rgba(229,9,20,0.25);">
-          <div>
-            <p class="text-[10px] font-bold uppercase tracking-wider text-red-300">Kuota Tersisa</p>
-            <p id="netflix-quota-display" class="text-sm font-extrabold text-white mono mt-0.5">0</p>
-          </div>
-          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(229,9,20,0.15);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fca5a5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-          </div>
-        </div>
-        <div class="stat-card" style="border-color: rgba(229,9,20,0.25);">
-          <div>
-            <p class="text-[10px] font-bold uppercase tracking-wider text-red-300">Reset</p>
-            <p id="netflix-reset-display" class="text-sm font-extrabold text-white mono mt-0.5">24 Jam</p>
-          </div>
-          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(229,9,20,0.15);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fca5a5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          </div>
-        </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="stat" style="border-color:rgba(229,9,20,0.3);"><div><div class="stat-label">Kuota</div><div id="netflix-quota-display" class="stat-value">0</div></div></div>
+        <div class="stat" style="border-color:rgba(229,9,20,0.3);"><div><div class="stat-label">Reset</div><div id="netflix-reset-display" class="stat-value">24 Jam</div></div></div>
       </div>
-
-      <div class="p-3 rounded-xl" style="background: rgba(229,9,20,0.08); border: 1px solid rgba(229,9,20,0.25);">
-        <p class="text-[10px] text-red-300 flex items-center gap-1.5">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          <strong>Quota SAMA</strong> dengan Alight Motion, APK MOD & Temp Mail — setiap generate mengurangi 1 quota
-        </p>
+      <div style="padding:10px 12px; background:var(--err-soft); border:1px solid rgba(248,113,113,0.25); border-radius:10px; font-size:11px; color:var(--err); display:flex; gap:6px; align-items:flex-start;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-top:1px; flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span><strong>Quota sama</strong> dengan semua fitur — setiap generate = -1 quota</span>
       </div>
-
-      <div class="glass-panel space-y-3" style="border-color: rgba(229,9,20,0.3);">
-        <div class="section-title" style="color: #fca5a5;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
-          Pilih Plan Netflix
-        </div>
-
+      <div class="card" style="border-color:rgba(229,9,20,0.3); display:flex; flex-direction:column; gap:12px;">
+        <div class="section-head" style="color:var(--err);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/></svg>Pilih Plan</div>
         <div id="plan-options">
-          <div class="plan-option" data-plan="premium" onclick="selectNetflixPlan('premium')">
-            <div>
-              <p class="plan-name">🏆 Premium</p>
-              <p class="text-[10px] text-slate-400">4K + HDR • 4 Screen</p>
-            </div>
-            <span class="plan-price">1 Quota</span>
-          </div>
-          <div class="plan-option" data-plan="standard" onclick="selectNetflixPlan('standard')">
-            <div>
-              <p class="plan-name">⭐ Standard</p>
-              <p class="text-[10px] text-slate-400">1080p • 2 Screen</p>
-            </div>
-            <span class="plan-price">1 Quota</span>
-          </div>
-          <div class="plan-option" data-plan="basic" onclick="selectNetflixPlan('basic')">
-            <div>
-              <p class="plan-name">📱 Basic</p>
-              <p class="text-[10px] text-slate-400">720p • 1 Screen</p>
-            </div>
-            <span class="plan-price">1 Quota</span>
-          </div>
+          <div class="opt-row netflix" data-plan="premium" onclick="selectNetflixPlan('premium')"><div><div style="font-weight:700; font-size:12.5px;">🏆 Premium</div><div style="font-size:10px; color:var(--text-2);">4K + HDR • 4 Screen</div></div><span style="font-size:11px; color:var(--err); font-weight:700;">1 Q</span></div>
+          <div class="opt-row netflix" data-plan="standard" onclick="selectNetflixPlan('standard')"><div><div style="font-weight:700; font-size:12.5px;">⭐ Standard</div><div style="font-size:10px; color:var(--text-2);">1080p • 2 Screen</div></div><span style="font-size:11px; color:var(--err); font-weight:700;">1 Q</span></div>
+          <div class="opt-row netflix" data-plan="basic" onclick="selectNetflixPlan('basic')"><div><div style="font-weight:700; font-size:12.5px;">📱 Basic</div><div style="font-size:10px; color:var(--text-2);">720p • 1 Screen</div></div><span style="font-size:11px; color:var(--err); font-weight:700;">1 Q</span></div>
         </div>
-
-        <div class="flex items-center gap-2 p-2.5 rounded-xl" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(229,9,20,0.2);">
-          <input type="checkbox" id="netflix-use-proxy" class="w-4 h-4 accent-red-500" checked>
-          <label for="netflix-use-proxy" class="text-xs text-slate-300 cursor-pointer">Gunakan Proxy (Recommended)</label>
-        </div>
-
-        <button id="btn-generate-netflix" onclick="handleGenerateNetflix()" class="btn-netflix">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-          <span id="netflix-btn-text">Generate Token Netflix</span>
-        </button>
+        <label style="display:flex; align-items:center; gap:8px; padding:9px 11px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:9px; cursor:pointer;">
+          <input type="checkbox" id="netflix-use-proxy" checked style="accent-color:var(--netflix);">
+          <span style="font-size:11.5px; color:var(--text-1);">Gunakan Proxy</span>
+        </label>
+        <button id="btn-generate-netflix" onclick="handleGenerateNetflix()" class="btn btn-netflix"><span id="netflix-btn-text">Generate Token</span></button>
       </div>
-
-      <div id="netflix-loading" class="hidden glass-panel" style="border-color: rgba(229,9,20,0.3);">
-        <div class="flex items-center gap-3 mb-3">
-          <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: rgba(229,9,20,0.2);">
-            <svg class="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fca5a5" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
+      <div id="netflix-loading" class="hide card" style="border-color:rgba(229,9,20,0.3);">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+          <div style="width:34px; height:34px; border-radius:9px; background:var(--err-soft); display:flex; align-items:center; justify-content:center;">
+            <svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--err)" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
           </div>
-          <div>
-            <p class="text-xs font-bold text-white">Memproses...</p>
-            <p id="netflix-status-text" class="text-[10px] text-slate-400">Menyiapkan browser</p>
-          </div>
+          <div><div style="font-weight:700; font-size:12px;">Memproses...</div><div id="netflix-status-text" style="font-size:10.5px; color:var(--text-2);">Menyiapkan browser</div></div>
         </div>
-        <div class="progress-bar">
-          <div id="netflix-progress-fill" class="progress-fill" style="background: linear-gradient(90deg, #e50914, #b20710, #e50914);"></div>
-        </div>
-        <p id="netflix-log-text" class="text-[10px] text-slate-500 mono mt-2 text-center">Initializing...</p>
+        <div class="prog"><div id="netflix-progress-fill" class="prog-fill" style="background:var(--netflix);"></div></div>
+        <p id="netflix-log-text" class="mono" style="font-size:10px; color:var(--text-2); margin-top:8px; text-align:center;">Initializing...</p>
       </div>
-
-      <div id="netflix-results-container" class="space-y-3 hidden">
-        <div class="flex items-center justify-between">
-          <p class="section-title" style="color: #fca5a5; margin: 0;">Hasil Generate</p>
-          <button onclick="clearNetflixResults()" class="text-[10px] text-slate-400 hover:text-white underline">Bersihkan</button>
+      <div id="netflix-results-container" class="hide" style="display:flex; flex-direction:column; gap:9px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div class="section-head" style="margin:0; color:var(--err);">Hasil</div>
+          <button onclick="clearNetflixResults()" class="btn btn-ghost btn-xs">Bersihkan</button>
         </div>
-        <div id="netflix-results-list" class="space-y-3"></div>
+        <div id="netflix-results-list" style="display:flex; flex-direction:column; gap:9px;"></div>
       </div>
-
-      <div class="glass-panel" style="border-color: rgba(229,9,20,0.2);">
-        <div class="flex justify-between items-center mb-2">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-red-300">Riwayat Generate</span>
-          <button onclick="loadNetflixHistory()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+      <div class="card" style="border-color:rgba(229,9,20,0.2);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--err); letter-spacing:0.06em;">Riwayat</div>
+          <button onclick="loadNetflixHistory()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
-        <div id="netflix-history-list" class="space-y-2 max-h-60 overflow-y-auto">
-          <p class="text-slate-500 italic text-xs text-center py-2">Memuat riwayat...</p>
+        <div id="netflix-history-list" style="display:flex; flex-direction:column; gap:7px; max-height:220px; overflow-y:auto;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
         </div>
       </div>
     </div>
 
-    <!-- VIEW: APK MOD GENERATOR -->
-    <div id="section-apkmod" class="space-y-3 hidden">
-      
-      <div class="glass-panel py-2.5 px-3.5 flex items-center justify-between" style="border-color: rgba(34,197,94,0.3);">
-        <div class="flex items-center gap-2.5 min-w-0">
-          <div class="apk-logo">APK</div>
-          <div class="min-w-0">
-            <p class="text-xs font-bold text-white truncate">Generator APK MOD</p>
-            <p class="text-[10px] text-green-300">Download Link Generator</p>
-          </div>
+    <div id="section-apkmod" class="hide" style="display:flex; flex-direction:column; gap:10px;">
+      <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between; border-color:rgba(74,222,128,0.3);">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,var(--apk),#16a34a); display:flex; align-items:center; justify-content:center; font-weight:900; color:white; font-size:11px;">APK</div>
+          <div><div style="font-weight:700; font-size:13px;">APK MOD</div><div style="font-size:10.5px; color:var(--ok);">Download link</div></div>
         </div>
-        <span class="badge badge-apk">
-          <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
-          READY
-        </span>
+        <span class="badge badge-ok"><span class="online-dot"></span>Ready</span>
       </div>
-
-      <div class="grid grid-cols-2 gap-2.5">
-        <div class="stat-card" style="border-color: rgba(34,197,94,0.25);">
-          <div>
-            <p class="text-[10px] font-bold uppercase tracking-wider text-green-300">Kuota Tersisa</p>
-            <p id="apk-quota-display" class="text-sm font-extrabold text-white mono mt-0.5">0</p>
-          </div>
-          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(34,197,94,0.15);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-          </div>
-        </div>
-        <div class="stat-card" style="border-color: rgba(34,197,94,0.25);">
-          <div>
-            <p class="text-[10px] font-bold uppercase tracking-wider text-green-300">Reset</p>
-            <p id="apk-reset-display" class="text-sm font-extrabold text-white mono mt-0.5">24 Jam</p>
-          </div>
-          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(34,197,94,0.15);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          </div>
-        </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="stat" style="border-color:rgba(74,222,128,0.3);"><div><div class="stat-label">Kuota</div><div id="apk-quota-display" class="stat-value">0</div></div></div>
+        <div class="stat" style="border-color:rgba(74,222,128,0.3);"><div><div class="stat-label">Reset</div><div id="apk-reset-display" class="stat-value">24 Jam</div></div></div>
       </div>
-
-      <div class="p-3 rounded-xl" style="background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.25);">
-        <p class="text-[10px] text-green-300 flex items-center gap-1.5">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          <strong>Quota SAMA</strong> dengan Alight Motion, Netflix & Temp Mail — setiap request APK MOD mengurangi 1 quota
-        </p>
+      <div style="padding:10px 12px; background:var(--ok-soft); border:1px solid rgba(74,222,128,0.25); border-radius:10px; font-size:11px; color:var(--ok); display:flex; gap:6px; align-items:flex-start;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-top:1px; flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span><strong>Quota sama</strong> dengan semua fitur — setiap request = -1 quota</span>
       </div>
-
-      <div class="glass-panel space-y-3" style="border-color: rgba(34,197,94,0.3);">
-        <div class="section-title" style="color: #86efac;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-          Pilih APK MOD
-        </div>
-
-        <div id="apk-options">
-          <p class="text-slate-500 italic text-xs text-center py-3">Memuat daftar APK...</p>
-        </div>
-
-        <button id="btn-generate-apk" onclick="handleGenerateApk()" class="btn-apk">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <span id="apk-btn-text">Kirim & Dapatkan Link</span>
-        </button>
+      <div class="card" style="border-color:rgba(74,222,128,0.3); display:flex; flex-direction:column; gap:12px;">
+        <div class="section-head" style="color:var(--ok);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>Pilih APK</div>
+        <div id="apk-options"><p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Memuat...</p></div>
+        <button id="btn-generate-apk" onclick="handleGenerateApk()" class="btn btn-apk"><span id="apk-btn-text">Dapatkan Link</span></button>
       </div>
-
-      <div id="apk-loading" class="hidden glass-panel" style="border-color: rgba(34,197,94,0.3);">
-        <div class="flex items-center gap-3 mb-3">
-          <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: rgba(34,197,94,0.2);">
-            <svg class="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
+      <div id="apk-loading" class="hide card" style="border-color:rgba(74,222,128,0.3);">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+          <div style="width:34px; height:34px; border-radius:9px; background:var(--ok-soft); display:flex; align-items:center; justify-content:center;">
+            <svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
           </div>
-          <div>
-            <p class="text-xs font-bold text-white">Memproses...</p>
-            <p id="apk-status-text" class="text-[10px] text-slate-400">Menyiapkan link download</p>
-          </div>
+          <div><div style="font-weight:700; font-size:12px;">Memproses...</div><div id="apk-status-text" style="font-size:10.5px; color:var(--text-2);">Menyiapkan link</div></div>
         </div>
-        <div class="progress-bar">
-          <div id="apk-progress-fill" class="progress-fill" style="background: linear-gradient(90deg, #22c55e, #16a34a, #22c55e);"></div>
-        </div>
-        <p id="apk-log-text" class="text-[10px] text-slate-500 mono mt-2 text-center">Processing...</p>
+        <div class="prog"><div id="apk-progress-fill" class="prog-fill" style="background:var(--apk);"></div></div>
+        <p id="apk-log-text" class="mono" style="font-size:10px; color:var(--text-2); margin-top:8px; text-align:center;">Processing...</p>
       </div>
-
-      <div id="apk-results-container" class="space-y-3 hidden">
-        <div class="flex items-center justify-between">
-          <p class="section-title" style="color: #86efac; margin: 0;">Link Download</p>
-          <button onclick="clearApkResults()" class="text-[10px] text-slate-400 hover:text-white underline">Bersihkan</button>
+      <div id="apk-results-container" class="hide" style="display:flex; flex-direction:column; gap:9px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div class="section-head" style="margin:0; color:var(--ok);">Link Download</div>
+          <button onclick="clearApkResults()" class="btn btn-ghost btn-xs">Bersihkan</button>
         </div>
-        <div id="apk-results-list" class="space-y-3"></div>
+        <div id="apk-results-list" style="display:flex; flex-direction:column; gap:9px;"></div>
       </div>
-
-      <div class="glass-panel" style="border-color: rgba(34,197,94,0.2);">
-        <div class="flex justify-between items-center mb-2">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-green-300">Riwayat Request</span>
-          <button onclick="loadApkHistory()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+      <div class="card" style="border-color:rgba(74,222,128,0.2);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--ok); letter-spacing:0.06em;">Riwayat</div>
+          <button onclick="loadApkHistory()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
-        <div id="apk-history-list" class="space-y-2 max-h-60 overflow-y-auto">
-          <p class="text-slate-500 italic text-xs text-center py-2">Memuat riwayat...</p>
+        <div id="apk-history-list" style="display:flex; flex-direction:column; gap:7px; max-height:220px; overflow-y:auto;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
         </div>
       </div>
     </div>
 
-    <!-- VIEW: VIP SHOP -->
-    <div id="section-vipshop" class="glass-panel space-y-4 hidden">
-      <div class="flex items-center justify-between pb-3 border-b border-amber-500/20">
-        <h2 class="section-title" style="margin: 0; color: #fbbf24;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
-          Beli VIP Premium
-        </h2>
-        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+    <div id="section-vipshop" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
+        <div class="section-head" style="margin:0; color:var(--warn);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>Beli VIP</div>
+        <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
       </div>
-
-      <div class="p-3.5 rounded-2xl" style="background: linear-gradient(135deg, rgba(245,158,11,0.15), rgba(168,85,247,0.1)); border: 1px solid rgba(245,158,11,0.35);">
-        <p class="text-xs font-extrabold text-amber-300 mb-2.5 flex items-center gap-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-          KEUNTUNGAN VIP
-        </p>
-        <div class="space-y-1.5">
-          <div class="vip-benefit">
-            <span class="vip-benefit-icon">✦</span>
-            <span><strong class="text-amber-200">BISA MEMBUAT AM PREMIUM TERUS MENERUS</strong></span>
-          </div>
-          <div class="vip-benefit">
-            <span class="vip-benefit-icon">✦</span>
-            <span><strong class="text-amber-200">BISA GENERATE NETFLIX TANPA BATAS</strong></span>
-          </div>
-          <div class="vip-benefit">
-            <span class="vip-benefit-icon">✦</span>
-            <span><strong class="text-amber-200">BISA REQUEST APK MOD TANPA BATAS</strong></span>
-          </div>
-          <div class="vip-benefit">
-            <span class="vip-benefit-icon">✦</span>
-            <span><strong class="text-amber-200">BISA GENERATE TEMP MAIL TANPA BATAS</strong></span>
-          </div>
-          <div class="vip-benefit">
-            <span class="vip-benefit-icon">✦</span>
-            <span><strong class="text-amber-200">KUOTA MENJADI UNLIMITED</strong></span>
-          </div>
-          <div class="vip-benefit">
-            <span class="vip-benefit-icon">✦</span>
-            <span>Akses semua fitur tanpa batasan</span>
-          </div>
-          <div class="vip-benefit">
-            <span class="vip-benefit-icon">✦</span>
-            <span>Prioritas dukungan & update</span>
-          </div>
-          <div class="vip-benefit">
-            <span class="vip-benefit-icon">✦</span>
-            <span>Badge VIP eksklusif di Chat Global</span>
-          </div>
+      <div style="padding:13px; background:linear-gradient(135deg,var(--warn-soft),var(--accent-soft)); border:1px solid rgba(251,191,36,0.3); border-radius:11px;">
+        <div style="font-size:12px; font-weight:800; color:var(--warn); margin-bottom:9px;">✦ Keuntungan VIP</div>
+        <div style="display:flex; flex-direction:column; gap:5px; font-size:11.5px; color:var(--text-1);">
+          <div>✦ Generate AM premium terus menerus</div>
+          <div>✦ Generate Netflix tanpa batas</div>
+          <div>✦ Request APK MOD tanpa batas</div>
+          <div>✦ Generate Temp Mail tanpa batas</div>
+          <div>✦ Kuota unlimited</div>
+          <div>✦ Badge VIP eksklusif</div>
         </div>
       </div>
-
       <div>
-        <p class="section-title" style="color: #fbbf24;">Pilih Layanan VIP</p>
-        <div id="vip-shop-list" class="space-y-3">
-          <p class="text-slate-500 italic text-xs text-center py-3">Memuat layanan...</p>
-        </div>
+        <div class="section-head" style="color:var(--warn);">Pilih Layanan</div>
+        <div id="vip-shop-list" style="display:flex; flex-direction:column; gap:9px;"></div>
       </div>
-
-      <div id="vip-purchase-form" class="hidden space-y-3 pt-3 border-t border-amber-500/20">
+      <div id="vip-purchase-form" class="hide" style="display:flex; flex-direction:column; gap:12px; padding-top:12px; border-top:1px solid var(--line);">
         <input type="hidden" id="selected-vip-id" value="">
         <input type="hidden" id="selected-vip-price" value="">
         <input type="hidden" id="selected-vip-days" value="">
         <input type="hidden" id="selected-vip-name" value="">
-
-        <div class="p-3 rounded-xl" style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25);">
-          <p class="text-[10px] font-bold uppercase tracking-wider text-amber-300 mb-1">Layanan Dipilih</p>
-          <p id="selected-vip-display" class="text-sm font-extrabold text-white">-</p>
+        <div style="padding:11px; background:var(--warn-soft); border:1px solid rgba(251,191,36,0.25); border-radius:9px;">
+          <div style="font-size:9.5px; font-weight:700; text-transform:uppercase; color:var(--warn); letter-spacing:0.06em; margin-bottom:3px;">Layanan</div>
+          <div id="selected-vip-display" style="font-weight:700; font-size:12.5px;">-</div>
         </div>
-
-        <div class="p-3 rounded-xl" style="background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.25);">
-          <p class="text-[10px] font-bold uppercase tracking-wider text-cyan-300 mb-1">Total Pembayaran</p>
-          <p id="selected-vip-price-display" class="text-lg font-extrabold text-cyan-300 mono">Rp 0</p>
+        <div style="padding:11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:9px;">
+          <div style="font-size:9.5px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em; margin-bottom:3px;">Total</div>
+          <div id="selected-vip-price-display" class="mono" style="font-weight:800; font-size:16px; color:var(--info);">Rp 0</div>
         </div>
-
-        <div class="dana-box">
-          <div class="dana-logo">DANA</div>
-          <p class="text-[10px] font-bold uppercase tracking-wider text-blue-300 mb-1">Transfer ke Nomor DANA</p>
+        <div class="dana-card">
+          <div class="dana-chip">DANA</div>
+          <div style="font-size:10px; color:#60c4ff; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:3px;">Transfer ke</div>
           <div class="dana-number" id="dana-number-display">-</div>
-          <p class="text-[10px] text-slate-300 mb-2" id="dana-owner-display">a.n. -</p>
-          <button onclick="copyDanaNumber()" class="copy-dana-btn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            Copy Nomor DANA
-          </button>
-          <div class="dana-steps">
-            <div class="dana-step">
-              <span class="dana-step-num">1</span>
-              <span>Buka aplikasi <strong class="text-blue-300">DANA</strong> di HP Anda</span>
-            </div>
-            <div class="dana-step">
-              <span class="dana-step-num">2</span>
-              <span>Pilih menu <strong class="text-blue-300">Kirim</strong> / <strong class="text-blue-300">Transfer</strong></span>
-            </div>
-            <div class="dana-step">
-              <span class="dana-step-num">3</span>
-              <span>Masukkan nomor DANA di atas & jumlah sesuai total pembayaran</span>
-            </div>
-            <div class="dana-step">
-              <span class="dana-step-num">4</span>
-              <span>Konfirmasi & simpan bukti transfer</span>
-            </div>
-            <div class="dana-step">
-              <span class="dana-step-num">5</span>
-              <span>Upload bukti transfer di bawah ini</span>
-            </div>
+          <div style="font-size:11px; color:var(--text-1); margin-bottom:9px;" id="dana-owner-display">a.n. -</div>
+          <button onclick="copyDanaNumber()" class="dana-copy">📋 Copy Nomor</button>
+          <div style="margin-top:12px; text-align:left; background:rgba(0,0,0,0.3); border-radius:8px; padding:10px;">
+            <div class="dana-step"><div class="dana-step-num">1</div><span>Buka aplikasi <strong style="color:#60c4ff;">DANA</strong></span></div>
+            <div class="dana-step"><div class="dana-step-num">2</div><span>Pilih menu <strong style="color:#60c4ff;">Kirim/Transfer</strong></span></div>
+            <div class="dana-step"><div class="dana-step-num">3</div><span>Masukkan nomor & jumlah</span></div>
+            <div class="dana-step"><div class="dana-step-num">4</div><span>Konfirmasi & simpan bukti</span></div>
+            <div class="dana-step" style="margin-bottom:0;"><div class="dana-step-num">5</div><span>Upload bukti di bawah</span></div>
           </div>
         </div>
-
-        <div class="grid grid-cols-2 gap-2">
-          <div class="p-2.5 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(168,85,247,0.15);">
-            <p class="text-[9px] text-slate-400 uppercase font-bold">ID Top Up</p>
-            <p id="topup-id-display" class="text-xs font-bold text-white mono truncate">-</p>
-          </div>
-          <div class="p-2.5 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(168,85,247,0.15);">
-            <p class="text-[9px] text-slate-400 uppercase font-bold">Status</p>
-            <p id="topup-status-display"><span class="payment-status-badge status-pending">Menunggu</span></p>
-          </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:7px;">
+          <div style="padding:9px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:7px;"><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">ID Top Up</div><div id="topup-id-display" class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">-</div></div>
+          <div style="padding:9px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:7px;"><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Status</div><div id="topup-status-display" style="margin-top:2px;"><span class="badge badge-warn">Menunggu</span></div></div>
         </div>
-
-        <button onclick="handleCreatePayment()" id="btn-create-payment" class="btn-primary" style="background: linear-gradient(135deg, #007BFF, #0056b3);">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-          Buat Pesanan & Bayar
-        </button>
-
-        <div id="payment-proof-section" class="hidden space-y-3 pt-3 border-t border-emerald-500/20">
-          <p class="text-[10px] font-bold uppercase tracking-wider text-emerald-300">Upload Bukti Pembayaran</p>
-          <div class="file-drop" onclick="document.getElementById('payment-proof-file').click()">
-            <input type="file" id="payment-proof-file" accept="image/*" class="hidden" onchange="handlePaymentProofSelect(event)">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="1.5" style="margin: 0 auto 0.5rem; display: block;">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
-            </svg>
-            <p id="proof-file-info" class="text-xs font-bold text-slate-300">Klik untuk upload bukti transfer</p>
-            <p class="text-[10px] text-slate-500 mt-1">Format: JPG, PNG (Max 5MB)</p>
+        <button onclick="handleCreatePayment()" id="btn-create-payment" class="btn btn-info">💳 Buat Pesanan & Bayar</button>
+        <div id="payment-proof-section" class="hide" style="display:flex; flex-direction:column; gap:12px; padding-top:12px; border-top:1px solid var(--line);">
+          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--ok); letter-spacing:0.06em;">Upload Bukti</div>
+          <div class="dropzone" onclick="document.getElementById('payment-proof-file').click()">
+            <input type="file" id="payment-proof-file" accept="image/*" class="hide" onchange="handlePaymentProofSelect(event)">
+            <div id="proof-file-info" style="font-size:12px; font-weight:600;">Klik untuk upload</div>
+            <div style="font-size:10.5px; color:var(--text-2); margin-top:3px;">JPG, PNG (max 5MB)</div>
           </div>
-          <button onclick="handleUploadProof()" id="btn-upload-proof" class="btn-success" disabled>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            Kirim Bukti Pembayaran
-          </button>
+          <button onclick="handleUploadProof()" id="btn-upload-proof" class="btn btn-ok" disabled>Kirim Bukti</button>
         </div>
-
-        <div id="transaction-status-box" class="hidden p-3 rounded-xl" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(168,85,247,0.2);">
-          <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Status Transaksi</p>
+        <div id="transaction-status-box" class="hide" style="padding:11px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:9px;">
+          <div style="font-size:9.5px; font-weight:700; text-transform:uppercase; color:var(--text-2); letter-spacing:0.06em; margin-bottom:5px;">Status</div>
           <div id="transaction-status-content"></div>
         </div>
       </div>
-
-      <div class="pt-3 border-t border-amber-500/20">
-        <div class="flex justify-between items-center mb-2">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-amber-300">Riwayat Pembelian</span>
-          <button onclick="loadUserTransactions()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+      <div style="padding-top:12px; border-top:1px solid var(--line);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--warn); letter-spacing:0.06em;">Riwayat</div>
+          <button onclick="loadUserTransactions()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
-        <div id="user-transactions-list" class="space-y-2 max-h-60 overflow-y-auto">
-          <p class="text-slate-500 italic text-xs text-center py-2">Memuat riwayat...</p>
+        <div id="user-transactions-list" style="display:flex; flex-direction:column; gap:7px; max-height:220px; overflow-y:auto;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
         </div>
       </div>
     </div>
 
-    <!-- VIEW: CHAT GLOBAL -->
-    <div id="section-chat" class="glass-panel space-y-3 hidden">
-      <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
-        <h2 class="section-title" style="margin: 0;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          Chat Global
-        </h2>
-        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+    <div id="section-chat" class="hide card" style="display:flex; flex-direction:column; gap:12px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
+        <div class="section-head" style="margin:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat Global</div>
+        <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
       </div>
-
-      <div class="chat-container">
-        <div id="chat-messages" class="chat-messages">
-          <p class="text-slate-500 italic text-xs text-center py-3">Memuat chat...</p>
-        </div>
-        <div class="chat-input-row">
-          <input type="text" id="chat-input" placeholder="Tulis pesan..." maxlength="500" onkeydown="if(event.key==='Enter')sendChatMessage()">
-          <button onclick="sendChatMessage()">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          </button>
+      <div class="chat-wrap">
+        <div id="chat-messages" class="chat-stream"><p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Memuat...</p></div>
+        <div class="chat-input-bar">
+          <input type="text" id="chat-input" placeholder="Tulis pesan..." maxlength="500" class="inp" onkeydown="if(event.key==='Enter')sendChatMessage()">
+          <button onclick="sendChatMessage()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
         </div>
       </div>
-
-      <div class="flex items-center justify-between text-[10px] text-slate-500">
+      <div style="display:flex; justify-content:space-between; align-items:center; font-size:10.5px; color:var(--text-2);">
         <span id="chat-online-count">👥 0 user online</span>
-        <button onclick="loadGlobalChat()" class="text-purple-400 hover:text-purple-300 underline">Refresh</button>
+        <button onclick="loadGlobalChat()" class="btn btn-ghost btn-xs">Refresh</button>
       </div>
     </div>
 
-    <!-- VIEW: PROFILE -->
-    <div id="section-profile" class="glass-panel space-y-4 hidden">
-      <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
-        <h2 class="section-title" style="margin: 0;">Akun & Profil</h2>
-        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+    <div id="section-profile" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
+        <div class="section-head" style="margin:0;">Profil Akun</div>
+        <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
       </div>
-
-      <div class="space-y-2.5">
-        <div class="stat-card">
-          <div>
-            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Username</p>
-            <p id="profile-uname" class="text-sm font-bold text-white mono mt-0.5">-</p>
-          </div>
-          <div class="w-9 h-9 rounded-xl flex items-center justify-center" style="background: rgba(168,85,247,0.15);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-2.5">
-          <div class="stat-card">
-            <div>
-              <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tipe</p>
-              <p id="profile-role" class="text-xs font-bold text-purple-400 mt-0.5">Standard</p>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div>
-              <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Kuota</p>
-              <p id="profile-quota" class="text-xs font-bold text-cyan-400 mono mt-0.5">0</p>
-            </div>
-          </div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <div class="stat"><div><div class="stat-label">Username</div><div id="profile-uname" class="mono" style="font-size:13px; font-weight:700; margin-top:2px;">-</div></div></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <div class="stat"><div><div class="stat-label">Tipe</div><div id="profile-role" style="font-size:12px; font-weight:700; color:var(--accent); margin-top:2px;">Standard</div></div></div>
+          <div class="stat"><div><div class="stat-label">Kuota</div><div id="profile-quota" class="mono" style="font-size:12px; font-weight:700; color:var(--info); margin-top:2px;">0</div></div></div>
         </div>
       </div>
-
       <div class="divider"></div>
-
       <div>
-        <div class="section-title">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          Ganti Username
-        </div>
-        <div class="flex gap-2">
-          <input type="text" id="new-username-input" placeholder="username_baru" class="input-glow" style="flex: 1; padding: 0.7rem 1rem; font-size: 0.85rem;">
-          <button onclick="triggerUpdateUsername()" class="btn-primary" style="width: auto; padding: 0.7rem 1rem; font-size: 0.8rem;">Simpan</button>
+        <div class="section-head">Ganti Username</div>
+        <div style="display:flex; gap:7px;">
+          <input type="text" id="new-username-input" placeholder="username_baru" class="inp" style="flex:1;">
+          <button onclick="triggerUpdateUsername()" class="btn btn-sm">Simpan</button>
         </div>
       </div>
-
       <div>
-        <div class="section-title" style="color: #fda4af;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          Ganti Password
-        </div>
-        <div class="space-y-2">
-          <input type="password" id="old-password-input" placeholder="Password lama" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-          <input type="password" id="new-password-input" placeholder="Password baru" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-          <input type="password" id="confirm-password-input" placeholder="Konfirmasi password baru" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-          <button onclick="handleChangePassword()" class="btn-primary" style="width: 100%;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            Ubah Password
-          </button>
+        <div class="section-head" style="color:var(--err);">Ganti Password</div>
+        <div style="display:flex; flex-direction:column; gap:7px;">
+          <input type="password" id="old-password-input" placeholder="Password lama" class="inp">
+          <input type="password" id="new-password-input" placeholder="Password baru" class="inp">
+          <input type="password" id="confirm-password-input" placeholder="Konfirmasi" class="inp">
+          <button onclick="handleChangePassword()" class="btn">Ubah Password</button>
         </div>
       </div>
-
-      <div class="pt-3 border-t border-cyan-500/20">
-        <div class="flex justify-between items-center mb-2">
-          <div class="section-title" style="color: #67e8f9; margin: 0;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-            Riwayat Gmail Terverifikasi
-          </div>
-          <button onclick="loadVerifiedEmails()" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.68rem;">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-            Refresh
-          </button>
+      <div style="padding-top:12px; border-top:1px solid var(--line);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:9px;">
+          <div class="section-head" style="margin:0; color:var(--info);">Gmail Terverifikasi</div>
+          <button onclick="loadVerifiedEmails()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
-
-        <div id="quota-status-card" class="p-3 rounded-xl mb-2.5" style="background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.25);">
-          <div class="flex justify-between items-center mb-2">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-300">Status Kuota</span>
-            <span id="quota-status-badge" class="badge badge-online" style="font-size: 0.6rem; padding: 0.15rem 0.5rem;">Tersedia</span>
+        <div id="quota-status-card" style="padding:11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:9px; margin-bottom:9px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:7px;">
+            <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em;">Status Kuota</div>
+            <span id="quota-status-badge" class="badge badge-ok" style="font-size:9px;">Tersedia</span>
           </div>
-          <div class="flex items-center justify-between text-xs">
-            <div>
-              <p class="text-slate-400 text-[10px]">Terpakai</p>
-              <p class="mono font-extrabold text-white" id="quota-used-display">0</p>
-            </div>
-            <div class="text-right">
-              <p class="text-slate-400 text-[10px]">Tersisa</p>
-              <p class="mono font-extrabold text-cyan-300" id="quota-remain-display">1</p>
-            </div>
-            <div class="text-right">
-              <p class="text-slate-400 text-[10px]">Total</p>
-              <p class="mono font-extrabold text-purple-300" id="quota-total-display">1</p>
-            </div>
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; text-align:center;">
+            <div><div style="font-size:9px; color:var(--text-2);">Terpakai</div><div id="quota-used-display" class="mono" style="font-size:13px; font-weight:800;">0</div></div>
+            <div><div style="font-size:9px; color:var(--text-2);">Tersisa</div><div id="quota-remain-display" class="mono" style="font-size:13px; font-weight:800; color:var(--info);">2</div></div>
+            <div><div style="font-size:9px; color:var(--text-2);">Total</div><div id="quota-total-display" class="mono" style="font-size:13px; font-weight:800; color:var(--accent);">2</div></div>
           </div>
         </div>
-
-        <div id="reset-countdown-card" class="p-3.5 rounded-xl mb-2.5 hidden" style="background: linear-gradient(135deg, rgba(244,63,94,0.12), rgba(168,85,247,0.08)); border: 1px solid rgba(244,63,94,0.35);">
-          <div class="flex items-center gap-2.5 mb-2.5">
-            <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style="background: rgba(244,63,94,0.2);">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fda4af" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <div id="reset-countdown-card" class="hide" style="padding:13px; background:linear-gradient(135deg,var(--err-soft),var(--accent-soft)); border:1px solid rgba(248,113,113,0.3); border-radius:11px; margin-bottom:9px;">
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+            <div style="width:34px; height:34px; border-radius:9px; background:rgba(248,113,113,0.2); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--err)" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             </div>
-            <div>
-              <p class="text-xs font-extrabold text-rose-300">KUOTA HABIS</p>
-              <p class="text-[10px] text-slate-300">Kuota akan direset otomatis dalam:</p>
-            </div>
+            <div><div style="font-size:12px; font-weight:800; color:var(--err);">Kuota habis</div><div style="font-size:10.5px; color:var(--text-1);">Reset dalam:</div></div>
           </div>
-          
-          <div class="grid grid-cols-3 gap-2 text-center">
-            <div class="countdown-box">
-              <p id="countdown-hours" class="countdown-num">00</p>
-              <p class="countdown-label">Jam</p>
-            </div>
-            <div class="countdown-box">
-              <p id="countdown-minutes" class="countdown-num">00</p>
-              <p class="countdown-label">Menit</p>
-            </div>
-            <div class="countdown-box">
-              <p id="countdown-seconds" class="countdown-num">00</p>
-              <p class="countdown-label">Detik</p>
-            </div>
+          <div class="countdown-grid">
+            <div class="countdown-cell"><div id="countdown-hours" class="countdown-num">00</div><div class="countdown-lbl">Jam</div></div>
+            <div class="countdown-cell"><div id="countdown-minutes" class="countdown-num">00</div><div class="countdown-lbl">Menit</div></div>
+            <div class="countdown-cell"><div id="countdown-seconds" class="countdown-num">00</div><div class="countdown-lbl">Detik</div></div>
           </div>
-
-          <p class="text-[10px] text-center text-slate-400 mt-2.5">
-            Reset berikutnya: <span id="next-reset-time" class="text-rose-300 font-bold mono">-</span>
-          </p>
-
-          <div class="progress-bar mt-2.5" style="height: 6px;">
-            <div id="reset-progress-fill" class="progress-fill" style="background: linear-gradient(90deg, #f43f5e, #a855f7, #f43f5e);"></div>
-          </div>
+          <p style="font-size:10px; text-align:center; color:var(--text-1); margin-top:8px;">Reset berikutnya: <span id="next-reset-time" class="mono" style="color:var(--err); font-weight:700;">-</span></p>
         </div>
-
-        <div id="verified-emails-list" class="space-y-1.5 max-h-64 overflow-y-auto">
-          <p class="text-slate-500 italic text-center py-2 text-xs">Memuat riwayat...</p>
+        <div id="verified-emails-list" style="display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
         </div>
       </div>
     </div>
 
-    <!-- VIEW: PANEL ADMIN -->
-    <div id="section-admin" class="glass-panel space-y-4 hidden">
-      <div class="flex items-center justify-between pb-3 border-b border-amber-500/20">
-        <h2 class="section-title" style="margin: 0; color: #fbbf24;">Panel Admin Master</h2>
-        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+    <div id="section-admin" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
+        <div class="section-head" style="margin:0; color:var(--warn);">Admin Panel</div>
+        <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
       </div>
-
-      <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(168,85,247,0.08)); border: 1px solid rgba(245,158,11,0.3);">
-        <p class="text-xs font-extrabold text-amber-300 flex items-center gap-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
-          ADMIN MASTER CONTROL PANEL
-        </p>
+      <div style="padding:11px; background:linear-gradient(135deg,var(--warn-soft),var(--accent-soft)); border:1px solid rgba(251,191,36,0.3); border-radius:9px;">
+        <div style="font-size:11.5px; font-weight:800; color:var(--warn);">👑 Master Control Panel</div>
       </div>
-
       <div>
-        <p class="section-title" style="color: #fbbf24;">Status Server</p>
-        <div class="grid grid-cols-2 gap-2">
-          <button onclick="changeServerState('online')" class="btn-secondary" style="background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.35); color: #6ee7b7;">
-            <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Online
-          </button>
-          <button onclick="changeServerState('offline')" class="btn-secondary" style="background: rgba(244,63,94,0.12); border-color: rgba(244,63,94,0.35); color: #fda4af;">
-            <span class="w-2 h-2 rounded-full bg-rose-500"></span> Offline
-          </button>
+        <div class="section-head" style="color:var(--warn);">Status Server</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:7px;">
+          <button onclick="changeServerState('online')" class="btn btn-ok btn-sm" style="width:100%;">● Online</button>
+          <button onclick="changeServerState('offline')" class="btn btn-err btn-sm" style="width:100%;">● Offline</button>
         </div>
       </div>
-
       <div>
-        <p class="section-title" style="color: #fbbf24;">Upload Video (>5MB Support)</p>
-        <div id="file-drop-zone" class="file-drop">
-          <input type="file" id="admin-video-file" accept="video/*" class="hidden">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.5" style="margin: 0 auto 0.5rem; display: block;">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-          </svg>
-          <p class="text-xs font-bold text-slate-300">Klik atau drop video di sini</p>
-          <p class="text-[10px] text-slate-500 mt-1">Support MP4, WebM, MOV • Max 200MB</p>
-          <p id="file-info" class="text-[10px] text-purple-300 mono mt-2 hidden"></p>
+        <div class="section-head" style="color:var(--warn);">Upload Video</div>
+        <div id="file-drop-zone" class="dropzone">
+          <input type="file" id="admin-video-file" accept="video/*" class="hide">
+          <div style="font-size:12px; font-weight:600;">Klik atau drop video</div>
+          <div style="font-size:10.5px; color:var(--text-2); margin-top:3px;">MP4, WebM, MOV • max 200MB</div>
+          <div id="file-info" class="mono hide" style="font-size:10px; color:var(--accent); margin-top:6px;"></div>
         </div>
-        
-        <div id="upload-progress-container" class="hidden mt-3">
-          <div class="flex justify-between text-[10px] text-slate-400 mb-1.5">
-            <span id="upload-status-text">Mengunggah...</span>
-            <span id="upload-percent" class="mono font-bold text-purple-300">0%</span>
+        <div id="upload-progress-container" class="hide" style="margin-top:10px;">
+          <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--text-1); margin-bottom:6px;">
+            <span id="upload-status-text">Uploading...</span>
+            <span id="upload-percent" class="mono" style="color:var(--accent); font-weight:700;">0%</span>
           </div>
-          <div class="progress-bar">
-            <div id="upload-progress-fill" class="progress-fill"></div>
-          </div>
-          <p id="upload-speed" class="text-[10px] text-slate-500 mono mt-1.5 text-center"></p>
+          <div class="prog"><div id="upload-progress-fill" class="prog-fill"></div></div>
+          <p id="upload-speed" class="mono" style="font-size:10px; color:var(--text-2); margin-top:6px; text-align:center;"></p>
         </div>
-
-        <button onclick="handleUploadVideo()" id="btn-upload-video" class="btn-primary mt-3" disabled>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          <span id="btn-upload-text">Upload & Perbarui Video</span>
-        </button>
+        <button onclick="handleUploadVideo()" id="btn-upload-video" class="btn" style="margin-top:10px;" disabled><span id="btn-upload-text">Upload Video</span></button>
       </div>
-
       <div>
-        <p class="section-title" style="color: #fbbf24;">Kelola VIP User</p>
-        <input type="text" id="vip-target-user" placeholder="Username target" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-        <div class="flex gap-2">
-          <input type="number" id="vip-duration-days" placeholder="Jumlah hari" class="input-glow" style="flex: 1; padding: 0.7rem 1rem; font-size: 0.85rem;">
-          <button onclick="handleSetVip()" class="btn-primary" style="width: auto; padding: 0.7rem 1rem; font-size: 0.8rem;">Set VIP</button>
+        <div class="section-head" style="color:var(--warn);">Kelola VIP</div>
+        <input type="text" id="vip-target-user" placeholder="Username target" class="inp" style="margin-bottom:7px;">
+        <div style="display:flex; gap:7px;">
+          <input type="number" id="vip-duration-days" placeholder="Hari" class="inp" style="flex:1;">
+          <button onclick="handleSetVip()" class="btn btn-sm">Set VIP</button>
         </div>
-        <div class="flex justify-between items-center mt-2 mb-1">
-          <span class="text-[10px] text-amber-300 font-bold">Daftar VIP Aktif</span>
-          <button onclick="loadAdminVipList()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin:9px 0 6px;">
+          <div style="font-size:10px; color:var(--warn); font-weight:700; text-transform:uppercase;">VIP Aktif</div>
+          <button onclick="loadAdminVipList()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
-        <div id="admin-vip-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px]">
-          <p class="text-slate-500 italic text-center py-2">Memuat...</p>
-        </div>
-      </div>
-
-      <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(168,85,247,0.1), rgba(6,182,212,0.06)); border: 1px solid rgba(168,85,247,0.35);">
-        <p class="section-title" style="color: #d8b4fe; margin-top: 0;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-          Buat Akun VIP Baru
-        </p>
-        <p class="text-[10px] text-slate-400 mb-2">Admin dapat membuat akun VIP untuk dibagikan ke user</p>
-        <input type="text" id="vip-create-username" placeholder="Username akun VIP" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-        <input type="text" id="vip-create-password" placeholder="Password akun VIP" class="input-glow mb-2 mono" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-        <input type="number" id="vip-create-days" placeholder="Masa aktif VIP (hari)" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-        <button onclick="handleCreateVipAccount()" class="btn-success" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-          Buat Akun VIP
-        </button>
-
-        <div class="flex justify-between items-center mt-3 mb-1">
-          <span class="text-[10px] text-purple-300 font-bold">Daftar Akun VIP Dibuat</span>
-          <button onclick="loadVipAccounts()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
-        </div>
-        <div id="vip-accounts-list" class="space-y-1.5 max-h-40 overflow-y-auto text-[11px]">
-          <p class="text-slate-500 italic text-center py-2">Memuat...</p>
+        <div id="admin-vip-list" style="display:flex; flex-direction:column; gap:6px; max-height:130px; overflow-y:auto; font-size:11px;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Memuat...</p>
         </div>
       </div>
-
-      <!-- KELOLA APK MOD -->
-      <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(34,197,94,0.1), rgba(22,163,74,0.06)); border: 1px solid rgba(34,197,94,0.35);">
-        <p class="section-title" style="color: #86efac; margin-top: 0;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-          Kelola APK MOD
-        </p>
-        <p class="text-[10px] text-slate-400 mb-2">Tambahkan APK MOD dengan nama & link download</p>
-        
+      <div style="padding:11px; background:linear-gradient(135deg,var(--accent-soft),var(--info-soft)); border:1px solid rgba(139,124,246,0.3); border-radius:9px;">
+        <div class="section-head" style="color:var(--accent); margin-top:0;">Buat Akun VIP</div>
+        <div style="display:flex; flex-direction:column; gap:7px;">
+          <input type="text" id="vip-create-username" placeholder="Username VIP" class="inp">
+          <input type="text" id="vip-create-password" placeholder="Password VIP" class="inp mono">
+          <input type="number" id="vip-create-days" placeholder="Hari aktif" class="inp">
+          <button onclick="handleCreateVipAccount()" class="btn btn-sm" style="background:var(--accent);">Buat Akun VIP</button>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin:9px 0 6px;">
+          <div style="font-size:10px; color:var(--accent); font-weight:700; text-transform:uppercase;">Akun VIP Dibuat</div>
+          <button onclick="loadVipAccounts()" class="btn btn-ghost btn-xs">Refresh</button>
+        </div>
+        <div id="vip-accounts-list" style="display:flex; flex-direction:column; gap:6px; max-height:180px; overflow-y:auto; font-size:11px;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Memuat...</p>
+        </div>
+      </div>
+      <div style="padding:11px; background:linear-gradient(135deg,var(--ok-soft),var(--info-soft)); border:1px solid rgba(74,222,128,0.3); border-radius:9px;">
+        <div class="section-head" style="color:var(--ok); margin-top:0;">Kelola APK MOD</div>
         <input type="hidden" id="apk-edit-id" value="">
-        <input type="text" id="apk-name-input" placeholder="Nama APK (contoh: Netflix Mod)" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-        <input type="text" id="apk-link-input" placeholder="Link download APK" class="input-glow mb-2 mono" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-        <input type="text" id="apk-desc-input" placeholder="Deskripsi singkat (opsional)" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-        <div class="flex gap-2">
-          <button onclick="handleSaveApkMod()" id="apk-submit-btn" class="btn-apk" style="flex: 1;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Tambah APK MOD
-          </button>
-          <button onclick="resetApkForm()" id="apk-cancel-btn" class="btn-secondary hidden">Batal</button>
+        <div style="display:flex; flex-direction:column; gap:7px;">
+          <input type="text" id="apk-name-input" placeholder="Nama APK" class="inp">
+          <input type="text" id="apk-link-input" placeholder="Link download" class="inp mono">
+          <input type="text" id="apk-desc-input" placeholder="Deskripsi (opsional)" class="inp">
+          <div style="display:flex; gap:7px;">
+            <button onclick="handleSaveApkMod()" id="apk-submit-btn" class="btn btn-apk btn-sm" style="flex:1;">Tambah APK</button>
+            <button onclick="resetApkForm()" id="apk-cancel-btn" class="btn btn-ghost btn-sm hide">Batal</button>
+          </div>
         </div>
-
-        <div class="flex justify-between items-center mt-3 mb-1">
-          <span class="text-[10px] text-green-300 font-bold">Daftar APK MOD</span>
-          <button onclick="loadAdminApkList()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin:9px 0 6px;">
+          <div style="font-size:10px; color:var(--ok); font-weight:700; text-transform:uppercase;">Daftar APK</div>
+          <button onclick="loadAdminApkList()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
-        <div id="admin-apk-list" class="space-y-1.5 max-h-40 overflow-y-auto text-[11px]">
-          <p class="text-slate-500 italic text-center py-2">Memuat...</p>
+        <div id="admin-apk-list" style="display:flex; flex-direction:column; gap:6px; max-height:180px; overflow-y:auto; font-size:11px;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Memuat...</p>
         </div>
       </div>
-
-      <!-- KELOLA ORDERAN -->
-      <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(6,182,212,0.1), rgba(168,85,247,0.06)); border: 1px solid rgba(6,182,212,0.35);">
-        <div class="flex justify-between items-center mb-2">
-          <p class="section-title" style="color: #67e8f9; margin: 0;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
-            Semua Orderan User
-          </p>
-          <button onclick="loadAdminOrders()" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.68rem;">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-            Refresh
-          </button>
+      <div style="padding:11px; background:linear-gradient(135deg,var(--info-soft),var(--accent-soft)); border:1px solid rgba(96,165,250,0.3); border-radius:9px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:9px;">
+          <div class="section-head" style="color:var(--info); margin:0;">Semua Orderan</div>
+          <button onclick="loadAdminOrders()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
-        
-        <div class="flex flex-wrap gap-1.5 mb-2">
-          <button onclick="setAdminOrderFilter('all')" data-afilter="all" class="admin-order-filter btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.65rem; background: rgba(6,182,212,0.25); border-color: rgba(6,182,212,0.6); color: white;">Semua</button>
-          <button onclick="setAdminOrderFilter('am')" data-afilter="am" class="admin-order-filter btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.65rem;">🎨 AM</button>
-          <button onclick="setAdminOrderFilter('netflix')" data-afilter="netflix" class="admin-order-filter btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.65rem;">🎬 Netflix</button>
-          <button onclick="setAdminOrderFilter('apk')" data-afilter="apk" class="admin-order-filter btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.65rem;">📱 APK</button>
-          <button onclick="setAdminOrderFilter('mail')" data-afilter="mail" class="admin-order-filter btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.65rem;">📧 Mail</button>
+        <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:7px;">
+          <button onclick="setAdminOrderFilter('all')" data-afilter="all" class="admin-order-filter btn btn-xs" style="background:var(--info); color:white;">Semua</button>
+          <button onclick="setAdminOrderFilter('am')" data-afilter="am" class="admin-order-filter btn btn-ghost btn-xs">AM</button>
+          <button onclick="setAdminOrderFilter('netflix')" data-afilter="netflix" class="admin-order-filter btn btn-ghost btn-xs">NFLX</button>
+          <button onclick="setAdminOrderFilter('apk')" data-afilter="apk" class="admin-order-filter btn btn-ghost btn-xs">APK</button>
+          <button onclick="setAdminOrderFilter('mail')" data-afilter="mail" class="admin-order-filter btn btn-ghost btn-xs">Mail</button>
         </div>
-
-        <input type="text" id="admin-order-search" oninput="renderAdminOrders()" placeholder="Cari Order ID / Username..." class="input-glow mono mb-2" style="padding: 0.5rem 0.75rem; font-size: 0.78rem;">
-        
-        <div id="admin-orders-list" class="space-y-2 max-h-64 overflow-y-auto text-[11px]">
-          <p class="text-slate-500 italic text-center py-2">Klik Refresh untuk memuat orderan...</p>
+        <input type="text" id="admin-order-search" oninput="renderAdminOrders()" placeholder="Cari..." class="inp mono" style="margin-bottom:7px;">
+        <div id="admin-orders-list" style="display:flex; flex-direction:column; gap:6px; max-height:250px; overflow-y:auto; font-size:11px;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Klik Refresh...</p>
         </div>
       </div>
-
-      <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(168,85,247,0.06)); border: 1px solid rgba(245,158,11,0.35);">
-        <p class="section-title" style="color: #fbbf24; margin-top: 0;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          Pengaturan Layanan VIP
-        </p>
-        
+      <div style="padding:11px; background:linear-gradient(135deg,var(--warn-soft),var(--accent-soft)); border:1px solid rgba(251,191,36,0.3); border-radius:9px;">
+        <div class="section-head" style="color:var(--warn); margin-top:0;">Kelola Layanan VIP</div>
         <input type="hidden" id="vip-shop-edit-id" value="">
-        <input type="text" id="vip-shop-name" placeholder="Nama layanan (contoh: VIP 7 Hari)" class="input-glow mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-        <div class="grid grid-cols-2 gap-2 mb-2">
-          <input type="number" id="vip-shop-price" placeholder="Harga (Rp)" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-          <input type="number" id="vip-shop-days" placeholder="Masa aktif (hari)" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
+        <div style="display:flex; flex-direction:column; gap:7px;">
+          <input type="text" id="vip-shop-name" placeholder="Nama layanan" class="inp">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:7px;">
+            <input type="number" id="vip-shop-price" placeholder="Harga (Rp)" class="inp">
+            <input type="number" id="vip-shop-days" placeholder="Hari" class="inp">
+          </div>
+          <div style="display:flex; gap:7px;">
+            <button onclick="handleSaveVipShop()" id="vip-shop-submit-btn" class="btn btn-sm" style="flex:1; background:var(--warn); color:#3a2800;">Tambah Layanan</button>
+            <button onclick="resetVipShopForm()" id="vip-shop-cancel-btn" class="btn btn-ghost btn-sm hide">Batal</button>
+          </div>
         </div>
-        <div class="flex gap-2">
-          <button onclick="handleSaveVipShop()" id="vip-shop-submit-btn" class="btn-primary" style="flex: 1;">Tambah Layanan</button>
-          <button onclick="resetVipShopForm()" id="vip-shop-cancel-btn" class="btn-secondary hidden">Batal</button>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin:9px 0 6px;">
+          <div style="font-size:10px; color:var(--warn); font-weight:700; text-transform:uppercase;">Layanan VIP</div>
+          <button onclick="loadAdminVipShop()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
-
-        <div class="flex justify-between items-center mt-3 mb-1">
-          <span class="text-[10px] text-amber-300 font-bold">Daftar Layanan VIP</span>
-          <button onclick="loadAdminVipShop()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
-        </div>
-        <div id="admin-vip-shop-list" class="space-y-1.5 max-h-40 overflow-y-auto text-[11px]">
-          <p class="text-slate-500 italic text-center py-2">Memuat...</p>
-        </div>
-      </div>
-
-      <div class="p-3 rounded-xl" style="background: linear-gradient(135deg, rgba(6,182,212,0.1), rgba(168,85,247,0.06)); border: 1px solid rgba(6,182,212,0.35);">
-        <div class="flex justify-between items-center mb-2">
-          <p class="section-title" style="color: #67e8f9; margin: 0;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-            Konfirmasi Pembayaran
-          </p>
-          <button onclick="loadAdminTransactions()" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.68rem;">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-            Refresh
-          </button>
-        </div>
-        <div id="admin-transactions-list" class="space-y-2 max-h-64 overflow-y-auto text-[11px]">
-          <p class="text-slate-500 italic text-center py-2">Memuat transaksi...</p>
+        <div id="admin-vip-shop-list" style="display:flex; flex-direction:column; gap:6px; max-height:180px; overflow-y:auto; font-size:11px;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Memuat...</p>
         </div>
       </div>
-
+      <div style="padding:11px; background:linear-gradient(135deg,var(--info-soft),var(--accent-soft)); border:1px solid rgba(96,165,250,0.3); border-radius:9px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:9px;">
+          <div class="section-head" style="color:var(--info); margin:0;">Konfirmasi Pembayaran</div>
+          <button onclick="loadAdminTransactions()" class="btn btn-ghost btn-xs">Refresh</button>
+        </div>
+        <div id="admin-transactions-list" style="display:flex; flex-direction:column; gap:6px; max-height:250px; overflow-y:auto; font-size:11px;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Memuat...</p>
+        </div>
+      </div>
       <div>
-        <div class="flex justify-between items-center mb-2">
-          <p class="section-title" style="color: #fbbf24; margin: 0;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            Daftar User Terdaftar
-          </p>
-          <button onclick="loadAllUsers()" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.68rem;">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-            Refresh
-          </button>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:9px;">
+          <div class="section-head" style="color:var(--warn); margin:0;">Daftar User</div>
+          <button onclick="loadAllUsers()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
-
-        <div class="space-y-2 mb-2.5">
-          <div class="relative">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 0.85rem; top: 50%; transform: translateY(-50%); pointer-events: none;">
-              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-            <input type="text" id="user-search-input" oninput="filterUserList()" placeholder="Cari username atau email..." class="input-glow" style="padding: 0.6rem 0.85rem 0.6rem 2.4rem; font-size: 0.82rem;">
-          </div>
-
-          <div class="flex flex-wrap gap-1.5">
-            <button onclick="setUserFilter('all')" data-filter="all" class="user-filter-btn btn-secondary active-filter" style="padding: 0.3rem 0.7rem; font-size: 0.68rem; background: rgba(168,85,247,0.25); border-color: rgba(168,85,247,0.6); color: white;">Semua</button>
-            <button onclick="setUserFilter('admin')" data-filter="admin" class="user-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">👑 Admin</button>
-            <button onclick="setUserFilter('vip')" data-filter="vip" class="user-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">⭐ VIP</button>
-            <button onclick="setUserFilter('regular')" data-filter="regular" class="user-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">👤 Reguler</button>
-            <button onclick="setUserFilter('reset')" data-filter="reset" class="user-filter-btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.68rem;">🔄 Reset Due</button>
-          </div>
+        <input type="text" id="user-search-input" oninput="filterUserList()" placeholder="Cari username/email..." class="inp" style="margin-bottom:7px;">
+        <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:7px;">
+          <button onclick="setUserFilter('all')" data-filter="all" class="user-filter-btn btn btn-xs" style="background:var(--accent); color:white;">Semua</button>
+          <button onclick="setUserFilter('admin')" data-filter="admin" class="user-filter-btn btn btn-ghost btn-xs">Admin</button>
+          <button onclick="setUserFilter('vip')" data-filter="vip" class="user-filter-btn btn btn-ghost btn-xs">VIP</button>
+          <button onclick="setUserFilter('regular')" data-filter="regular" class="user-filter-btn btn btn-ghost btn-xs">Reguler</button>
+          <button onclick="setUserFilter('reset')" data-filter="reset" class="user-filter-btn btn btn-ghost btn-xs">Reset Due</button>
         </div>
-
-        <div id="user-stats-bar" class="grid grid-cols-4 gap-1.5 mb-2.5 text-center">
-          <div class="p-1.5 rounded-lg" style="background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.2);">
-            <p class="text-[9px] text-purple-300 font-bold uppercase">Total</p>
-            <p id="stat-total" class="text-xs font-extrabold text-white mono">-</p>
-          </div>
-          <div class="p-1.5 rounded-lg" style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2);">
-            <p class="text-[9px] text-amber-300 font-bold uppercase">Admin</p>
-            <p id="stat-admins" class="text-xs font-extrabold text-amber-300 mono">-</p>
-          </div>
-          <div class="p-1.5 rounded-lg" style="background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.2);">
-            <p class="text-[9px] text-purple-300 font-bold uppercase">VIP</p>
-            <p id="stat-vips" class="text-xs font-extrabold text-purple-300 mono">-</p>
-          </div>
-          <div class="p-1.5 rounded-lg" style="background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.2);">
-            <p class="text-[9px] text-cyan-300 font-bold uppercase">Reset</p>
-            <p id="stat-reset" class="text-xs font-extrabold text-cyan-300 mono">-</p>
-          </div>
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:5px; margin-bottom:7px; text-align:center;">
+          <div style="padding:5px; background:var(--accent-soft); border:1px solid rgba(139,124,246,0.2); border-radius:6px;"><div style="font-size:8px; color:var(--accent); font-weight:700; text-transform:uppercase;">Total</div><div id="stat-total" class="mono" style="font-size:11px; font-weight:800;">-</div></div>
+          <div style="padding:5px; background:var(--warn-soft); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div style="font-size:8px; color:var(--warn); font-weight:700; text-transform:uppercase;">Admin</div><div id="stat-admins" class="mono" style="font-size:11px; font-weight:800; color:var(--warn);">-</div></div>
+          <div style="padding:5px; background:var(--accent-soft); border:1px solid rgba(139,124,246,0.2); border-radius:6px;"><div style="font-size:8px; color:var(--accent); font-weight:700; text-transform:uppercase;">VIP</div><div id="stat-vips" class="mono" style="font-size:11px; font-weight:800; color:var(--accent);">-</div></div>
+          <div style="padding:5px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.2); border-radius:6px;"><div style="font-size:8px; color:var(--info); font-weight:700; text-transform:uppercase;">Reset</div><div id="stat-reset" class="mono" style="font-size:11px; font-weight:800; color:var(--info);">-</div></div>
         </div>
-
-        <div id="all-users-list" class="space-y-1.5 max-h-64 overflow-y-auto text-[11px]">
-          <p class="text-slate-500 italic text-center py-2">Klik Refresh untuk memuat daftar user...</p>
+        <div id="all-users-list" style="display:flex; flex-direction:column; gap:6px; max-height:250px; overflow-y:auto; font-size:11px;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Klik Refresh...</p>
         </div>
       </div>
-
       <div>
-        <p class="section-title" style="color: #fbbf24;">Generate Redeem Code</p>
-        <input type="text" id="gen-code" placeholder="NAMA-KODE" class="input-glow uppercase mono mb-2" style="padding: 0.7rem 1rem; font-size: 0.85rem; font-weight: 700;">
-        <div class="grid grid-cols-2 gap-2 mb-2">
-          <input type="number" id="gen-quota-per-user" placeholder="Kuota per user" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;" min="1">
-          <input type="number" id="gen-max-claims" placeholder="Maks orang klaim" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;" min="1">
+        <div class="section-head" style="color:var(--warn);">Generate Redeem</div>
+        <input type="text" id="gen-code" placeholder="NAMA-KODE" class="inp mono" style="margin-bottom:7px; text-transform:uppercase; font-weight:700;">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:7px;">
+          <input type="number" id="gen-quota-per-user" placeholder="Kuota/user" class="inp" min="1">
+          <input type="number" id="gen-max-claims" placeholder="Max klaim" class="inp" min="1">
         </div>
-        <button onclick="handleCreateRedeem()" class="btn-primary">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Generate Kode Redeem
-        </button>
-      </div>
-
-      <div>
-        <div class="flex justify-between items-center mb-1.5">
-          <span class="text-[10px] text-amber-300 font-bold">Daftar Kode Aktif</span>
-          <button onclick="loadAdminRedeems()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+        <button onclick="handleCreateRedeem()" class="btn btn-sm" style="width:100%;">Generate Kode</button>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin:9px 0 6px;">
+          <div style="font-size:10px; color:var(--warn); font-weight:700; text-transform:uppercase;">Kode Aktif</div>
+          <button onclick="loadAdminRedeems()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
-        <div id="admin-redeem-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px]">
-          <p class="text-slate-500 italic text-center py-2">Memuat...</p>
+        <div id="admin-redeem-list" style="display:flex; flex-direction:column; gap:6px; max-height:130px; overflow-y:auto; font-size:11px;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Memuat...</p>
         </div>
       </div>
-
-      <div class="space-y-3 pt-3 border-t border-amber-500/20">
-        <p class="section-title" style="color: #fbbf24; margin: 0;">Panel Kelola Pengumuman</p>
+      <div style="padding-top:12px; border-top:1px solid var(--line);">
+        <div class="section-head" style="color:var(--warn);">Pengumuman</div>
         <input type="hidden" id="info-edit-id" value="">
-        <input type="text" id="info-title" placeholder="Judul informasi" class="input-glow" style="padding: 0.7rem 1rem; font-size: 0.85rem;">
-        <textarea id="info-content" placeholder="Isi pesan informasi..." class="input-glow" style="height: 90px; resize: none; padding: 0.7rem 1rem; font-size: 0.85rem;"></textarea>
-        <div class="flex gap-2">
-          <button id="info-submit-btn" onclick="handleSaveAnnouncement()" class="btn-primary" style="flex: 1;">Publikasikan</button>
-          <button id="info-cancel-btn" onclick="resetInfoForm()" class="btn-secondary hidden">Batal</button>
+        <input type="text" id="info-title" placeholder="Judul" class="inp" style="margin-bottom:7px;">
+        <textarea id="info-content" placeholder="Isi pesan..." class="inp" style="height:80px; resize:none; margin-bottom:7px;"></textarea>
+        <div style="display:flex; gap:7px;">
+          <button id="info-submit-btn" onclick="handleSaveAnnouncement()" class="btn btn-sm" style="flex:1;">Publikasikan</button>
+          <button id="info-cancel-btn" onclick="resetInfoForm()" class="btn btn-ghost btn-sm hide">Batal</button>
         </div>
-        <div id="admin-info-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px] pt-1"></div>
+        <div id="admin-info-list" style="display:flex; flex-direction:column; gap:6px; max-height:130px; overflow-y:auto; font-size:11px; margin-top:9px;"></div>
       </div>
-
-      <div class="space-y-3 pt-3 border-t border-emerald-500/20">
-        <div class="flex justify-between items-center">
-          <p class="section-title" style="color: #6ee7b7; margin: 0;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-            Request Fitur dari User
-          </p>
-          <button onclick="loadAdminFeatureRequests()" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.68rem;">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-            Refresh
-          </button>
+      <div style="padding-top:12px; border-top:1px solid var(--line);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:9px;">
+          <div class="section-head" style="color:var(--ok); margin:0;">Request Fitur</div>
+          <button onclick="loadAdminFeatureRequests()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
-        <div id="admin-feature-requests-list" class="space-y-2 max-h-64 overflow-y-auto text-[11px]">
-          <p class="text-slate-500 italic text-center py-2">Memuat request fitur...</p>
+        <div id="admin-feature-requests-list" style="display:flex; flex-direction:column; gap:7px; max-height:250px; overflow-y:auto; font-size:11px;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Memuat...</p>
         </div>
       </div>
     </div>
 
-    <!-- VIEW: GUIDE -->
-    <div id="section-guide" class="glass-panel space-y-4 hidden">
-      <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
-        <h2 class="section-title" style="margin: 0;">Panduan Penggunaan</h2>
-        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+    <div id="section-guide" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
+        <div class="section-head" style="margin:0;">Panduan</div>
+        <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
       </div>
-
-      <div class="space-y-2.5">
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">1</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Pastikan Anda sudah login ke sistem dengan akun Anda.</p>
-        </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">2</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Untuk Alight Motion: Beralih ke menu Generator AM untuk mulai memproses.</p>
-        </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(229,9,20,0.05); border: 1px solid rgba(229,9,20,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #e50914, #b20710); color: white;">3</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Untuk Netflix: Beralih ke menu Generator Netflix, pilih plan, lalu generate token.</p>
-        </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(34,197,94,0.05); border: 1px solid rgba(34,197,94,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #22c55e, #16a34a); color: white;">4</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Untuk APK MOD: Beralih ke menu Generator APK MOD, pilih APK yang diinginkan, lalu kirim untuk mendapatkan link download.</p>
-        </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(59,130,246,0.05); border: 1px solid rgba(59,130,246,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white;">5</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5"><strong class="text-blue-300">Temp Mail:</strong> Beralih ke menu Temp Mail untuk membuat email sementara. Gunakan untuk menerima OTP, verifikasi, dll.</p>
-        </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(6,182,212,0.05); border: 1px solid rgba(6,182,212,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #06b6d4, #0891b2); color: white;">6</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5"><strong class="text-cyan-300">Setiap generator otomatis membuat ID Orderan!</strong> Lihat di menu "Orderan Saya".</p>
-        </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">7</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Masukkan email target Google/Gmail pada kolom yang tersedia (untuk AM).</p>
-        </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">8</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klik tombol Kirim Magic Link untuk memicu token verifikasi (AM).</p>
-        </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">9</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Salin tautan Magic Link dari email, paste di kolom URL, lalu klik Verifikasi (AM).</p>
-        </div>
-        <div class="flex gap-3 items-start p-2.5 rounded-xl" style="background: rgba(6,182,212,0.05); border: 1px solid rgba(6,182,212,0.12);">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0" style="background: linear-gradient(135deg, #06b6d4, #0891b2); color: white;">10</div>
-          <p class="text-xs text-slate-300 leading-relaxed pt-0.5">Klaim kode redeem untuk dapat kuota bonus. <strong class="text-cyan-300">Quota berlaku untuk SEMUA fitur (AM, Netflix, APK MOD & Temp Mail).</strong></p>
-        </div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">1</div><div style="font-size:12px; color:var(--text-1);">Login/daftar dulu dengan akunmu</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">2</div><div style="font-size:12px; color:var(--text-1);"><strong>Alight Motion:</strong> Masukkan email target, kirim magic link, copy URL, verifikasi</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--netflix); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">3</div><div style="font-size:12px; color:var(--text-1);"><strong>Netflix:</strong> Pilih plan, klik Generate, tunggu proses</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--ok); color:#032a17; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">4</div><div style="font-size:12px; color:var(--text-1);"><strong>APK MOD:</strong> Pilih APK, klik Dapatkan Link</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">5</div><div style="font-size:12px; color:var(--text-1);"><strong>Temp Mail:</strong> Generate email, copy, cek inbox</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">7</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai.</div></div>
       </div>
     </div>
 
-    <!-- VIEW: ANNOUNCEMENT -->
-    <div id="section-announcement" class="glass-panel space-y-4 hidden">
-      <div class="flex items-center justify-between pb-3 border-b border-purple-500/20">
-        <h2 class="section-title" style="margin: 0; color: #67e8f9;">Informasi & Pengumuman</h2>
-        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+    <div id="section-announcement" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
+        <div class="section-head" style="margin:0; color:var(--info);">Pengumuman</div>
+        <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
       </div>
-
-      <div id="user-announcement-container" class="space-y-2.5 max-h-80 overflow-y-auto pr-1">
-        <p class="text-slate-500 italic text-xs text-center py-3">Memuat informasi...</p>
+      <div id="user-announcement-container" style="display:flex; flex-direction:column; gap:9px; max-height:400px; overflow-y:auto;">
+        <p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Memuat...</p>
       </div>
     </div>
 
-    <!-- VIEW: REQUEST FITUR (USER) -->
-    <div id="section-request" class="glass-panel space-y-4 hidden">
-      <div class="flex items-center justify-between pb-3 border-b border-emerald-500/20">
-        <h2 class="section-title" style="margin: 0; color: #6ee7b7;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-          Request Fitur Baru
-        </h2>
-        <button onclick="switchView('generator')" class="btn-secondary" style="padding: 0.35rem 0.7rem; font-size: 0.7rem;">← Kembali</button>
+    <div id="section-request" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
+        <div class="section-head" style="margin:0; color:var(--ok);">Request Fitur</div>
+        <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
       </div>
-
-      <p class="text-xs text-slate-400">Punya ide fitur baru? Kirim saran Anda ke admin!</p>
-
-      <div class="space-y-3">
-        <input type="text" id="feature-request-title" placeholder="Nama fitur yang diinginkan" class="input-glow" style="padding: 0.85rem 1.15rem;">
-        <textarea id="feature-request-desc" placeholder="Jelaskan fitur yang Anda inginkan..." class="input-glow" style="height: 100px; resize: none; padding: 0.85rem 1.15rem;"></textarea>
-        <button onclick="handleSubmitFeatureRequest()" class="btn-success">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          Kirim Request Fitur
-        </button>
+      <p style="font-size:12px; color:var(--text-1); margin:0;">Punya ide fitur baru? Kirim ke admin!</p>
+      <div style="display:flex; flex-direction:column; gap:9px;">
+        <input type="text" id="feature-request-title" placeholder="Nama fitur" class="inp">
+        <textarea id="feature-request-desc" placeholder="Jelaskan fitur..." class="inp" style="height:100px; resize:none;"></textarea>
+        <button onclick="handleSubmitFeatureRequest()" class="btn btn-ok">Kirim Request</button>
       </div>
-
-      <div class="pt-3 border-t border-emerald-500/20">
-        <div class="flex justify-between items-center mb-2">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-300">Request Fitur Anda</span>
-          <button onclick="loadUserFeatureRequests()" class="text-[10px] text-slate-400 hover:text-white underline">Refresh</button>
+      <div style="padding-top:12px; border-top:1px solid var(--line);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <div style="font-size:10px; color:var(--ok); font-weight:700; text-transform:uppercase;">Request Kamu</div>
+          <button onclick="loadUserFeatureRequests()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
-        <div id="user-feature-requests-list" class="space-y-2 max-h-60 overflow-y-auto">
-          <p class="text-slate-500 italic text-xs text-center py-2">Memuat...</p>
+        <div id="user-feature-requests-list" style="display:flex; flex-direction:column; gap:7px; max-height:250px; overflow-y:auto;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
         </div>
       </div>
     </div>
-
-    <p class="text-center text-[10px] text-slate-600 tracking-wider py-2">AM PREMIUM • BY BANGGUS</p>
   </div>
+
+  <div style="text-align:center; font-size:10px; color:var(--text-2); padding:10px 0; letter-spacing:0.08em; text-transform:uppercase; font-weight:600;">AM Premium • Banggus</div>
 </div>
 
 <script>
-// ============ KONFIGURASI DANA ============
 const DANA_ADMIN_NUMBER = '${DANA_ADMIN_NUMBER}';
 const DANA_ADMIN_NAME = '${DANA_ADMIN_NAME}';
+const BASE_QUOTA = 2;
 
-// ============ STATE ============
 let currentAuthMode = 'login';
 let loggedInUsername = '';
 let isAdminUser = false;
@@ -3029,36 +1468,24 @@ let chatRefreshInterval = null;
 let unreadChatCount = 0;
 let lastChatMessageId = null;
 let currentView = 'generator';
-let userQuotaData = { usedQuota: 0, bonusQuota: 0, totalQuota: 1, nextResetTime: 0, lastResetTime: 0 };
+let userQuotaData = { usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, nextResetTime: 0, lastResetTime: 0 };
 let claimedRedeemCodes = {};
 let selectedPaymentProofFile = null;
 let currentTransactionId = null;
 let cachedVipShopItems = [];
-
-// Netflix state
 let selectedNetflixPlan = 'premium';
 let netflixResults = [];
-let netflixGenerateCount = 0;
-
-// APK MOD state
 let selectedApkId = null;
 let apkResults = [];
 let cachedApkMods = [];
-
-// Temp Mail state
 let tempMailSession = null;
-let tempMailResults = [];
-let tempMailCheckInterval = null;
-
-// Orders state
 let myOrders = [];
 let allOrders = [];
 let currentAdminOrderFilter = 'all';
-
-// Server status state
 let serverOnline = true;
-
-// ============ OPTIMASI KUOTA ============
+let onlineUsersCount = 0;
+let onlineHeartbeatInterval = null;
+let onlinePollInterval = null;
 let isPageVisible = true;
 let statusPollInterval = null;
 let videoPollInterval = null;
@@ -3074,186 +1501,138 @@ let lastMailHistoryFetch = 0;
 let lastMyOrdersFetch = 0;
 let lastAdminOrdersFetch = 0;
 
-const CACHE_DURATION = {
-  status: 30000,
-  video: 60000,
-  chat: 15000,
-  emails: 30000,
-  redeems: 60000,
-  announcements: 60000,
-  netflixHistory: 30000,
-  apkHistory: 30000,
-  mailHistory: 30000,
-  myOrders: 15000,
-  adminOrders: 15000
-};
-
+const CACHE_DURATION = { status:30000, video:60000, chat:15000, emails:30000, redeems:60000, announcements:60000, netflixHistory:30000, apkHistory:30000, mailHistory:30000, myOrders:15000, adminOrders:15000, onlineUsers:15000 };
 const memoryCache = {};
 
 function getCached(key) {
   const entry = memoryCache[key];
   if (!entry) return null;
-  if (Date.now() - entry.time > entry.duration) {
-    delete memoryCache[key];
-    return null;
-  }
+  if (Date.now() - entry.time > entry.duration) { delete memoryCache[key]; return null; }
   return entry.data;
 }
-
-function setCache(key, data, duration) {
-  memoryCache[key] = { data, time: Date.now(), duration };
-}
+function setCache(key, data, duration) { memoryCache[key] = { data, time: Date.now(), duration }; }
 
 document.addEventListener('visibilitychange', () => {
   isPageVisible = !document.hidden;
   if (isPageVisible) {
-    if (currentView === 'generator') {
-      fetchServerStatus(true);
-    }
-    if (currentView === 'chat') {
-      loadGlobalChat(true);
-    }
-    if (currentView === 'vipshop') {
-      loadUserTransactions();
-    }
-    if (currentView === 'netflix') {
-      loadNetflixHistory(true);
-    }
-    if (currentView === 'apkmod') {
-      loadApkHistory(true);
-    }
-    if (currentView === 'tempmail') {
-      loadTempMailHistory(true);
-    }
-    if (currentView === 'orders') {
-      loadMyOrders(true);
-    }
+    if (loggedInUsername) sendOnlineHeartbeat();
+    if (currentView === 'generator') fetchServerStatus(true);
+    if (currentView === 'chat') loadGlobalChat(true);
+    if (currentView === 'vipshop') loadUserTransactions();
+    if (currentView === 'netflix') loadNetflixHistory(true);
+    if (currentView === 'apkmod') loadApkHistory(true);
+    if (currentView === 'tempmail') loadTempMailHistory(true);
+    if (currentView === 'orders') loadMyOrders(true);
   }
 });
 
-// ============ TOAST ============
 function showToast(message, type = 'info', duration = 3000) {
   const container = document.getElementById('toast-container');
   const toast = document.createElement('div');
   toast.className = 'toast toast-' + type;
-  const icons = {
-    success: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>',
-    error: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
-    info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
-    netflix: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
-    apk: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>',
-    mail: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>',
-    order: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>'
-  };
-  toast.innerHTML = (icons[type] || icons.info) + '<span>' + message + '</span>';
+  toast.innerHTML = '<span>' + message + '</span>';
   container.appendChild(toast);
   requestAnimationFrame(() => toast.classList.add('show'));
-  setTimeout(() => {
-    toast.classList.remove('show');
-    setTimeout(() => toast.remove(), 400);
-  }, duration);
+  setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 350); }, duration);
 }
 
-// ============ DRAWER ============
+async function sendOnlineHeartbeat() {
+  if (!loggedInUsername) return;
+  try {
+    const res = await fetch('/api/online/heartbeat', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername }) });
+    const data = await res.json();
+    if (data.success) updateOnlineCount(data.count);
+  } catch(e) {}
+}
+
+async function fetchOnlineCount() {
+  try {
+    const res = await fetch('/api/online/count');
+    const data = await res.json();
+    if (data.success) updateOnlineCount(data.count);
+  } catch(e) {}
+}
+
+function updateOnlineCount(count) {
+  onlineUsersCount = count;
+  const topPill = document.getElementById('online-pill-top');
+  const topCount = document.getElementById('online-count-top');
+  if (topPill && topCount) {
+    topCount.textContent = count;
+    if (count > 0) topPill.classList.remove('hide');
+    else topPill.classList.add('hide');
+  }
+  const chatCount = document.getElementById('chat-online-count');
+  if (chatCount) chatCount.textContent = '👥 ' + count + ' user online';
+}
+
+function startOnlineTracking() {
+  if (onlineHeartbeatInterval) clearInterval(onlineHeartbeatInterval);
+  if (onlinePollInterval) clearInterval(onlinePollInterval);
+  sendOnlineHeartbeat();
+  onlineHeartbeatInterval = setInterval(() => { if (isPageVisible && loggedInUsername) sendOnlineHeartbeat(); }, 20000);
+  onlinePollInterval = setInterval(() => { if (isPageVisible) fetchOnlineCount(); }, CACHE_DURATION.onlineUsers);
+}
+
+function stopOnlineTracking() {
+  if (onlineHeartbeatInterval) { clearInterval(onlineHeartbeatInterval); onlineHeartbeatInterval = null; }
+  if (onlinePollInterval) { clearInterval(onlinePollInterval); onlinePollInterval = null; }
+}
+
+async function markOffline() {
+  if (!loggedInUsername) return;
+  try { await fetch('/api/online/offline', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername }) }); } catch(e) {}
+}
+
+window.addEventListener('beforeunload', () => {
+  if (loggedInUsername) navigator.sendBeacon('/api/online/offline', JSON.stringify({ username: loggedInUsername }));
+});
+
 function toggleMenu() {
-  document.getElementById('nav-drawer').classList.toggle('open');
-  document.getElementById('drawer-overlay').classList.toggle('hidden');
+  const drawer = document.getElementById('nav-drawer');
+  const overlay = document.getElementById('drawer-overlay');
+  drawer.classList.toggle('open');
+  overlay.classList.toggle('hide');
 }
 
 function switchView(viewName) {
   currentView = viewName;
-  document.querySelectorAll('[data-nav]').forEach(el => {
-    el.classList.toggle('active', el.dataset.nav === viewName);
-  });
+  document.querySelectorAll('[data-nav]').forEach(el => { el.classList.toggle('active', el.dataset.nav === viewName); });
   toggleMenu();
-  ['terminal-view', 'section-profile', 'section-guide', 'section-announcement', 'section-chat', 'section-admin', 'section-request', 'section-vipshop', 'section-netflix', 'section-apkmod', 'section-tempmail', 'section-orders'].forEach(id => {
-    document.getElementById(id).classList.add('hidden');
-  });
-  if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hidden');
-  else if (viewName === 'orders') {
-    document.getElementById('section-orders').classList.remove('hidden');
-    loadMyOrders();
-  }
-  else if (viewName === 'netflix') {
-    document.getElementById('section-netflix').classList.remove('hidden');
-    loadNetflixHistory();
-    updateNetflixQuotaDisplay();
-  }
-  else if (viewName === 'apkmod') {
-    document.getElementById('section-apkmod').classList.remove('hidden');
-    loadApkMods();
-    loadApkHistory();
-    updateApkQuotaDisplay();
-  }
-  else if (viewName === 'tempmail') {
-    document.getElementById('section-tempmail').classList.remove('hidden');
-    loadTempMailHistory();
-    updateMailQuotaDisplay();
-  }
+  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-apkmod','section-tempmail','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
+  if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hide');
+  else if (viewName === 'orders') { document.getElementById('section-orders').classList.remove('hide'); loadMyOrders(); }
+  else if (viewName === 'netflix') { document.getElementById('section-netflix').classList.remove('hide'); loadNetflixHistory(); updateNetflixQuotaDisplay(); }
+  else if (viewName === 'apkmod') { document.getElementById('section-apkmod').classList.remove('hide'); loadApkMods(); loadApkHistory(); updateApkQuotaDisplay(); }
+  else if (viewName === 'tempmail') { document.getElementById('section-tempmail').classList.remove('hide'); loadTempMailHistory(); updateMailQuotaDisplay(); }
   else if (viewName === 'vipshop') {
-    document.getElementById('section-vipshop').classList.remove('hidden');
-    loadVipShopItems();
-    loadUserTransactions();
+    document.getElementById('section-vipshop').classList.remove('hide');
+    loadVipShopItems(); loadUserTransactions();
     document.getElementById('dana-number-display').innerText = DANA_ADMIN_NUMBER;
     document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
   }
-  else if (viewName === 'profile') {
-    document.getElementById('section-profile').classList.remove('hidden');
-    loadVerifiedEmails();
-  }
-  else if (viewName === 'guide') document.getElementById('section-guide').classList.remove('hidden');
-  else if (viewName === 'announcement') {
-    document.getElementById('section-announcement').classList.remove('hidden');
-    loadUserAnnouncements();
-  }
-  else if (viewName === 'request') {
-    document.getElementById('section-request').classList.remove('hidden');
-    loadUserFeatureRequests();
-  }
-  else if (viewName === 'chat') {
-    document.getElementById('section-chat').classList.remove('hidden');
-    loadGlobalChat(true);
-    unreadChatCount = 0;
-    updateChatBadge();
-  }
+  else if (viewName === 'profile') { document.getElementById('section-profile').classList.remove('hide'); loadVerifiedEmails(); }
+  else if (viewName === 'guide') document.getElementById('section-guide').classList.remove('hide');
+  else if (viewName === 'announcement') { document.getElementById('section-announcement').classList.remove('hide'); loadUserAnnouncements(); }
+  else if (viewName === 'request') { document.getElementById('section-request').classList.remove('hide'); loadUserFeatureRequests(); }
+  else if (viewName === 'chat') { document.getElementById('section-chat').classList.remove('hide'); loadGlobalChat(true); unreadChatCount = 0; updateChatBadge(); }
   else if (viewName === 'admin') {
     if (!isAdminUser) return showToast('Akses ditolak!', 'error');
-    document.getElementById('section-admin').classList.remove('hidden');
-    loadAdminRedeems();
-    loadAdminAnnouncements();
-    loadAdminVipList();
-    loadAllUsers();
-    loadVipAccounts();
-    loadAdminFeatureRequests();
-    loadAdminVipShop();
-    loadAdminTransactions();
-    loadAdminApkList();
-    loadAdminOrders();
+    document.getElementById('section-admin').classList.remove('hide');
+    loadAdminRedeems(); loadAdminAnnouncements(); loadAdminVipList(); loadAllUsers(); loadVipAccounts(); loadAdminFeatureRequests(); loadAdminVipShop(); loadAdminTransactions(); loadAdminApkList(); loadAdminOrders();
   }
 }
 
-// ============ COPY DANA NUMBER ============
 function copyDanaNumber() {
-  navigator.clipboard.writeText(DANA_ADMIN_NUMBER).then(() => {
-    showToast('Nomor DANA ' + DANA_ADMIN_NUMBER + ' tersalin!', 'success');
-  }).catch(() => {
-    showToast('Gagal copy nomor DANA', 'error');
-  });
-}
-
-// ============ CHECK SERVER ONLINE ============
-function isServerOnline() {
-  return serverOnline;
+  navigator.clipboard.writeText(DANA_ADMIN_NUMBER).then(() => showToast('Nomor tersalin!', 'success')).catch(() => showToast('Gagal', 'error'));
 }
 
 function guardServerOnline(featureName) {
-  if (serverOnline) return true;
-  if (isAdminUser) return true;
-  showToast('Server sedang OFFLINE! Fitur ' + featureName + ' tidak tersedia.', 'error', 4000);
+  if (serverOnline || isAdminUser) return true;
+  showToast('Server offline — ' + featureName + ' tidak tersedia.', 'error', 4000);
   return false;
 }
 
-// ============ MY ORDERS ============
 async function loadMyOrders(force = false) {
   if (!loggedInUsername) return;
   const now = Date.now();
@@ -3261,89 +1640,46 @@ async function loadMyOrders(force = false) {
     const cached = getCached('myOrders');
     if (cached) { myOrders = cached; renderMyOrders(); return; }
   }
-
   const container = document.getElementById('my-orders-list');
-  if (container) container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3 animate-pulse">Memuat orderan...</p>';
-
+  if (container) container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px;">Memuat...</p>';
   try {
     const res = await fetch('/api/orders/my?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
-    if (data.success && data.orders) {
-      myOrders = data.orders;
-      lastMyOrdersFetch = now;
-      setCache('myOrders', myOrders, CACHE_DURATION.myOrders);
-      renderMyOrders();
-    } else {
-      if (container) container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada orderan</p>';
-    }
+    if (data.success && data.orders) { myOrders = data.orders; lastMyOrdersFetch = now; setCache('myOrders', myOrders, CACHE_DURATION.myOrders); renderMyOrders(); }
+    else if (container) container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada orderan</p>';
   } catch(e) {
-    if (container) container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-3">Gagal memuat orderan</p>';
+    if (container) container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>';
   }
 }
 
 function renderMyOrders() {
   const container = document.getElementById('my-orders-list');
   if (!container) return;
-
   const search = (document.getElementById('order-search-input')?.value || '').toLowerCase().trim();
-  
   let filtered = myOrders;
-  if (search) {
-    filtered = myOrders.filter(o => 
-      (o.orderId || '').toLowerCase().includes(search) ||
-      (o.type || '').toLowerCase().includes(search) ||
-      (o.detail || '').toLowerCase().includes(search)
-    );
-  }
-
-  // Update stats
+  if (search) filtered = myOrders.filter(o => (o.orderId||'').toLowerCase().includes(search) || (o.type||'').toLowerCase().includes(search) || (o.detail||'').toLowerCase().includes(search));
   document.getElementById('my-orders-total').innerText = myOrders.length;
   document.getElementById('my-orders-am').innerText = myOrders.filter(o => o.type === 'am').length;
   document.getElementById('my-orders-netflix').innerText = myOrders.filter(o => o.type === 'netflix').length;
   document.getElementById('my-orders-mail').innerText = myOrders.filter(o => o.type === 'mail').length;
-
-  if (filtered.length === 0) {
-    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">' + 
-      (search ? 'Tidak ada orderan yang cocok' : 'Belum ada orderan. Mulai generate untuk membuat orderan!') + '</p>';
-    return;
-  }
-
+  if (filtered.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">' + (search ? 'Tidak cocok' : 'Belum ada') + '</p>'; return; }
   container.innerHTML = filtered.map(o => {
     const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'mail' ? '📧' : '📱';
     const typeLabel = o.type === 'am' ? 'Alight Motion' : o.type === 'netflix' ? 'Netflix' : o.type === 'mail' ? 'Temp Mail' : 'APK MOD';
-    const typeColor = o.type === 'am' ? '#c4b5fd' : o.type === 'netflix' ? '#fca5a5' : o.type === 'mail' ? '#93c5fd' : '#86efac';
-    const typeBadge = o.type === 'am' ? 'badge-vip' : o.type === 'netflix' ? 'badge-netflix' : o.type === 'mail' ? 'badge-mail' : 'badge-apk';
-    
-    const timeStr = new Date(o.timestamp).toLocaleString('id-ID', {
-      day: '2-digit', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit'
-    });
-
-    return '<div class="order-card">' +
-      '<div class="flex justify-between items-start mb-2">' +
-        '<div class="flex-1 min-w-0">' +
-          '<div class="order-id">' + escapeHtml(o.orderId) + '</div>' +
-        '</div>' +
-        '<span class="badge ' + typeBadge + '" style="font-size: 0.62rem; padding: 0.2rem 0.55rem;">' + typeIcon + ' ' + typeLabel + '</span>' +
+    const typeBadge = o.type === 'am' ? 'badge-accent' : o.type === 'netflix' ? 'badge-err' : o.type === 'mail' ? 'badge-info' : 'badge-ok';
+    const timeStr = new Date(o.timestamp).toLocaleString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    return '<div class="hist-item">' +
+      '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">' +
+        '<div class="hist-item-order-id">' + escapeHtml(o.orderId) + '</div>' +
+        '<span class="badge ' + typeBadge + '">' + typeIcon + ' ' + typeLabel + '</span>' +
       '</div>' +
-      '<div class="p-2 rounded-lg mb-2" style="background: rgba(7,4,15,0.5); border: 1px solid rgba(6,182,212,0.15);">' +
-        '<p class="text-[10px] text-slate-400 uppercase font-bold mb-0.5">Detail</p>' +
-        '<p class="text-[11px] text-slate-200 font-semibold mono break-all">' + escapeHtml(o.detail || '-') + '</p>' +
-      '</div>' +
-      (o.result ? 
-        '<div class="p-2 rounded-lg mb-2" style="background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.2);">' +
-          '<p class="text-[10px] text-cyan-300 uppercase font-bold mb-1">Hasil</p>' +
-          '<p class="text-[10px] text-slate-300 mono break-all">' + escapeHtml(o.result.substring(0, 200)) + (o.result.length > 200 ? '...' : '') + '</p>' +
-        '</div>' : '') +
-      '<div class="flex justify-between items-center text-[9px] text-slate-500 pt-1.5 border-t border-slate-800">' +
-        '<span>🕐 ' + timeStr + '</span>' +
-        '<span class="badge badge-online" style="font-size: 0.55rem; padding: 0.1rem 0.4rem;">✓ Sukses</span>' +
-      '</div>' +
+      '<div style="padding:8px 10px; background:var(--bg-0); border-radius:7px; margin-bottom:7px;"><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700; margin-bottom:2px;">Detail</div><div class="mono" style="font-size:11px; word-break:break-all;">' + escapeHtml(o.detail || '-') + '</div></div>' +
+      (o.result ? '<div style="padding:8px 10px; background:var(--info-soft); border-radius:7px; margin-bottom:7px;"><div style="font-size:9px; color:var(--info); text-transform:uppercase; font-weight:700; margin-bottom:2px;">Hasil</div><div class="mono" style="font-size:10px; word-break:break-all;">' + escapeHtml(o.result.substring(0, 200)) + (o.result.length > 200 ? '...' : '') + '</div></div>' : '') +
+      '<div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; color:var(--text-2); padding-top:6px; border-top:1px solid var(--line);"><span>🕐 ' + timeStr + '</span><span class="badge badge-ok" style="font-size:9px;">✓ Sukses</span></div>' +
     '</div>';
   }).join('');
 }
 
-// ============ ADMIN ORDERS ============
 async function loadAdminOrders(force = false) {
   if (!isAdminUser) return;
   const now = Date.now();
@@ -3351,23 +1687,15 @@ async function loadAdminOrders(force = false) {
     const cached = getCached('adminOrders');
     if (cached) { allOrders = cached; renderAdminOrders(); return; }
   }
-
   const container = document.getElementById('admin-orders-list');
-  if (container) container.innerHTML = '<p class="text-slate-500 italic text-center py-2 animate-pulse">Memuat semua orderan...</p>';
-
+  if (container) container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Memuat...</p>';
   try {
     const res = await fetch('/api/admin/orders?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
-    if (data.success && data.orders) {
-      allOrders = data.orders;
-      lastAdminOrdersFetch = now;
-      setCache('adminOrders', allOrders, CACHE_DURATION.adminOrders);
-      renderAdminOrders();
-    } else {
-      if (container) container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada orderan</p>';
-    }
+    if (data.success && data.orders) { allOrders = data.orders; lastAdminOrdersFetch = now; setCache('adminOrders', allOrders, CACHE_DURATION.adminOrders); renderAdminOrders(); }
+    else if (container) container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Belum ada</p>';
   } catch(e) {
-    if (container) container.innerHTML = '<p class="text-rose-400 italic text-center py-2">Gagal memuat</p>';
+    if (container) container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>';
   }
 }
 
@@ -3375,15 +1703,8 @@ function setAdminOrderFilter(filter) {
   currentAdminOrderFilter = filter;
   document.querySelectorAll('.admin-order-filter').forEach(btn => {
     const isActive = btn.dataset.afilter === filter;
-    if (isActive) {
-      btn.style.background = 'rgba(6,182,212,0.25)';
-      btn.style.borderColor = 'rgba(6,182,212,0.6)';
-      btn.style.color = 'white';
-    } else {
-      btn.style.background = '';
-      btn.style.borderColor = '';
-      btn.style.color = '';
-    }
+    btn.style.background = isActive ? 'var(--info)' : '';
+    btn.style.color = isActive ? 'white' : '';
   });
   renderAdminOrders();
 }
@@ -3391,77 +1712,38 @@ function setAdminOrderFilter(filter) {
 function renderAdminOrders() {
   const container = document.getElementById('admin-orders-list');
   if (!container) return;
-
   const search = (document.getElementById('admin-order-search')?.value || '').toLowerCase().trim();
-
   let filtered = allOrders;
-  if (currentAdminOrderFilter !== 'all') {
-    filtered = filtered.filter(o => o.type === currentAdminOrderFilter);
-  }
-  if (search) {
-    filtered = filtered.filter(o =>
-      (o.orderId || '').toLowerCase().includes(search) ||
-      (o.username || '').toLowerCase().includes(search) ||
-      (o.detail || '').toLowerCase().includes(search)
-    );
-  }
-
-  if (filtered.length === 0) {
-    container.innerHTML = '<p class="text-slate-500 italic text-center py-2">' + 
-      (search || currentAdminOrderFilter !== 'all' ? 'Tidak ada orderan yang cocok' : 'Belum ada orderan') + '</p>';
-    return;
-  }
-
+  if (currentAdminOrderFilter !== 'all') filtered = filtered.filter(o => o.type === currentAdminOrderFilter);
+  if (search) filtered = filtered.filter(o => (o.orderId||'').toLowerCase().includes(search) || (o.username||'').toLowerCase().includes(search) || (o.detail||'').toLowerCase().includes(search));
+  if (filtered.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Tidak ada</p>'; return; }
   container.innerHTML = filtered.slice(0, 100).map(o => {
     const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'mail' ? '📧' : '📱';
-    const typeColor = o.type === 'am' ? '#c4b5fd' : o.type === 'netflix' ? '#fca5a5' : o.type === 'mail' ? '#93c5fd' : '#86efac';
-    const timeStr = new Date(o.timestamp).toLocaleString('id-ID', {
-      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
-    });
-
-    return '<div class="p-2 rounded-lg animate-slide-up" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(6,182,212,0.25);">' +
-      '<div class="flex justify-between items-start mb-1">' +
-        '<div class="flex-1 min-w-0">' +
-          '<p class="text-[10px] font-extrabold mono" style="color: #67e8f9;">' + escapeHtml(o.orderId) + '</p>' +
-          '<p class="text-[9px] text-slate-400">oleh <span class="text-white font-bold">' + escapeHtml(o.username) + '</span></p>' +
-        '</div>' +
-        '<span class="text-[9px] px-1.5 py-0.5 rounded-full shrink-0" style="background: rgba(6,182,212,0.15); color: #67e8f9;">' + typeIcon + '</span>' +
+    const timeStr = new Date(o.timestamp).toLocaleString('id-ID', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+    return '<div style="padding:8px 10px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:7px;">' +
+      '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:4px;">' +
+        '<div style="flex:1; min-width:0;"><div class="mono" style="font-size:10px; font-weight:700; color:var(--info);">' + escapeHtml(o.orderId) + '</div><div style="font-size:9px; color:var(--text-2);">oleh <strong style="color:var(--text-0);">' + escapeHtml(o.username) + '</strong></div></div>' +
+        '<span style="font-size:10px;">' + typeIcon + '</span>' +
       '</div>' +
-      '<p class="text-[9px] text-slate-300 mono truncate">' + escapeHtml(o.detail || '-') + '</p>' +
-      '<p class="text-[8px] text-slate-500 mt-1">' + timeStr + '</p>' +
+      '<div class="mono" style="font-size:10px; color:var(--text-1); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(o.detail || '-') + '</div>' +
+      '<div style="font-size:8.5px; color:var(--text-2); margin-top:3px;">' + timeStr + '</div>' +
     '</div>';
   }).join('');
 }
 
-// ============ TEMP MAIL FUNCTIONS ============
 function updateMailQuotaDisplay() {
   const el = document.getElementById('mail-quota-display');
   if (el) {
-    if (isAdminUser || isVipUser) {
-      el.innerText = '∞';
-      el.style.color = '#93c5fd';
-    } else {
-      const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota);
-      el.innerText = remain;
-      el.style.color = remain > 0 ? 'white' : '#fda4af';
-    }
+    if (isAdminUser || isVipUser) { el.innerText = '∞'; el.style.color = 'var(--info)'; }
+    else { const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota); el.innerText = remain; el.style.color = remain > 0 ? 'white' : 'var(--err)'; }
   }
   const resetEl = document.getElementById('mail-reset-display');
-  if (resetEl) {
-    if (isAdminUser || isVipUser) {
-      resetEl.innerText = '∞';
-    } else {
-      resetEl.innerText = '24 Jam';
-    }
-  }
+  if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
 }
 
 async function handleGenerateTempMail() {
-  if (!loggedInUsername) return showToast('Harus login dulu!', 'error');
-  
-  // CHECK SERVER ONLINE
-  if (!guardServerOnline('Temp Mail Generator')) return;
-
+  if (!loggedInUsername) return showToast('Harus login!', 'error');
+  if (!guardServerOnline('Temp Mail')) return;
   const btn = document.getElementById('btn-generate-mail');
   const btnText = document.getElementById('mail-btn-text');
   const loadingEl = document.getElementById('mail-loading');
@@ -3469,271 +1751,116 @@ async function handleGenerateTempMail() {
   const logText = document.getElementById('mail-log-text');
   const progressFill = document.getElementById('mail-progress-fill');
   const resultContainer = document.getElementById('mail-result-container');
-
-  btn.disabled = true;
-  btnText.innerText = 'Memproses...';
-  loadingEl.classList.remove('hidden');
-  progressFill.style.width = '0%';
-  statusText.innerText = 'Menyiapkan email sementara';
-  logText.innerText = 'Initializing...';
-
+  btn.disabled = true; btnText.innerText = 'Memproses...';
+  loadingEl.classList.remove('hide'); progressFill.style.width = '0%';
+  statusText.innerText = 'Menyiapkan'; logText.innerText = 'Initializing...';
   try {
-    // Check quota
     const quotaRes = await fetch('/api/tempmail/check-quota?username=' + encodeURIComponent(loggedInUsername));
     const quotaData = await quotaRes.json();
-    
-    if (!quotaData.success) {
-      throw new Error(quotaData.message || 'Gagal cek quota');
-    }
-    
-    if (!quotaData.allowed) {
-      throw new Error(quotaData.message || 'Quota habis!');
-    }
-
-    statusText.innerText = 'Menggenerate email...';
-    logText.innerText = 'Creating temp mail session...';
-    progressFill.style.width = '40%';
-
-    // Generate temp mail via server
-    const genRes = await fetch('/api/tempmail/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername })
-    });
-
+    if (!quotaData.success) throw new Error(quotaData.message || 'Gagal cek');
+    if (!quotaData.allowed) throw new Error(quotaData.message || 'Quota habis!');
+    statusText.innerText = 'Menggenerate...'; logText.innerText = 'Creating...'; progressFill.style.width = '40%';
+    const genRes = await fetch('/api/tempmail/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername }) });
     const genData = await genRes.json();
     progressFill.style.width = '100%';
-
     if (genData.success && genData.email) {
-      statusText.innerText = '✅ Berhasil!';
-      logText.innerText = 'Email generated successfully';
-      
-      // Store session for this user
+      statusText.innerText = '✅ Berhasil!'; logText.innerText = 'Generated';
       tempMailSession = genData.sessionId || genData.email;
-      
-      // Display email
       document.getElementById('mail-email-display').innerText = genData.email;
-      resultContainer.classList.remove('hidden');
-      
-      // Clear inbox
-      document.getElementById('mail-inbox-list').innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Menunggu email masuk...</p>';
+      resultContainer.classList.remove('hide');
+      document.getElementById('mail-inbox-list').innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Menunggu email...</p>';
       document.getElementById('mail-message-count').innerText = '0 pesan';
-      
-      // Update quota
-      if (genData.quotaInfo) {
-        userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota;
-        updateQuotaDisplay(genData.quotaInfo);
-        updateMailQuotaDisplay();
-      }
-      
-      // Show order ID
-      if (genData.orderId) {
-        showToast('✅ Order ID: ' + genData.orderId + ' — Email sementara berhasil!', 'order', 5000);
-      } else {
-        showToast('Email sementara berhasil di-generate!', 'mail');
-      }
-      
+      if (genData.quotaInfo) { userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(genData.quotaInfo); updateMailQuotaDisplay(); }
+      if (genData.orderId) showToast('✅ Order ID: ' + genData.orderId, 'order', 5000);
+      else showToast('Email berhasil!', 'mail');
       loadTempMailHistory(true);
-      
-      setTimeout(() => {
-        loadingEl.classList.add('hidden');
-      }, 2000);
+      setTimeout(() => loadingEl.classList.add('hide'), 2000);
     } else {
-      // GAGAL - REFILL QUOTA
-      if (genData.refilled) {
-        showToast(genData.message || 'Generate gagal! Kuota Anda dikembalikan.', 'error', 4000);
-      } else {
-        showToast(genData.message || genData.error || 'Gagal generate email', 'error');
-      }
-      if (genData.quotaInfo) {
-        updateQuotaDisplay(genData.quotaInfo);
-        updateMailQuotaDisplay();
-      } else {
-        loadVerifiedEmails(true);
-      }
-      throw new Error(genData.message || genData.error || 'Gagal generate email');
+      if (genData.refilled) showToast(genData.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
+      else showToast(genData.message || 'Gagal', 'error');
+      if (genData.quotaInfo) { updateQuotaDisplay(genData.quotaInfo); updateMailQuotaDisplay(); }
+      else loadVerifiedEmails(true);
+      throw new Error(genData.message || 'Gagal');
     }
   } catch (err) {
-    statusText.innerText = '❌ Gagal';
-    logText.innerText = err.message;
-    if (!err.message.includes('dikembalikan')) {
-      showToast(err.message, 'error');
-    }
-    setTimeout(() => {
-      loadingEl.classList.add('hidden');
-    }, 3000);
-  } finally {
-    btn.disabled = false;
-    btnText.innerText = 'Generate Email Sementara';
-  }
+    statusText.innerText = '❌ Gagal'; logText.innerText = err.message;
+    if (!err.message.includes('dikembalikan')) showToast(err.message, 'error');
+    setTimeout(() => loadingEl.classList.add('hide'), 3000);
+  } finally { btn.disabled = false; btnText.innerText = 'Generate Email'; }
 }
 
 async function checkTempMailInbox() {
-  if (!tempMailSession) return showToast('Generate email terlebih dahulu!', 'error');
-  if (!guardServerOnline('Temp Mail Inbox')) return;
-
+  if (!tempMailSession) return showToast('Generate dulu!', 'error');
+  if (!guardServerOnline('Temp Mail')) return;
   const inboxList = document.getElementById('mail-inbox-list');
   const messageCount = document.getElementById('mail-message-count');
-  
-  inboxList.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3 animate-pulse">Memeriksa inbox...</p>';
-
+  inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px;">Memeriksa...</p>';
   try {
-    const res = await fetch('/api/tempmail/check', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        username: loggedInUsername,
-        sessionId: tempMailSession
-      })
-    });
-
+    const res = await fetch('/api/tempmail/check', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession }) });
     const data = await res.json();
-    
     if (data.success) {
-      if (data.messages && data.messages.length > 0) {
-        messageCount.innerText = data.messages.length + ' pesan';
-        renderTempMailInbox(data.messages);
-        showToast('📧 ' + data.messages.length + ' pesan baru!', 'mail');
-      } else {
-        inboxList.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada email masuk. Coba lagi nanti.</p>';
-        messageCount.innerText = '0 pesan';
-      }
-    } else {
-      inboxList.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-3">' + (data.message || 'Gagal cek inbox') + '</p>';
-    }
-  } catch(e) {
-    inboxList.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-3">Gagal memuat inbox</p>';
-  }
+      if (data.messages && data.messages.length > 0) { messageCount.innerText = data.messages.length + ' pesan'; renderTempMailInbox(data.messages); showToast('📧 ' + data.messages.length + ' pesan!', 'mail'); }
+      else { inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada email</p>'; messageCount.innerText = '0 pesan'; }
+    } else inboxList.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">' + (data.message || 'Gagal') + '</p>';
+  } catch(e) { inboxList.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
 }
 
 function renderTempMailInbox(messages) {
   const container = document.getElementById('mail-inbox-list');
   if (!container) return;
-
-  if (!messages || messages.length === 0) {
-    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Tidak ada pesan</p>';
-    return;
-  }
-
+  if (!messages || messages.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px;">Tidak ada</p>'; return; }
   container.innerHTML = messages.map(msg => {
     const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
-      ? '<div class="links">' + msg.extracted_links.map(link => 
-          '<div class="mail-link" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>'
-        ).join('') + '</div>'
-      : '';
-
-    return '<div class="mail-message-card">' +
-      '<div class="subject">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div>' +
-      '<div class="from">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div>' +
-      '<div class="preview">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' +
-      linksHtml +
-    '</div>';
+      ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
+    return '<div class="hist-item" style="border-color:rgba(96,165,250,0.25);"><div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div><div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' + linksHtml + '</div>';
   }).join('');
 }
 
-function copyTempMailEmail() {
-  const email = document.getElementById('mail-email-display').innerText;
-  if (email && email !== '-') {
-    navigator.clipboard.writeText(email).then(() => {
-      showToast('Email tersalin!', 'mail');
-    });
-  }
-}
-
-function copyMailLink(link) {
-  navigator.clipboard.writeText(link).then(() => {
-    showToast('Link tersalin!', 'mail');
-  });
-}
+function copyTempMailEmail() { const email = document.getElementById('mail-email-display').innerText; if (email && email !== '-') navigator.clipboard.writeText(email).then(() => showToast('Tersalin!', 'mail')); }
+function copyMailLink(link) { navigator.clipboard.writeText(link).then(() => showToast('Tersalin!', 'mail')); }
 
 async function loadTempMailHistory(force = false) {
   if (!loggedInUsername) return;
   const now = Date.now();
-  if (!force && now - lastMailHistoryFetch < CACHE_DURATION.mailHistory) {
-    const cached = getCached('mailHistory');
-    if (cached) { renderTempMailHistory(cached); return; }
-  }
-  
+  if (!force && now - lastMailHistoryFetch < CACHE_DURATION.mailHistory) { const cached = getCached('mailHistory'); if (cached) { renderTempMailHistory(cached); return; } }
   const container = document.getElementById('mail-history-list');
   if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2 animate-pulse">Memuat riwayat...</p>';
-  
+  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Memuat...</p>';
   try {
     const res = await fetch('/api/tempmail/history?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
-    lastMailHistoryFetch = now;
-    setCache('mailHistory', data, CACHE_DURATION.mailHistory);
-    renderTempMailHistory(data);
-  } catch(e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-2">Gagal memuat riwayat</p>';
-  }
+    lastMailHistoryFetch = now; setCache('mailHistory', data, CACHE_DURATION.mailHistory); renderTempMailHistory(data);
+  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
 }
 
 function renderTempMailHistory(data) {
   const container = document.getElementById('mail-history-list');
   if (!container) return;
-  
   if (data.success && data.results && data.results.length > 0) {
-    container.innerHTML = data.results.map(r => {
-      return '<div class="p-2.5 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(59,130,246,0.2);">' +
-        '<div class="flex justify-between items-start mb-1">' +
-          '<span class="text-xs font-bold text-blue-300">📧 Temp Mail</span>' +
-          '<span class="text-[9px] text-slate-500">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span>' +
-        '</div>' +
-        '<p class="text-[10px] text-blue-200 mono break-all">' + escapeHtml(r.email) + '</p>' +
-        '<div class="flex justify-between items-center mt-1.5">' +
-          '<span class="text-[9px] text-slate-500">Order: ' + escapeHtml(r.orderId || '-') + '</span>' +
-          '<button onclick="copyHistoryEmail(\\'' + escapeHtml(r.email).replace(/'/g, "\\\\'") + '\\')" class="text-[9px] text-blue-400 hover:text-blue-300 underline">Copy</button>' +
-        '</div>' +
-      '</div>';
-    }).join('');
-  } else {
-    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada riwayat</p>';
-  }
+    container.innerHTML = data.results.map(r => '<div class="hist-item" style="border-color:rgba(96,165,250,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--info);">📧 Temp Mail</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div class="mono" style="font-size:10px; color:var(--info); word-break:break-all;">' + escapeHtml(r.email) + '</div><div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px;"><span style="font-size:9px; color:var(--text-2);">' + escapeHtml(r.orderId || '-') + '</span><button onclick="copyHistoryEmail(\\'' + escapeHtml(r.email).replace(/'/g, "\\\\'") + '\\')" class="btn btn-ghost btn-xs">Copy</button></div></div>').join('');
+  } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
 }
 
-function copyHistoryEmail(email) {
-  navigator.clipboard.writeText(email).then(() => {
-    showToast('Email tersalin!', 'mail');
-  });
-}
+function copyHistoryEmail(email) { navigator.clipboard.writeText(email).then(() => showToast('Tersalin!', 'mail')); }
 
-// ============ NETFLIX FUNCTIONS ============
 function selectNetflixPlan(plan) {
   selectedNetflixPlan = plan;
-  document.querySelectorAll('.plan-option').forEach(el => {
-    el.classList.toggle('selected', el.dataset.plan === plan);
-  });
+  document.querySelectorAll('.opt-row[data-plan]').forEach(el => { el.classList.toggle('selected', el.dataset.plan === plan); });
 }
 
 function updateNetflixQuotaDisplay() {
   const el = document.getElementById('netflix-quota-display');
   if (el) {
-    if (isAdminUser || isVipUser) {
-      el.innerText = '∞';
-      el.style.color = '#fca5a5';
-    } else {
-      const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota);
-      el.innerText = remain;
-      el.style.color = remain > 0 ? 'white' : '#fda4af';
-    }
+    if (isAdminUser || isVipUser) { el.innerText = '∞'; el.style.color = 'var(--err)'; }
+    else { const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota); el.innerText = remain; el.style.color = remain > 0 ? 'white' : 'var(--err)'; }
   }
   const resetEl = document.getElementById('netflix-reset-display');
-  if (resetEl) {
-    if (isAdminUser || isVipUser) {
-      resetEl.innerText = '∞';
-    } else {
-      resetEl.innerText = '24 Jam';
-    }
-  }
+  if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
 }
 
 async function handleGenerateNetflix() {
-  if (!loggedInUsername) return showToast('Harus login dulu!', 'error');
-  
-  // CHECK SERVER ONLINE
-  if (!guardServerOnline('Netflix Generator')) return;
-
+  if (!loggedInUsername) return showToast('Harus login!', 'error');
+  if (!guardServerOnline('Netflix')) return;
   const useProxy = document.getElementById('netflix-use-proxy').checked;
   const btn = document.getElementById('btn-generate-netflix');
   const btnText = document.getElementById('netflix-btn-text');
@@ -3741,500 +1868,208 @@ async function handleGenerateNetflix() {
   const statusText = document.getElementById('netflix-status-text');
   const logText = document.getElementById('netflix-log-text');
   const progressFill = document.getElementById('netflix-progress-fill');
-
-  btn.disabled = true;
-  btnText.innerText = 'Memproses...';
-  loadingEl.classList.remove('hidden');
-  progressFill.style.width = '0%';
-  statusText.innerText = 'Menyiapkan browser';
-  logText.innerText = 'Initializing...';
-
+  btn.disabled = true; btnText.innerText = 'Memproses...';
+  loadingEl.classList.remove('hide'); progressFill.style.width = '0%';
+  statusText.innerText = 'Menyiapkan'; logText.innerText = 'Initializing...';
   try {
     const quotaRes = await fetch('/api/netflix/check-quota?username=' + encodeURIComponent(loggedInUsername));
     const quotaData = await quotaRes.json();
-    
-    if (!quotaData.success) {
-      throw new Error(quotaData.message || 'Gagal cek quota');
-    }
-    
-    if (!quotaData.allowed) {
-      throw new Error(quotaData.message || 'Quota habis!');
-    }
-
-    statusText.innerText = 'Menggenerate token...';
-    logText.innerText = 'Connecting to Netflix API...';
-    progressFill.style.width = '30%';
-
-    const genRes = await fetch('/api/netflix/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: loggedInUsername,
-        plan: selectedNetflixPlan,
-        useProxy: useProxy
-      })
-    });
-
+    if (!quotaData.success) throw new Error(quotaData.message || 'Gagal cek');
+    if (!quotaData.allowed) throw new Error(quotaData.message || 'Quota habis!');
+    statusText.innerText = 'Menggenerate...'; logText.innerText = 'Connecting...'; progressFill.style.width = '30%';
+    const genRes = await fetch('/api/netflix/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, plan: selectedNetflixPlan, useProxy }) });
     const genData = await genRes.json();
     progressFill.style.width = '80%';
-
     if (genData.success && genData.result) {
-      progressFill.style.width = '100%';
-      statusText.innerText = '✅ Berhasil!';
-      logText.innerText = 'Token generated successfully';
-      
+      progressFill.style.width = '100%'; statusText.innerText = '✅ Berhasil!'; logText.innerText = 'Success';
       addNetflixResult(genData.result);
-      
-      if (genData.quotaInfo) {
-        userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota;
-        updateQuotaDisplay(genData.quotaInfo);
-        updateNetflixQuotaDisplay();
-      }
-      
-      // Tampilkan Order ID
-      if (genData.orderId) {
-        showToast('✅ Order ID: ' + genData.orderId + ' — Token Netflix berhasil!', 'order', 5000);
-      } else {
-        showToast('Token Netflix berhasil di-generate!', 'netflix');
-      }
-      
+      if (genData.quotaInfo) { userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(genData.quotaInfo); updateNetflixQuotaDisplay(); }
+      if (genData.orderId) showToast('✅ Order ID: ' + genData.orderId, 'order', 5000);
+      else showToast('Token berhasil!', 'netflix');
       loadNetflixHistory(true);
-      
-      setTimeout(() => {
-        loadingEl.classList.add('hidden');
-      }, 2000);
+      setTimeout(() => loadingEl.classList.add('hide'), 2000);
     } else {
-      // GAGAL - REFILL QUOTA
-      if (genData.refilled) {
-        showToast(genData.message || 'Generate gagal! Kuota Anda dikembalikan.', 'error', 4000);
-      } else {
-        showToast(genData.message || genData.error || 'Gagal generate token', 'error');
-      }
-      // Reload quota info
-      if (genData.quotaInfo) {
-        updateQuotaDisplay(genData.quotaInfo);
-        updateNetflixQuotaDisplay();
-      } else {
-        loadVerifiedEmails(true);
-      }
-      throw new Error(genData.message || genData.error || 'Gagal generate token');
+      if (genData.refilled) showToast(genData.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
+      else showToast(genData.message || 'Gagal', 'error');
+      if (genData.quotaInfo) { updateQuotaDisplay(genData.quotaInfo); updateNetflixQuotaDisplay(); }
+      else loadVerifiedEmails(true);
+      throw new Error(genData.message || 'Gagal');
     }
   } catch (err) {
-    statusText.innerText = '❌ Gagal';
-    logText.innerText = err.message;
-    if (!err.message.includes('dikembalikan')) {
-      showToast(err.message, 'error');
-    }
-    setTimeout(() => {
-      loadingEl.classList.add('hidden');
-    }, 3000);
-  } finally {
-    btn.disabled = false;
-    btnText.innerText = 'Generate Token Netflix';
-  }
+    statusText.innerText = '❌ Gagal'; logText.innerText = err.message;
+    if (!err.message.includes('dikembalikan')) showToast(err.message, 'error');
+    setTimeout(() => loadingEl.classList.add('hide'), 3000);
+  } finally { btn.disabled = false; btnText.innerText = 'Generate Token'; }
 }
 
-function addNetflixResult(result) {
-  netflixResults.unshift(result);
-  renderNetflixResults();
-  document.getElementById('netflix-results-container').classList.remove('hidden');
-}
+function addNetflixResult(result) { netflixResults.unshift(result); renderNetflixResults(); document.getElementById('netflix-results-container').classList.remove('hide'); }
 
 function renderNetflixResults() {
   const container = document.getElementById('netflix-results-list');
   if (!container) return;
-  
-  if (netflixResults.length === 0) {
-    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada hasil</p>';
-    return;
-  }
-  
+  if (netflixResults.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Belum ada</p>'; return; }
+  const NC = {US:'UNITED STATES',GB:'UNITED KINGDOM',DE:'GERMANY',FR:'FRANCE',JP:'JAPAN',KR:'SOUTH KOREA',IN:'INDIA',BR:'BRAZIL',CA:'CANADA',AU:'AUSTRALIA',ID:'INDONESIA',MY:'MALAYSIA',PH:'PHILIPPINES',SG:'SINGAPORE',TH:'THAILAND'};
   container.innerHTML = netflixResults.map((r, i) => {
-    const countryName = NETFLIX_COUNTRY[r.country] || r.country || 'Unknown';
-    return '<div class="netflix-result">' +
-      '<div class="flex items-center justify-between mb-2">' +
-        '<span class="text-xs font-bold text-red-300">#' + (netflixResults.length - i) + ' — ' + escapeHtml(r.plan || selectedNetflixPlan).toUpperCase() + '</span>' +
-        '<span class="text-[9px] px-2 py-0.5 rounded-full" style="background: rgba(229,9,20,0.15); color: #fca5a5;">' + escapeHtml(countryName) + '</span>' +
-      '</div>' +
-      '<div class="grid grid-cols-2 gap-2 mb-2">' +
-        '<div><p class="label">Quality</p><p class="value">' + escapeHtml(r.quality || 'HD') + '</p></div>' +
-        '<div><p class="label">Expires</p><p class="value">' + (r.expires ? new Date(r.expires).toLocaleDateString('id-ID') : '—') + '</p></div>' +
-      '</div>' +
-      '<p class="label mb-1">Link Token</p>' +
-      '<div class="link-box" onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')">' +
-        escapeHtml(r.url) +
-      '</div>' +
-      '<button onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')" class="btn-netflix mt-2" style="padding: 0.5rem; font-size: 0.75rem;">' +
-        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
-        'Copy Link' +
-      '</button>' +
-    '</div>';
+    const countryName = NC[r.country] || r.country || 'Unknown';
+    return '<div class="hist-item" style="border-color:rgba(229,9,20,0.25);"><div style="display:flex; justify-content:space-between; margin-bottom:7px;"><span style="font-size:11.5px; font-weight:700; color:var(--err);">#' + (netflixResults.length - i) + ' • ' + escapeHtml((r.plan || selectedNetflixPlan).toUpperCase()) + '</span><span class="badge badge-err" style="font-size:9px;">' + escapeHtml(countryName) + '</span></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:7px;"><div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Quality</div><div style="font-size:11px; font-weight:600;">' + escapeHtml(r.quality || 'HD') + '</div></div><div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Expires</div><div style="font-size:11px; font-weight:600;">' + (r.expires ? new Date(r.expires).toLocaleDateString('id-ID') : '—') + '</div></div></div><div class="link-line" style="margin-bottom:6px;" onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.url) + '</div><button onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')" class="btn btn-netflix btn-sm" style="width:100%;">Copy Link</button></div>';
   }).join('');
 }
 
-function copyNetflixLink(url) {
-  navigator.clipboard.writeText(url).then(() => {
-    showToast('Link Netflix tersalin!', 'netflix');
-  }).catch(() => {
-    showToast('Gagal copy link', 'error');
-  });
-}
-
-function clearNetflixResults() {
-  netflixResults = [];
-  renderNetflixResults();
-  document.getElementById('netflix-results-container').classList.add('hidden');
-}
+function copyNetflixLink(url) { navigator.clipboard.writeText(url).then(() => showToast('Tersalin!', 'netflix')).catch(() => showToast('Gagal', 'error')); }
+function clearNetflixResults() { netflixResults = []; renderNetflixResults(); document.getElementById('netflix-results-container').classList.add('hide'); }
 
 async function loadNetflixHistory(force = false) {
   if (!loggedInUsername) return;
   const now = Date.now();
-  if (!force && now - lastNetflixHistoryFetch < CACHE_DURATION.netflixHistory) {
-    const cached = getCached('netflixHistory');
-    if (cached) { renderNetflixHistory(cached); return; }
-  }
-  
+  if (!force && now - lastNetflixHistoryFetch < CACHE_DURATION.netflixHistory) { const cached = getCached('netflixHistory'); if (cached) { renderNetflixHistory(cached); return; } }
   const container = document.getElementById('netflix-history-list');
   if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2 animate-pulse">Memuat riwayat...</p>';
-  
+  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Memuat...</p>';
   try {
     const res = await fetch('/api/netflix/history?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
-    lastNetflixHistoryFetch = now;
-    setCache('netflixHistory', data, CACHE_DURATION.netflixHistory);
-    renderNetflixHistory(data);
-  } catch(e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-2">Gagal memuat riwayat</p>';
-  }
+    lastNetflixHistoryFetch = now; setCache('netflixHistory', data, CACHE_DURATION.netflixHistory); renderNetflixHistory(data);
+  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
 }
 
 function renderNetflixHistory(data) {
   const container = document.getElementById('netflix-history-list');
   if (!container) return;
-  
   if (data.success && data.results && data.results.length > 0) {
+    const NC = {US:'UNITED STATES',GB:'UNITED KINGDOM',DE:'GERMANY',FR:'FRANCE',JP:'JAPAN',KR:'SOUTH KOREA',IN:'INDIA',BR:'BRAZIL',CA:'CANADA',AU:'AUSTRALIA',ID:'INDONESIA',MY:'MALAYSIA',PH:'PHILIPPINES',SG:'SINGAPORE',TH:'THAILAND'};
     container.innerHTML = data.results.map(r => {
-      const countryName = NETFLIX_COUNTRY[r.country] || r.country || 'Unknown';
-      return '<div class="p-2.5 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(229,9,20,0.2);">' +
-        '<div class="flex justify-between items-start mb-1">' +
-          '<span class="text-xs font-bold text-red-300">' + escapeHtml(r.plan || 'premium').toUpperCase() + '</span>' +
-          '<span class="text-[9px] text-slate-500">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span>' +
-        '</div>' +
-        '<p class="text-[10px] text-slate-400">' + escapeHtml(countryName) + ' • ' + escapeHtml(r.quality || 'HD') + '</p>' +
-        '<div class="link-box mt-1.5" style="padding: 0.5rem; font-size: 0.65rem;" onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')">' +
-          escapeHtml(r.url) +
-        '</div>' +
-      '</div>';
+      const countryName = NC[r.country] || r.country || 'Unknown';
+      return '<div class="hist-item" style="border-color:rgba(229,9,20,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--err);">' + escapeHtml(r.plan || 'premium').toUpperCase() + '</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div style="font-size:10px; color:var(--text-2);">' + escapeHtml(countryName) + ' • ' + escapeHtml(r.quality || 'HD') + '</div><div class="link-line" style="margin-top:6px; font-size:10px;" onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.url) + '</div></div>';
     }).join('');
-  } else {
-    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada riwayat</p>';
-  }
+  } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
 }
 
-const NETFLIX_COUNTRY = {
-  US:'UNITED STATES',GB:'UNITED KINGDOM',DE:'GERMANY',FR:'FRANCE',JP:'JAPAN',
-  KR:'SOUTH KOREA',IN:'INDIA',BR:'BRAZIL',CA:'CANADA',AU:'AUSTRALIA',
-  IT:'ITALY',ES:'SPAIN',MX:'MEXICO',PH:'PHILIPPINES',ID:'INDONESIA',
-  MY:'MALAYSIA',TH:'THAILAND',SG:'SINGAPORE',TR:'TURKEY',PL:'POLAND',
-  NL:'NETHERLANDS',SE:'SWEDEN',NO:'NORWAY',DK:'DENMARK',FI:'FINLAND',
-  PT:'PORTUGAL',AR:'ARGENTINA',CL:'CHILE',CO:'COLOMBIA',PK:'PAKISTAN',
-  BD:'BANGLADESH',NG:'NIGERIA',EG:'EGYPT',ZA:'SOUTH AFRICA',VN:'VIETNAM',
-  RU:'RUSSIA',UA:'UKRAINE',
-};
-
-// ============ APK MOD FUNCTIONS ============
 function updateApkQuotaDisplay() {
   const el = document.getElementById('apk-quota-display');
   if (el) {
-    if (isAdminUser || isVipUser) {
-      el.innerText = '∞';
-      el.style.color = '#86efac';
-    } else {
-      const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota);
-      el.innerText = remain;
-      el.style.color = remain > 0 ? 'white' : '#fda4af';
-    }
+    if (isAdminUser || isVipUser) { el.innerText = '∞'; el.style.color = 'var(--ok)'; }
+    else { const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota); el.innerText = remain; el.style.color = remain > 0 ? 'white' : 'var(--err)'; }
   }
   const resetEl = document.getElementById('apk-reset-display');
-  if (resetEl) {
-    if (isAdminUser || isVipUser) {
-      resetEl.innerText = '∞';
-    } else {
-      resetEl.innerText = '24 Jam';
-    }
-  }
+  if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
 }
 
 async function loadApkMods() {
   const container = document.getElementById('apk-options');
   if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3 animate-pulse">Memuat daftar APK...</p>';
-  
+  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px;">Memuat...</p>';
   try {
     const res = await fetch('/api/apk-mods');
     const data = await res.json();
     if (data.success && data.items && Object.keys(data.items).length > 0) {
-      const items = Object.entries(data.items)
-        .filter(([_, v]) => v.active !== false)
-        .sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+      const items = Object.entries(data.items).filter(([_,v]) => v.active !== false).sort((a,b) => (a[1].order||0) - (b[1].order||0));
       cachedApkMods = items;
-      
       container.innerHTML = items.map(([id, item]) => {
         const isSelected = selectedApkId === id;
-        return '<div class="apk-option ' + (isSelected ? 'selected' : '') + '" data-apk-id="' + id + '" onclick="selectApkMod(\\'' + id + '\\')">' +
-          '<div>' +
-            '<p class="apk-name">📱 ' + escapeHtml(item.name) + '</p>' +
-            '<p class="text-[10px] text-slate-400">' + escapeHtml(item.description || 'APK MOD Premium') + '</p>' +
-          '</div>' +
-          '<span class="apk-price">1 Quota</span>' +
-        '</div>';
+        return '<div class="opt-row apk ' + (isSelected ? 'selected' : '') + '" data-apk-id="' + id + '" onclick="selectApkMod(\\'' + id + '\\')"><div><div style="font-weight:700; font-size:12.5px;">📱 ' + escapeHtml(item.name) + '</div><div style="font-size:10px; color:var(--text-2);">' + escapeHtml(item.description || 'APK MOD') + '</div></div><span style="font-size:11px; color:var(--ok); font-weight:700;">1 Q</span></div>';
       }).join('');
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada APK MOD tersedia</p>';
-    }
-  } catch(e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-3">Gagal memuat daftar APK</p>';
-  }
+    } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada</p>';
+  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
 }
 
 function selectApkMod(apkId) {
   selectedApkId = apkId;
-  document.querySelectorAll('.apk-option').forEach(el => {
-    el.classList.toggle('selected', el.dataset.apkId === apkId);
-  });
+  document.querySelectorAll('.opt-row[data-apk-id]').forEach(el => { el.classList.toggle('selected', el.dataset.apkId === apkId); });
   const item = cachedApkMods.find(([id]) => id === apkId);
-  if (item) {
-    showToast('APK dipilih: ' + item[1].name, 'apk');
-  }
+  if (item) showToast('Dipilih: ' + item[1].name, 'apk');
 }
 
 async function handleGenerateApk() {
-  if (!loggedInUsername) return showToast('Harus login dulu!', 'error');
-  if (!selectedApkId) return showToast('Pilih APK MOD terlebih dahulu!', 'error');
-  
-  // CHECK SERVER ONLINE
-  if (!guardServerOnline('APK MOD Generator')) return;
-  
+  if (!loggedInUsername) return showToast('Harus login!', 'error');
+  if (!selectedApkId) return showToast('Pilih APK dulu!', 'error');
+  if (!guardServerOnline('APK MOD')) return;
   const btn = document.getElementById('btn-generate-apk');
   const btnText = document.getElementById('apk-btn-text');
   const loadingEl = document.getElementById('apk-loading');
   const statusText = document.getElementById('apk-status-text');
   const logText = document.getElementById('apk-log-text');
   const progressFill = document.getElementById('apk-progress-fill');
-
-  btn.disabled = true;
-  btnText.innerText = 'Memproses...';
-  loadingEl.classList.remove('hidden');
-  progressFill.style.width = '0%';
-  statusText.innerText = 'Memeriksa kuota...';
-  logText.innerText = 'Checking quota...';
-
+  btn.disabled = true; btnText.innerText = 'Memproses...';
+  loadingEl.classList.remove('hide'); progressFill.style.width = '0%';
+  statusText.innerText = 'Cek kuota...'; logText.innerText = 'Checking...';
   try {
     const quotaRes = await fetch('/api/apk/check-quota?username=' + encodeURIComponent(loggedInUsername));
     const quotaData = await quotaRes.json();
-    
-    if (!quotaData.success) {
-      throw new Error(quotaData.message || 'Gagal cek quota');
-    }
-    
-    if (!quotaData.allowed) {
-      throw new Error(quotaData.message || 'Quota habis!');
-    }
-
-    statusText.innerText = 'Mengambil link download...';
-    logText.innerText = 'Fetching download link...';
-    progressFill.style.width = '50%';
-
-    const reqRes = await fetch('/api/apk/request', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: loggedInUsername,
-        apkId: selectedApkId
-      })
-    });
-
+    if (!quotaData.success) throw new Error(quotaData.message || 'Gagal');
+    if (!quotaData.allowed) throw new Error(quotaData.message || 'Quota habis!');
+    statusText.innerText = 'Ambil link...'; logText.innerText = 'Fetching...'; progressFill.style.width = '50%';
+    const reqRes = await fetch('/api/apk/request', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, apkId: selectedApkId }) });
     const reqData = await reqRes.json();
     progressFill.style.width = '80%';
-
     if (reqData.success && reqData.result) {
-      progressFill.style.width = '100%';
-      statusText.innerText = '✅ Berhasil!';
-      logText.innerText = 'Download link generated';
-      
+      progressFill.style.width = '100%'; statusText.innerText = '✅ Berhasil!'; logText.innerText = 'Success';
       addApkResult(reqData.result);
-      
-      if (reqData.quotaInfo) {
-        userQuotaData.usedQuota = reqData.quotaInfo.usedQuota || userQuotaData.usedQuota;
-        updateQuotaDisplay(reqData.quotaInfo);
-        updateApkQuotaDisplay();
-      }
-      
-      // Tampilkan Order ID
-      if (reqData.orderId) {
-        showToast('✅ Order ID: ' + reqData.orderId + ' — Link APK berhasil!', 'order', 5000);
-      } else {
-        showToast('Link download APK berhasil didapatkan!', 'apk');
-      }
-      
+      if (reqData.quotaInfo) { userQuotaData.usedQuota = reqData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(reqData.quotaInfo); updateApkQuotaDisplay(); }
+      if (reqData.orderId) showToast('✅ Order ID: ' + reqData.orderId, 'order', 5000);
+      else showToast('Link berhasil!', 'apk');
       loadApkHistory(true);
-      
-      setTimeout(() => {
-        loadingEl.classList.add('hidden');
-      }, 2000);
+      setTimeout(() => loadingEl.classList.add('hide'), 2000);
     } else {
-      // GAGAL - REFILL QUOTA
-      if (reqData.refilled) {
-        showToast(reqData.message || 'Request gagal! Kuota Anda dikembalikan.', 'error', 4000);
-      } else {
-        showToast(reqData.message || reqData.error || 'Gagal mendapatkan link', 'error');
-      }
-      if (reqData.quotaInfo) {
-        updateQuotaDisplay(reqData.quotaInfo);
-        updateApkQuotaDisplay();
-      } else {
-        loadVerifiedEmails(true);
-      }
-      throw new Error(reqData.message || reqData.error || 'Gagal mendapatkan link');
+      if (reqData.refilled) showToast(reqData.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
+      else showToast(reqData.message || 'Gagal', 'error');
+      if (reqData.quotaInfo) { updateQuotaDisplay(reqData.quotaInfo); updateApkQuotaDisplay(); }
+      else loadVerifiedEmails(true);
+      throw new Error(reqData.message || 'Gagal');
     }
   } catch (err) {
-    statusText.innerText = '❌ Gagal';
-    logText.innerText = err.message;
-    if (!err.message.includes('dikembalikan')) {
-      showToast(err.message, 'error');
-    }
-    setTimeout(() => {
-      loadingEl.classList.add('hidden');
-    }, 3000);
-  } finally {
-    btn.disabled = false;
-    btnText.innerText = 'Kirim & Dapatkan Link';
-  }
+    statusText.innerText = '❌ Gagal'; logText.innerText = err.message;
+    if (!err.message.includes('dikembalikan')) showToast(err.message, 'error');
+    setTimeout(() => loadingEl.classList.add('hide'), 3000);
+  } finally { btn.disabled = false; btnText.innerText = 'Dapatkan Link'; }
 }
 
-function addApkResult(result) {
-  apkResults.unshift(result);
-  renderApkResults();
-  document.getElementById('apk-results-container').classList.remove('hidden');
-}
+function addApkResult(result) { apkResults.unshift(result); renderApkResults(); document.getElementById('apk-results-container').classList.remove('hide'); }
 
 function renderApkResults() {
   const container = document.getElementById('apk-results-list');
   if (!container) return;
-  
-  if (apkResults.length === 0) {
-    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada hasil</p>';
-    return;
-  }
-  
-  container.innerHTML = apkResults.map((r, i) => {
-    return '<div class="apk-result">' +
-      '<div class="flex items-center justify-between mb-2">' +
-        '<span class="text-xs font-bold text-green-300">#' + (apkResults.length - i) + ' — ' + escapeHtml(r.name) + '</span>' +
-        '<span class="text-[9px] px-2 py-0.5 rounded-full" style="background: rgba(34,197,94,0.15); color: #86efac;">APK MOD</span>' +
-      '</div>' +
-      '<p class="label mb-1">Link Download</p>' +
-      '<div class="link-box" onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')">' +
-        escapeHtml(r.link) +
-      '</div>' +
-      '<button onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')" class="btn-apk mt-2" style="padding: 0.5rem; font-size: 0.75rem;">' +
-        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
-        'Copy Link Download' +
-      '</button>' +
-    '</div>';
-  }).join('');
+  if (apkResults.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Belum ada</p>'; return; }
+  container.innerHTML = apkResults.map((r, i) => '<div class="hist-item" style="border-color:rgba(74,222,128,0.25);"><div style="display:flex; justify-content:space-between; margin-bottom:7px;"><span style="font-size:11.5px; font-weight:700; color:var(--ok);">#' + (apkResults.length - i) + ' • ' + escapeHtml(r.name) + '</span><span class="badge badge-ok" style="font-size:9px;">APK</span></div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700; margin-bottom:4px;">Link</div><div class="link-line" style="margin-bottom:6px;" onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.link) + '</div><button onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')" class="btn btn-apk btn-sm" style="width:100%;">Copy Link</button></div>').join('');
 }
 
-function copyApkLink(link) {
-  navigator.clipboard.writeText(link).then(() => {
-    showToast('Link download APK tersalin!', 'apk');
-  }).catch(() => {
-    showToast('Gagal copy link', 'error');
-  });
-}
-
-function clearApkResults() {
-  apkResults = [];
-  renderApkResults();
-  document.getElementById('apk-results-container').classList.add('hidden');
-}
+function copyApkLink(link) { navigator.clipboard.writeText(link).then(() => showToast('Tersalin!', 'apk')).catch(() => showToast('Gagal', 'error')); }
+function clearApkResults() { apkResults = []; renderApkResults(); document.getElementById('apk-results-container').classList.add('hide'); }
 
 async function loadApkHistory(force = false) {
   if (!loggedInUsername) return;
   const now = Date.now();
-  if (!force && now - lastApkHistoryFetch < CACHE_DURATION.apkHistory) {
-    const cached = getCached('apkHistory');
-    if (cached) { renderApkHistory(cached); return; }
-  }
-  
+  if (!force && now - lastApkHistoryFetch < CACHE_DURATION.apkHistory) { const cached = getCached('apkHistory'); if (cached) { renderApkHistory(cached); return; } }
   const container = document.getElementById('apk-history-list');
   if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2 animate-pulse">Memuat riwayat...</p>';
-  
+  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Memuat...</p>';
   try {
     const res = await fetch('/api/apk/history?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
-    lastApkHistoryFetch = now;
-    setCache('apkHistory', data, CACHE_DURATION.apkHistory);
-    renderApkHistory(data);
-  } catch(e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-2">Gagal memuat riwayat</p>';
-  }
+    lastApkHistoryFetch = now; setCache('apkHistory', data, CACHE_DURATION.apkHistory); renderApkHistory(data);
+  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
 }
 
 function renderApkHistory(data) {
   const container = document.getElementById('apk-history-list');
   if (!container) return;
-  
   if (data.success && data.results && data.results.length > 0) {
-    container.innerHTML = data.results.map(r => {
-      return '<div class="p-2.5 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(34,197,94,0.2);">' +
-        '<div class="flex justify-between items-start mb-1">' +
-          '<span class="text-xs font-bold text-green-300">' + escapeHtml(r.name) + '</span>' +
-          '<span class="text-[9px] text-slate-500">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span>' +
-        '</div>' +
-        '<div class="link-box mt-1.5" style="padding: 0.5rem; font-size: 0.65rem;" onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')">' +
-          escapeHtml(r.link) +
-        '</div>' +
-      '</div>';
-    }).join('');
-  } else {
-    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada riwayat</p>';
-  }
+    container.innerHTML = data.results.map(r => '<div class="hist-item" style="border-color:rgba(74,222,128,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--ok);">' + escapeHtml(r.name) + '</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div class="link-line" style="margin-top:5px; font-size:10px;" onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.link) + '</div></div>').join('');
+  } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
 }
 
-// ============ ADMIN: APK MOD MANAGEMENT ============
 async function loadAdminApkList() {
   if (!isAdminUser) return;
   const container = document.getElementById('admin-apk-list');
   if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 animate-pulse">Memuat APK MOD...</p>';
-  
+  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px;">Memuat...</p>';
   try {
     const res = await fetch('/api/apk-mods');
     const data = await res.json();
     if (data.success && data.items && Object.keys(data.items).length > 0) {
-      const items = Object.entries(data.items).sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
-      container.innerHTML = items.map(([id, item]) => 
-        '<div class="flex justify-between items-center p-2 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(34,197,94,0.2);">' +
-          '<div class="flex-1 min-w-0">' +
-            '<p class="text-xs font-bold text-green-300">' + escapeHtml(item.name) + '</p>' +
-            '<p class="text-[9px] text-slate-500 truncate">' + escapeHtml(item.link) + '</p>' +
-          '</div>' +
-          '<div class="flex gap-1 shrink-0">' +
-            '<button onclick="editApkMod(\\'' + id + '\\', \\'' + encodeURIComponent(item.name) + '\\', \\'' + encodeURIComponent(item.link) + '\\', \\'' + encodeURIComponent(item.description || '') + '\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(6,182,212,0.2); color: #67e8f9;">Edit</button>' +
-            '<button onclick="toggleApkMod(\\'' + id + '\\', ' + (item.active !== false) + ')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(245,158,11,0.2); color: #fbbf24;">' + (item.active !== false ? 'Off' : 'On') + '</button>' +
-            '<button onclick="deleteApkMod(\\'' + id + '\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(244,63,94,0.2); color: #fda4af;">×</button>' +
-          '</div>' +
-        '</div>'
-      ).join('');
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada APK MOD</p>';
-    }
-  } catch(e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-center py-2">Gagal memuat</p>';
-  }
+      const items = Object.entries(data.items).sort((a,b) => (a[1].order||0) - (b[1].order||0));
+      container.innerHTML = items.map(([id, item]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700; color:var(--ok);">' + escapeHtml(item.name) + '</div><div style="font-size:9px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(item.link) + '</div></div><div style="display:flex; gap:3px; flex-shrink:0;"><button onclick="editApkMod(\\'' + id + '\\', \\'' + encodeURIComponent(item.name) + '\\', \\'' + encodeURIComponent(item.link) + '\\', \\'' + encodeURIComponent(item.description || '') + '\\')" class="btn btn-ghost btn-xs">E</button><button onclick="toggleApkMod(\\'' + id + '\\', ' + (item.active !== false) + ')" class="btn btn-ghost btn-xs">' + (item.active !== false ? 'O' : 'X') + '</button><button onclick="deleteApkMod(\\'' + id + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
+    } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px;">Belum ada</p>';
+  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:6px;">Gagal</p>'; }
 }
 
 async function handleSaveApkMod() {
@@ -4243,36 +2078,14 @@ async function handleSaveApkMod() {
   const name = document.getElementById('apk-name-input').value.trim();
   const link = document.getElementById('apk-link-input').value.trim();
   const description = document.getElementById('apk-desc-input').value.trim();
-
-  if (!name || !link) return showToast('Lengkapi nama dan link APK!', 'error');
-  if (!link.startsWith('http://') && !link.startsWith('https://')) {
-    return showToast('Link harus dimulai dengan http:// atau https://', 'error');
-  }
-
+  if (!name || !link) return showToast('Lengkapi!', 'error');
+  if (!link.startsWith('http://') && !link.startsWith('https://')) return showToast('Link harus http/https', 'error');
   try {
-    const res = await fetch('/api/admin/apk-mod/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        adminUsername: loggedInUsername, 
-        id: editId, 
-        name, 
-        link, 
-        description 
-      })
-    });
+    const res = await fetch('/api/admin/apk-mod/save', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, id: editId, name, link, description }) });
     const data = await res.json();
-    if (data.success) {
-      showToast(data.message, 'success');
-      resetApkForm();
-      loadAdminApkList();
-      loadApkMods();
-    } else {
-      showToast(data.message, 'error');
-    }
-  } catch(e) {
-    showToast('Gagal menyimpan APK MOD', 'error');
-  }
+    if (data.success) { showToast(data.message, 'success'); resetApkForm(); loadAdminApkList(); loadApkMods(); }
+    else showToast(data.message, 'error');
+  } catch(e) { showToast('Gagal', 'error'); }
 }
 
 function editApkMod(id, encName, encLink, encDesc) {
@@ -4280,8 +2093,8 @@ function editApkMod(id, encName, encLink, encDesc) {
   document.getElementById('apk-name-input').value = decodeURIComponent(encName);
   document.getElementById('apk-link-input').value = decodeURIComponent(encLink);
   document.getElementById('apk-desc-input').value = decodeURIComponent(encDesc || '');
-  document.getElementById('apk-submit-btn').innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg> Perbarui APK MOD';
-  document.getElementById('apk-cancel-btn').classList.remove('hidden');
+  document.getElementById('apk-submit-btn').innerText = 'Perbarui';
+  document.getElementById('apk-cancel-btn').classList.remove('hide');
 }
 
 function resetApkForm() {
@@ -4289,57 +2102,35 @@ function resetApkForm() {
   document.getElementById('apk-name-input').value = '';
   document.getElementById('apk-link-input').value = '';
   document.getElementById('apk-desc-input').value = '';
-  document.getElementById('apk-submit-btn').innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Tambah APK MOD';
-  document.getElementById('apk-cancel-btn').classList.add('hidden');
+  document.getElementById('apk-submit-btn').innerText = 'Tambah APK';
+  document.getElementById('apk-cancel-btn').classList.add('hide');
 }
 
 async function toggleApkMod(id, currentActive) {
   try {
-    const res = await fetch('/api/admin/apk-mod/toggle', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, id, active: !currentActive })
-    });
+    const res = await fetch('/api/admin/apk-mod/toggle', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, id, active: !currentActive }) });
     const data = await res.json();
-    if (data.success) {
-      showToast(data.message, 'success');
-      loadAdminApkList();
-      loadApkMods();
-    }
+    if (data.success) { showToast(data.message, 'success'); loadAdminApkList(); loadApkMods(); }
   } catch(e) {}
 }
 
 async function deleteApkMod(id) {
-  if (!confirm('Hapus APK MOD ini?')) return;
+  if (!confirm('Hapus APK ini?')) return;
   try {
-    const res = await fetch('/api/admin/apk-mod/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, id })
-    });
+    const res = await fetch('/api/admin/apk-mod/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, id }) });
     const data = await res.json();
-    if (data.success) {
-      showToast('APK MOD dihapus', 'success');
-      loadAdminApkList();
-      loadApkMods();
-    }
+    if (data.success) { showToast('Dihapus', 'success'); loadAdminApkList(); loadApkMods(); }
   } catch(e) {}
 }
 
-// ============ STATUS & VIDEO (OPTIMIZED) ============
 async function fetchServerStatus(force = false) {
   if (!isPageVisible && !force) return;
   const now = Date.now();
-  if (!force && now - lastStatusFetch < CACHE_DURATION.status) {
-    const cached = getCached('serverStatus');
-    if (cached) { updateStatusUI(cached); serverOnline = (cached === 'online'); return; }
-  }
+  if (!force && now - lastStatusFetch < CACHE_DURATION.status) { const cached = getCached('serverStatus'); if (cached) { updateStatusUI(cached); serverOnline = (cached === 'online'); return; } }
   try {
     const res = await fetch('/api/status');
     const data = await res.json();
-    updateStatusUI(data.status);
-    serverOnline = (data.status === 'online');
-    lastStatusFetch = now;
+    updateStatusUI(data.status); serverOnline = (data.status === 'online'); lastStatusFetch = now;
     setCache('serverStatus', data.status, CACHE_DURATION.status);
   } catch(e) {}
 }
@@ -4347,23 +2138,11 @@ async function fetchServerStatus(force = false) {
 async function fetchFeaturedVideo(force = false) {
   if (!isPageVisible && !force) return;
   const now = Date.now();
-  if (!force && now - lastVideoFetch < CACHE_DURATION.video) {
-    const cached = getCached('featuredVideo');
-    if (cached) {
-      const v = document.getElementById('main-display-video');
-      if (v && v.src !== cached) v.src = cached;
-      return;
-    }
-  }
+  if (!force && now - lastVideoFetch < CACHE_DURATION.video) { const cached = getCached('featuredVideo'); if (cached) { const v = document.getElementById('main-display-video'); if (v && v.src !== cached) v.src = cached; return; } }
   try {
     const res = await fetch('/api/video');
     const data = await res.json();
-    if (data.success && data.videoUrl) {
-      const v = document.getElementById('main-display-video');
-      if (v && v.src !== data.videoUrl) v.src = data.videoUrl;
-      lastVideoFetch = now;
-      setCache('featuredVideo', data.videoUrl, CACHE_DURATION.video);
-    }
+    if (data.success && data.videoUrl) { const v = document.getElementById('main-display-video'); if (v && v.src !== data.videoUrl) v.src = data.videoUrl; lastVideoFetch = now; setCache('featuredVideo', data.videoUrl, CACHE_DURATION.video); }
   } catch(e) {}
 }
 
@@ -4373,40 +2152,22 @@ function updateStatusUI(status) {
   const txt = document.getElementById('server-status-text');
   const banner = document.getElementById('offline-banner');
   if (!ind) return;
-  if (status === 'online') {
-    ind.className = 'badge badge-online';
-    dot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse';
-    txt.innerText = 'Online';
-    banner.classList.add('hidden');
-  } else {
-    ind.className = 'badge badge-offline';
-    dot.className = 'w-1.5 h-1.5 rounded-full bg-rose-500';
-    txt.innerText = 'Offline';
-    if (!isAdminUser) banner.classList.remove('hidden');
-  }
+  if (status === 'online') { ind.className = 'badge badge-ok'; dot.className = 'online-dot'; txt.innerText = 'Online'; banner.classList.add('hide'); }
+  else { ind.className = 'badge badge-err'; dot.style.background = 'var(--err)'; dot.style.boxShadow = 'none'; dot.style.animation = 'none'; txt.innerText = 'Offline'; if (!isAdminUser) banner.classList.remove('hide'); }
 }
 
 function startPolling() {
   if (statusPollInterval) clearInterval(statusPollInterval);
-  statusPollInterval = setInterval(() => {
-    if (isPageVisible) {
-      fetchServerStatus();
-    }
-  }, CACHE_DURATION.status);
-
+  statusPollInterval = setInterval(() => { if (isPageVisible) fetchServerStatus(); }, CACHE_DURATION.status);
   if (videoPollInterval) clearInterval(videoPollInterval);
-  videoPollInterval = setInterval(() => {
-    if (isPageVisible) {
-      fetchFeaturedVideo();
-    }
-  }, CACHE_DURATION.video);
+  videoPollInterval = setInterval(() => { if (isPageVisible) fetchFeaturedVideo(); }, CACHE_DURATION.video);
 }
 
 fetchServerStatus();
 fetchFeaturedVideo();
 startPolling();
+fetchOnlineCount();
 
-// ============ AUTH ============
 function switchAuthTab(mode) {
   currentAuthMode = mode;
   const loginBtn = document.getElementById('tab-login-btn');
@@ -4415,17 +2176,11 @@ function switchAuthTab(mode) {
   const emailField = document.getElementById('email-field-container');
   const btnText = document.getElementById('auth-btn-text');
   if (mode === 'login') {
-    ind.style.transform = 'translateX(0%)';
-    loginBtn.className = 'relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-xl transition-colors text-white';
-    regBtn.className = 'relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-xl transition-colors text-slate-400';
-    emailField.classList.add('hidden');
-    btnText.innerText = 'Masuk ke Terminal';
+    ind.style.transform = 'translateX(0%)'; loginBtn.style.color = 'white'; regBtn.style.color = 'var(--text-1)';
+    emailField.classList.add('hide'); btnText.innerText = 'Masuk';
   } else {
-    ind.style.transform = 'translateX(100%)';
-    regBtn.className = 'relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-xl transition-colors text-white';
-    loginBtn.className = 'relative z-10 flex-1 py-2.5 text-xs font-bold tracking-wider rounded-xl transition-colors text-slate-400';
-    emailField.classList.remove('hidden');
-    btnText.innerText = 'Daftar Akun Baru';
+    ind.style.transform = 'translateX(100%)'; regBtn.style.color = 'white'; loginBtn.style.color = 'var(--text-1)';
+    emailField.classList.remove('hide'); btnText.innerText = 'Daftar';
   }
 }
 
@@ -4433,61 +2188,42 @@ async function handleAuthAction() {
   const username = document.getElementById('auth-username').value.trim();
   const password = document.getElementById('auth-password').value.trim();
   const email = document.getElementById('auth-email').value.trim();
-  if (!username || !password) return showToast('Username dan password wajib diisi!', 'error');
-
+  if (!username || !password) return showToast('Username dan password wajib!', 'error');
   let deviceToken = localStorage.getItem('am_device_token');
-  if (currentAuthMode === 'register' && deviceToken) {
-    return showToast('Perangkat ini sudah terdaftar!', 'error');
-  }
-
+  if (currentAuthMode === 'register' && deviceToken) return showToast('Perangkat sudah terdaftar!', 'error');
   const btn = document.getElementById('auth-submit-btn');
   const originalText = document.getElementById('auth-btn-text').innerText;
   document.getElementById('auth-btn-text').innerText = 'Memproses...';
   btn.disabled = true;
-
   try {
-    const res = await fetch('/api/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: currentAuthMode, username, password, email, deviceToken })
-    });
+    const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, email, deviceToken }) });
     const data = await res.json();
     if (data.success) {
       if (currentAuthMode === 'register' && data.deviceToken) localStorage.setItem('am_device_token', data.deviceToken);
-      if (data.token) {
-        localStorage.setItem('authToken', data.token);
-        localStorage.setItem('savedUsername', data.username);
-      }
+      if (data.token) { localStorage.setItem('authToken', data.token); localStorage.setItem('savedUsername', data.username); }
       showToast(data.message, 'success');
       applySession(data);
-    } else {
-      showToast(data.message, 'error');
-    }
-  } catch (err) {
-    showToast('Kesalahan koneksi server', 'error');
-  } finally {
-    document.getElementById('auth-btn-text').innerText = originalText;
-    btn.disabled = false;
-  }
+    } else showToast(data.message, 'error');
+  } catch (err) { showToast('Kesalahan koneksi', 'error'); }
+  finally { document.getElementById('auth-btn-text').innerText = originalText; btn.disabled = false; }
 }
 
 function applySession(data) {
   loggedInUsername = data.username;
   isAdminUser = data.isAdmin;
   isVipUser = data.isVip || false;
-  document.getElementById('auth-view').classList.add('hidden');
-  document.getElementById('terminal-view').classList.remove('hidden');
-  document.getElementById('header-menu-btn').classList.remove('hidden');
+  document.getElementById('auth-view').classList.add('hide');
+  document.getElementById('terminal-view').classList.remove('hide');
+  document.getElementById('menu-btn').classList.remove('hide');
   document.getElementById('logged-username').innerText = data.username;
   document.getElementById('user-avatar').innerText = data.username.charAt(0).toUpperCase();
   document.getElementById('drawer-avatar').innerText = data.username.charAt(0).toUpperCase();
   document.getElementById('drawer-username').innerText = data.username;
-  document.getElementById('drawer-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'User');
-  document.getElementById('drawer-logout-btn').classList.remove('hidden');
+  document.getElementById('drawer-role').innerText = data.isAdmin ? 'Admin' : (data.isVip ? 'VIP Member' : 'User');
+  document.getElementById('drawer-logout-btn').classList.remove('hide');
   document.getElementById('profile-uname').innerText = data.username;
-  document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin Master' : (data.isVip ? 'VIP Member' : 'Standard User');
-  document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (1 + (data.bonusQuota || 0) - data.usedQuota);
-
+  document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin' : (data.isVip ? 'VIP Member' : 'Standard');
+  document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (BASE_QUOTA + (data.bonusQuota || 0) - data.usedQuota);
   updateQuotaDisplay(data);
   checkVipStatus(data);
   loadUserAnnouncements();
@@ -4498,30 +2234,14 @@ function applySession(data) {
   updateNetflixQuotaDisplay();
   updateApkQuotaDisplay();
   updateMailQuotaDisplay();
-
+  startOnlineTracking();
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   loadGlobalChat();
-  chatRefreshInterval = setInterval(() => {
-    if (!isPageVisible) return;
-    if (currentView !== 'chat') {
-      checkNewChatMessages();
-    } else {
-      loadGlobalChat();
-    }
-  }, CACHE_DURATION.chat);
-
+  chatRefreshInterval = setInterval(() => { if (!isPageVisible) return; if (currentView !== 'chat') checkNewChatMessages(); else loadGlobalChat(); }, CACHE_DURATION.chat);
   const roleBadge = document.getElementById('role-badge');
-  if (data.isAdmin) {
-    roleBadge.className = 'badge badge-admin';
-    roleBadge.innerText = '👑 Admin';
-    document.getElementById('nav-admin-btn').classList.remove('hidden');
-  } else if (data.isVip) {
-    roleBadge.className = 'badge badge-vip';
-    roleBadge.innerText = 'VIP Member';
-  } else {
-    roleBadge.className = 'badge badge-user';
-    roleBadge.innerText = 'User';
-  }
+  if (data.isAdmin) { roleBadge.className = 'badge badge-warn'; roleBadge.innerText = '👑 Admin'; document.getElementById('nav-admin-btn').classList.remove('hide'); }
+  else if (data.isVip) { roleBadge.className = 'badge badge-accent'; roleBadge.innerText = '⭐ VIP'; }
+  else { roleBadge.className = 'badge badge-muted'; roleBadge.innerText = 'User'; }
 }
 
 async function checkSavedSession() {
@@ -4529,172 +2249,103 @@ async function checkSavedSession() {
   const savedUname = localStorage.getItem('savedUsername');
   if (!token || !savedUname) return;
   try {
-    const res = await fetch('/api/auth/session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: savedUname, token })
-    });
+    const res = await fetch('/api/auth/session', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: savedUname, token }) });
     const data = await res.json();
     if (data.success) applySession(data);
   } catch (e) {}
 }
 checkSavedSession();
 
-// ============ KLAIM REDEEM ============
 async function handleRedeemCodeMain() {
   const code = document.getElementById('redeem-code-input-main').value.trim().toUpperCase();
   if (!code) return showToast('Masukkan kode!', 'error');
   try {
-    const res = await fetch('/api/redeem', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, code })
-    });
+    const res = await fetch('/api/redeem', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, code }) });
     const data = await res.json();
     if (data.success) {
       showToast(data.message, 'success');
       document.getElementById('redeem-code-input-main').value = '';
-      updateQuotaDisplay(data);
-      updateNetflixQuotaDisplay();
-      updateApkQuotaDisplay();
-      updateMailQuotaDisplay();
-      loadVerifiedEmails(true);
-      loadActiveRedeems(true);
+      updateQuotaDisplay(data); updateNetflixQuotaDisplay(); updateApkQuotaDisplay(); updateMailQuotaDisplay();
+      loadVerifiedEmails(true); loadActiveRedeems(true);
     } else showToast(data.message, 'error');
-  } catch(e) { showToast('Gagal redeem', 'error'); }
+  } catch(e) { showToast('Gagal', 'error'); }
 }
 
 async function loadActiveRedeems(force = false) {
   const now = Date.now();
-  if (!force && now - lastRedeemsFetch < CACHE_DURATION.redeems) {
-    const cached = getCached('activeRedeems');
-    if (cached) { renderActiveRedeems(cached); return; }
-  }
+  if (!force && now - lastRedeemsFetch < CACHE_DURATION.redeems) { const cached = getCached('activeRedeems'); if (cached) { renderActiveRedeems(cached); return; } }
   try {
     const [resActive, resClaimed] = await Promise.all([
       fetch('/api/redeems/active'),
       loggedInUsername ? fetch('/api/redeems/claimed?username=' + encodeURIComponent(loggedInUsername)) : Promise.resolve({ json: () => ({ claimedCodes: [] }) })
     ]);
-    
     const dataActive = await resActive.json();
     const dataClaimed = await resClaimed.json();
     claimedRedeemCodes = dataClaimed.claimedCodes || {};
-    lastRedeemsFetch = now;
-    setCache('activeRedeems', { dataActive, claimedRedeemCodes }, CACHE_DURATION.redeems);
+    lastRedeemsFetch = now; setCache('activeRedeems', { dataActive, claimedRedeemCodes }, CACHE_DURATION.redeems);
     renderActiveRedeems({ dataActive, claimedRedeemCodes });
-  } catch(e) {
-    console.error('Failed to load redeems:', e);
-  }
+  } catch(e) {}
 }
 
 function renderActiveRedeems(payload) {
   const { dataActive, claimedRedeemCodes } = payload;
   const container = document.getElementById('active-redeem-list');
   if (!container) return;
-
   if (dataActive.success && Object.keys(dataActive.redeems).length > 0) {
     container.innerHTML = Object.entries(dataActive.redeems).map(([code, val]) => {
       const remainingClaims = val.maxClaims - val.claimedCount;
       const quotaPerUser = val.quotaPerUser || 1;
       const hasClaimed = claimedRedeemCodes[code] === true;
-      
       if (remainingClaims <= 0) return '';
-      
-      const buttonHtml = hasClaimed 
-        ? '<span class="px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1" style="background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);">' +
-            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' +
-            'Sudah</span>'
-        : '<button onclick="quickClaimRedeem(\\'' + escapeHtml(code) + '\\')" class="px-2 py-1 rounded text-[10px] font-bold" style="background: rgba(6,182,212,0.2); color: #67e8f9; border: 1px solid rgba(6,182,212,0.4);">Klaim</button>';
-      
-      return '<div class="redeem-card">' +
-        '<div class="flex justify-between items-start mb-1.5">' +
-          '<div class="flex-1 min-w-0">' +
-            '<p class="text-xs font-bold text-cyan-300 mono">' + escapeHtml(code) + '</p>' +
-            '<p class="text-[10px] text-slate-400">Kuota: ' + quotaPerUser + ' per user | Sisa klaim: ' + remainingClaims + '/' + val.maxClaims + '</p>' +
-          '</div>' +
-          buttonHtml +
-        '</div>' +
-        '<div class="progress-bar" style="height: 4px;">' +
-          '<div class="progress-fill" style="width: ' + Math.round((val.claimedCount / val.maxClaims) * 100) + '%; background: linear-gradient(90deg, #06b6d4, #a855f7);"></div>' +
-        '</div>' +
-      '</div>';
-    }).filter(Boolean).join('') || '<p class="text-slate-500 italic text-xs text-center py-2">Tidak ada kode aktif</p>';
-  } else {
-    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Tidak ada kode redeem aktif</p>';
-  }
+      const buttonHtml = hasClaimed ? '<span class="badge badge-ok">✓ Sudah</span>' : '<button onclick="quickClaimRedeem(\\'' + escapeHtml(code) + '\\')" class="btn btn-info btn-xs">Klaim</button>';
+      return '<div style="padding:9px 11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div class="mono" style="font-size:11.5px; font-weight:700; color:var(--info);">' + escapeHtml(code) + '</div><div style="font-size:9.5px; color:var(--text-2);">' + quotaPerUser + ' kuota • ' + remainingClaims + '/' + val.maxClaims + ' sisa</div></div>' + buttonHtml + '</div><div class="prog" style="height:4px;"><div class="prog-fill" style="width:' + Math.round((val.claimedCount / val.maxClaims) * 100) + '%; background:var(--info);"></div></div></div>';
+    }).filter(Boolean).join('') || '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Tidak ada</p>';
+  } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Tidak ada kode aktif</p>';
 }
 
 function quickClaimRedeem(code) {
   document.getElementById('redeem-code-input-main').value = code;
-  showToast('Kode "' + code + '" siap diklaim', 'info');
+  showToast('Kode siap diklaim', 'info');
   document.getElementById('redeem-code-input-main').focus();
 }
 
-// ============ VIP SHOP (USER) ============
 async function loadVipShopItems() {
   const container = document.getElementById('vip-shop-list');
   if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3 animate-pulse">Memuat layanan...</p>';
+  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px;">Memuat...</p>';
   try {
     const res = await fetch('/api/vip-shop');
     const data = await res.json();
     if (data.success && data.items && Object.keys(data.items).length > 0) {
-      const items = Object.entries(data.items)
-        .filter(([_, v]) => v.active !== false)
-        .sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+      const items = Object.entries(data.items).filter(([_,v]) => v.active !== false).sort((a,b) => (a[1].order||0) - (b[1].order||0));
       cachedVipShopItems = items;
       container.innerHTML = items.map(([id, item]) => {
         const priceFormatted = 'Rp ' + Number(item.price).toLocaleString('id-ID');
-        return '<div class="vip-shop-card cursor-pointer" onclick="selectVipItem(\\'' + escapeHtml(id) + '\\')">' +
-          '<div class="flex items-center justify-between mb-2">' +
-            '<div class="flex items-center gap-2.5">' +
-              '<div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: linear-gradient(135deg, rgba(245,158,11,0.3), rgba(168,85,247,0.2));">' +
-                '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>' +
-              '</div>' +
-              '<div>' +
-                '<p class="text-sm font-extrabold text-white">' + escapeHtml(item.name) + '</p>' +
-                '<p class="text-[10px] text-amber-300">⭐ ' + item.days + ' Hari</p>' +
-              '</div>' +
-            '</div>' +
-            '<div class="text-right">' +
-              '<p class="text-base font-extrabold text-amber-300 mono">' + priceFormatted + '</p>' +
-            '</div>' +
-          '</div>' +
-          '<button class="w-full py-2 rounded-xl text-xs font-bold transition" style="background: linear-gradient(135deg, rgba(245,158,11,0.2), rgba(168,85,247,0.15)); border: 1px solid rgba(245,158,11,0.4); color: #fbbf24;">Pilih & Bayar</button>' +
-        '</div>';
+        return '<div class="shop-item" onclick="selectVipItem(\\'' + escapeHtml(id) + '\\')"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:7px;"><div style="display:flex; align-items:center; gap:10px;"><div style="width:34px; height:34px; border-radius:9px; background:var(--warn-soft); display:flex; align-items:center; justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div><div><div style="font-weight:700; font-size:13px;">' + escapeHtml(item.name) + '</div><div style="font-size:10.5px; color:var(--warn);">⭐ ' + item.days + ' hari</div></div></div><div class="mono" style="font-size:14px; font-weight:800; color:var(--warn);">' + priceFormatted + '</div></div><button class="btn btn-warn btn-sm" style="width:100%;">Pilih & Bayar</button></div>';
       }).join('');
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada layanan VIP tersedia</p>';
-    }
-  } catch(e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-3">Gagal memuat layanan</p>';
-  }
+    } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada</p>';
+  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
 }
 
 function selectVipItem(itemId) {
   const item = cachedVipShopItems.find(([id]) => id === itemId);
-  if (!item) return showToast('Layanan tidak ditemukan', 'error');
+  if (!item) return showToast('Tidak ditemukan', 'error');
   const [id, data] = item;
-
   document.getElementById('selected-vip-id').value = id;
   document.getElementById('selected-vip-price').value = data.price;
   document.getElementById('selected-vip-days').value = data.days;
   document.getElementById('selected-vip-name').value = data.name;
-
-  document.getElementById('selected-vip-display').innerText = data.name + ' (' + data.days + ' Hari)';
+  document.getElementById('selected-vip-display').innerText = data.name + ' (' + data.days + ' hari)';
   document.getElementById('selected-vip-price-display').innerText = 'Rp ' + Number(data.price).toLocaleString('id-ID');
-  
   document.getElementById('dana-number-display').innerText = DANA_ADMIN_NUMBER;
   document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
-  
-  document.getElementById('vip-purchase-form').classList.remove('hidden');
-  document.getElementById('payment-proof-section').classList.add('hidden');
-  document.getElementById('transaction-status-box').classList.add('hidden');
+  document.getElementById('vip-purchase-form').classList.remove('hide');
+  document.getElementById('payment-proof-section').classList.add('hide');
+  document.getElementById('transaction-status-box').classList.add('hide');
   document.getElementById('topup-id-display').innerText = '-';
-  document.getElementById('topup-status-display').innerHTML = '<span class="payment-status-badge status-pending">Menunggu</span>';
-  
+  document.getElementById('topup-status-display').innerHTML = '<span class="badge badge-warn">Menunggu</span>';
   document.getElementById('vip-purchase-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  showToast('Layanan dipilih: ' + data.name, 'info');
+  showToast('Dipilih: ' + data.name, 'info');
 }
 
 async function handleCreatePayment() {
@@ -4702,218 +2353,122 @@ async function handleCreatePayment() {
   const vipName = document.getElementById('selected-vip-name').value;
   const vipPrice = document.getElementById('selected-vip-price').value;
   const vipDays = document.getElementById('selected-vip-days').value;
-
-  if (!vipId) return showToast('Pilih layanan VIP terlebih dahulu!', 'error');
-
+  if (!vipId) return showToast('Pilih layanan dulu!', 'error');
   const btn = document.getElementById('btn-create-payment');
-  btn.disabled = true;
-  btn.innerText = 'Memproses...';
-
+  btn.disabled = true; btn.innerText = 'Memproses...';
   try {
-    const res = await fetch('/api/transaction/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: loggedInUsername,
-        vipId,
-        vipName,
-        vipPrice: parseInt(vipPrice),
-        vipDays: parseInt(vipDays)
-      })
-    });
+    const res = await fetch('/api/transaction/create', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, vipId, vipName, vipPrice: parseInt(vipPrice), vipDays: parseInt(vipDays) }) });
     const data = await res.json();
     if (data.success) {
       currentTransactionId = data.transactionId;
       document.getElementById('topup-id-display').innerText = data.transactionId;
-      document.getElementById('topup-status-display').innerHTML = '<span class="payment-status-badge status-pending">Menunggu</span>';
-      document.getElementById('payment-proof-section').classList.remove('hidden');
-      showToast('Pesanan dibuat! Silakan transfer via DANA & upload bukti.', 'success');
+      document.getElementById('topup-status-display').innerHTML = '<span class="badge badge-warn">Menunggu</span>';
+      document.getElementById('payment-proof-section').classList.remove('hide');
+      showToast('Pesanan dibuat! Transfer via DANA & upload bukti.', 'success');
       loadUserTransactions();
-    } else {
-      showToast(data.message || 'Gagal membuat pesanan', 'error');
-    }
-  } catch(e) {
-    showToast('Kesalahan koneksi', 'error');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg> Buat Pesanan & Bayar';
-  }
+    } else showToast(data.message || 'Gagal', 'error');
+  } catch(e) { showToast('Kesalahan koneksi', 'error'); }
+  finally { btn.disabled = false; btn.innerHTML = '💳 Buat Pesanan & Bayar'; }
 }
 
 function handlePaymentProofSelect(event) {
   const file = event.target.files[0];
   if (!file) return;
-  if (!file.type.startsWith('image/')) {
-    showToast('File harus berupa gambar!', 'error');
-    return;
-  }
-  if (file.size > 5 * 1024 * 1024) {
-    showToast('File terlalu besar! Maksimal 5MB', 'error');
-    return;
-  }
+  if (!file.type.startsWith('image/')) return showToast('Harus gambar!', 'error');
+  if (file.size > 5 * 1024 * 1024) return showToast('Max 5MB', 'error');
   selectedPaymentProofFile = file;
-  document.getElementById('proof-file-info').innerText = '📎 ' + file.name + ' (' + (file.size / 1024).toFixed(0) + ' KB)';
+  document.getElementById('proof-file-info').innerText = '📎 ' + file.name + ' (' + (file.size/1024).toFixed(0) + ' KB)';
   document.getElementById('btn-upload-proof').disabled = false;
-  showToast('Bukti pembayaran siap diupload', 'info');
+  showToast('Siap upload', 'info');
 }
 
 async function handleUploadProof() {
-  if (!currentTransactionId) return showToast('Buat pesanan terlebih dahulu!', 'error');
-  if (!selectedPaymentProofFile) return showToast('Pilih bukti pembayaran!', 'error');
-
+  if (!currentTransactionId) return showToast('Buat pesanan dulu!', 'error');
+  if (!selectedPaymentProofFile) return showToast('Pilih bukti!', 'error');
   const btn = document.getElementById('btn-upload-proof');
-  btn.disabled = true;
-  btn.innerText = 'Mengirim...';
-
+  btn.disabled = true; btn.innerText = 'Mengirim...';
   try {
     const reader = new FileReader();
     reader.onload = async () => {
       const base64 = reader.result;
-      const res = await fetch('/api/transaction/upload-proof', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: loggedInUsername,
-          transactionId: currentTransactionId,
-          proofImage: base64,
-          fileName: selectedPaymentProofFile.name
-        })
-      });
+      const res = await fetch('/api/transaction/upload-proof', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, transactionId: currentTransactionId, proofImage: base64, fileName: selectedPaymentProofFile.name }) });
       const data = await res.json();
       if (data.success) {
-        showToast('Bukti pembayaran terkirim! Menunggu konfirmasi admin.', 'success');
-        document.getElementById('payment-proof-section').classList.add('hidden');
-        document.getElementById('transaction-status-box').classList.remove('hidden');
-        document.getElementById('transaction-status-content').innerHTML = 
-          '<div class="flex items-center gap-2">' +
-            '<span class="payment-status-badge status-process">Diproses</span>' +
-            '<span class="text-xs text-slate-300">Menunggu verifikasi admin</span>' +
-          '</div>';
+        showToast('Bukti terkirim!', 'success');
+        document.getElementById('payment-proof-section').classList.add('hide');
+        document.getElementById('transaction-status-box').classList.remove('hide');
+        document.getElementById('transaction-status-content').innerHTML = '<div style="display:flex; align-items:center; gap:7px;"><span class="badge badge-info">Diproses</span><span style="font-size:11px; color:var(--text-1);">Menunggu verifikasi</span></div>';
         selectedPaymentProofFile = null;
         document.getElementById('payment-proof-file').value = '';
-        document.getElementById('proof-file-info').innerText = 'Klik untuk upload bukti transfer';
+        document.getElementById('proof-file-info').innerText = 'Klik untuk upload';
         loadUserTransactions();
-      } else {
-        showToast(data.message || 'Gagal upload bukti', 'error');
-      }
-      btn.disabled = false;
-      btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Kirim Bukti Pembayaran';
+      } else showToast(data.message || 'Gagal', 'error');
+      btn.disabled = false; btn.innerText = 'Kirim Bukti';
     };
     reader.readAsDataURL(selectedPaymentProofFile);
-  } catch(e) {
-    showToast('Gagal upload bukti', 'error');
-    btn.disabled = false;
-    btn.innerText = 'Kirim Bukti Pembayaran';
-  }
+  } catch(e) { showToast('Gagal', 'error'); btn.disabled = false; btn.innerText = 'Kirim Bukti'; }
 }
 
 async function loadUserTransactions() {
   if (!loggedInUsername) return;
   const container = document.getElementById('user-transactions-list');
   if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2 animate-pulse">Memuat riwayat...</p>';
+  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Memuat...</p>';
   try {
     const res = await fetch('/api/transaction/my?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
     if (data.success && data.transactions && data.transactions.length > 0) {
       container.innerHTML = data.transactions.map(t => {
-        const statusClass = t.status === 'success' ? 'status-success' : t.status === 'failed' ? 'status-failed' : t.status === 'process' ? 'status-process' : 'status-pending';
+        const statusBadge = t.status === 'success' ? 'badge-ok' : t.status === 'failed' ? 'badge-err' : t.status === 'process' ? 'badge-info' : 'badge-warn';
         const statusText = t.status === 'success' ? '✓ Sukses' : t.status === 'failed' ? '✗ Gagal' : t.status === 'process' ? '⚙ Diproses' : '⏳ Menunggu';
         const priceFormatted = 'Rp ' + Number(t.vipPrice).toLocaleString('id-ID');
-        return '<div class="p-2.5 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(168,85,247,0.15);">' +
-          '<div class="flex justify-between items-start mb-1">' +
-            '<div class="flex-1 min-w-0">' +
-              '<p class="text-xs font-bold text-white">' + escapeHtml(t.vipName) + '</p>' +
-              '<p class="text-[9px] text-slate-500 mono">ID: ' + escapeHtml(t.transactionId) + '</p>' +
-            '</div>' +
-            '<span class="payment-status-badge ' + statusClass + '" style="font-size: 0.6rem; padding: 0.2rem 0.5rem;">' + statusText + '</span>' +
-          '</div>' +
-          '<div class="flex justify-between items-center text-[10px] mt-1.5">' +
-            '<span class="text-amber-300 font-bold">' + priceFormatted + '</span>' +
-            '<span class="text-slate-500">' + new Date(t.createdAt).toLocaleDateString('id-ID') + '</span>' +
-          '</div>' +
-          (t.adminNote ? '<p class="text-[9px] text-amber-300 mt-1 p-1 rounded" style="background: rgba(245,158,11,0.1);">💬 ' + escapeHtml(t.adminNote) + '</p>' : '') +
-        '</div>';
+        return '<div class="hist-item"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11.5px; font-weight:700;">' + escapeHtml(t.vipName) + '</div><div class="mono" style="font-size:9px; color:var(--text-2);">' + escapeHtml(t.transactionId) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; margin-top:5px;"><span style="color:var(--warn); font-weight:700;">' + priceFormatted + '</span><span style="color:var(--text-2);">' + new Date(t.createdAt).toLocaleDateString('id-ID') + '</span></div>' + (t.adminNote ? '<div style="font-size:10px; color:var(--warn); margin-top:5px; padding:5px 7px; background:var(--warn-soft); border-radius:5px;">💬 ' + escapeHtml(t.adminNote) + '</div>' : '') + '</div>';
       }).join('');
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada transaksi</p>';
-    }
-  } catch(e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-2">Gagal memuat riwayat</p>';
-  }
+    } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
+  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
 }
 
-// ============ REQUEST FITUR (USER) ============
 async function handleSubmitFeatureRequest() {
   const title = document.getElementById('feature-request-title').value.trim();
   const description = document.getElementById('feature-request-desc').value.trim();
-
-  if (!title || !description) return showToast('Lengkapi judul dan deskripsi fitur!', 'error');
-  if (title.length < 3) return showToast('Judul minimal 3 karakter!', 'error');
-  if (description.length < 10) return showToast('Deskripsi minimal 10 karakter!', 'error');
-
+  if (!title || !description) return showToast('Lengkapi!', 'error');
+  if (title.length < 3) return showToast('Judul min 3!', 'error');
+  if (description.length < 10) return showToast('Deskripsi min 10!', 'error');
   try {
-    const res = await fetch('/api/feature-request/submit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, title, description })
-    });
+    const res = await fetch('/api/feature-request/submit', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, title, description }) });
     const data = await res.json();
     if (data.success) {
-      showToast('Request fitur berhasil dikirim!', 'success');
+      showToast('Request terkirim!', 'success');
       document.getElementById('feature-request-title').value = '';
       document.getElementById('feature-request-desc').value = '';
       loadUserFeatureRequests();
-    } else {
-      showToast(data.message || 'Gagal mengirim request', 'error');
-    }
-  } catch(e) {
-    showToast('Kesalahan koneksi', 'error');
-  }
+    } else showToast(data.message || 'Gagal', 'error');
+  } catch(e) { showToast('Kesalahan koneksi', 'error'); }
 }
 
 async function loadUserFeatureRequests() {
   if (!loggedInUsername) return;
   const container = document.getElementById('user-feature-requests-list');
   if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2 animate-pulse">Memuat...</p>';
-
+  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Memuat...</p>';
   try {
     const res = await fetch('/api/feature-request/my?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
     if (data.success && data.requests && data.requests.length > 0) {
       container.innerHTML = data.requests.map(req => {
-        const statusBadge = req.status === 'approved' 
-          ? '<span class="text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(16,185,129,0.15); color: #6ee7b7;">✓ Disetujui</span>'
-          : req.status === 'rejected'
-          ? '<span class="text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(244,63,94,0.15); color: #fda4af;">✗ Ditolak</span>'
-          : '<span class="text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(245,158,11,0.15); color: #fbbf24;">⏳ Menunggu</span>';
-
-        return '<div class="feature-request-card">' +
-          '<div class="flex justify-between items-start mb-1">' +
-            '<p class="text-xs font-bold text-emerald-300">' + escapeHtml(req.title) + '</p>' +
-            statusBadge +
-          '</div>' +
-          '<p class="text-[11px] text-slate-300 leading-relaxed">' + escapeHtml(req.description) + '</p>' +
-          '<p class="text-[9px] text-slate-500 mt-1.5">' + new Date(req.timestamp).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + '</p>' +
-          (req.adminNote ? '<p class="text-[10px] text-amber-300 mt-1.5 p-1.5 rounded" style="background: rgba(245,158,11,0.1);">💬 Admin: ' + escapeHtml(req.adminNote) + '</p>' : '') +
-        '</div>';
+        const statusBadge = req.status === 'approved' ? 'badge-ok' : req.status === 'rejected' ? 'badge-err' : 'badge-warn';
+        const statusText = req.status === 'approved' ? '✓ Disetujui' : req.status === 'rejected' ? '✗ Ditolak' : '⏳ Menunggu';
+        return '<div class="hist-item" style="border-color:rgba(74,222,128,0.25);"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="font-size:11.5px; font-weight:700; color:var(--ok); flex:1; min-width:0;">' + escapeHtml(req.title) + '</div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml(req.description) + '</div><div style="font-size:9px; color:var(--text-2); margin-top:5px;">' + new Date(req.timestamp).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) + '</div>' + (req.adminNote ? '<div style="font-size:10px; color:var(--warn); margin-top:5px; padding:5px 7px; background:var(--warn-soft); border-radius:5px;">💬 ' + escapeHtml(req.adminNote) + '</div>' : '') + '</div>';
       }).join('');
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-2">Belum ada request fitur</p>';
-    }
-  } catch(e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-2">Gagal memuat</p>';
-  }
+    } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
+  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
 }
 
-// ============ ADMIN: FEATURE REQUESTS ============
 async function loadAdminFeatureRequests() {
   if (!isAdminUser) return;
   const container = document.getElementById('admin-feature-requests-list');
   if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 animate-pulse">Memuat request fitur...</p>';
-
+  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Memuat...</p>';
   try {
     const res = await fetch('/api/admin/feature-requests?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
@@ -4921,103 +2476,48 @@ async function loadAdminFeatureRequests() {
       const pending = data.requests.filter(r => r.status === 'pending');
       const others = data.requests.filter(r => r.status !== 'pending');
       const sorted = [...pending, ...others];
-
       container.innerHTML = sorted.map(req => {
-        const statusColor = req.status === 'approved' ? '#6ee7b7' : req.status === 'rejected' ? '#fda4af' : '#fbbf24';
+        const statusBadge = req.status === 'approved' ? 'badge-ok' : req.status === 'rejected' ? 'badge-err' : 'badge-warn';
         const statusText = req.status === 'approved' ? 'Disetujui' : req.status === 'rejected' ? 'Ditolak' : 'Menunggu';
-        return '<div class="p-2.5 rounded-lg animate-slide-up" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(16,185,129,0.2);">' +
-          '<div class="flex justify-between items-start mb-1">' +
-            '<div class="flex-1 min-w-0">' +
-              '<p class="text-xs font-bold text-emerald-300">' + escapeHtml(req.title) + '</p>' +
-              '<p class="text-[9px] text-slate-500">Dari: ' + escapeHtml(req.username) + '</p>' +
-            '</div>' +
-            '<span class="text-[9px] px-1.5 py-0.5 rounded-full shrink-0" style="background: rgba(' + (req.status === 'approved' ? '16,185,129' : req.status === 'rejected' ? '244,63,94' : '245,158,11') + ',0.15); color: ' + statusColor + ';">' + statusText + '</span>' +
-          '</div>' +
-          '<p class="text-[10px] text-slate-300 mb-1.5">' + escapeHtml(req.description) + '</p>' +
-          (req.adminNote ? '<p class="text-[9px] text-amber-300 mb-1.5">Catatan: ' + escapeHtml(req.adminNote) + '</p>' : '') +
-          '<div class="flex gap-1.5 mt-2 pt-1.5 border-t border-slate-800">' +
-            '<input type="text" id="admin-note-' + req.id + '" placeholder="Catatan admin..." class="input-glow" style="flex: 1; padding: 0.4rem 0.6rem; font-size: 0.7rem;">' +
-            '<button onclick="updateFeatureRequestStatus(\\'' + req.id + '\\', \\'approved\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);">✓</button>' +
-            '<button onclick="updateFeatureRequestStatus(\\'' + req.id + '\\', \\'rejected\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(244,63,94,0.2); color: #fda4af; border: 1px solid rgba(244,63,94,0.4);">✗</button>' +
-            '<button onclick="deleteFeatureRequest(\\'' + req.id + '\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(148,163,184,0.2); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.4);">🗑</button>' +
-          '</div>' +
-        '</div>';
+        return '<div class="hist-item" style="border-color:rgba(74,222,128,0.2);"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11.5px; font-weight:700; color:var(--ok);">' + escapeHtml(req.title) + '</div><div style="font-size:9px; color:var(--text-2);">Dari: ' + escapeHtml(req.username) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="font-size:10.5px; color:var(--text-1); margin-bottom:5px;">' + escapeHtml(req.description) + '</div>' + (req.adminNote ? '<div style="font-size:9px; color:var(--warn); margin-bottom:5px;">Catatan: ' + escapeHtml(req.adminNote) + '</div>' : '') + '<div style="display:flex; gap:4px; margin-top:5px; padding-top:5px; border-top:1px solid var(--line);"><input type="text" id="admin-note-' + req.id + '" placeholder="Catatan..." class="inp" style="flex:1; padding:5px 8px; font-size:10.5px;"><button onclick="updateFeatureRequestStatus(\\'' + req.id + '\\', \\'approved\\')" class="btn btn-ok btn-xs">✓</button><button onclick="updateFeatureRequestStatus(\\'' + req.id + '\\', \\'rejected\\')" class="btn btn-err btn-xs">✗</button><button onclick="deleteFeatureRequest(\\'' + req.id + '\\')" class="btn btn-ghost btn-xs">🗑</button></div></div>';
       }).join('');
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada request fitur</p>';
-    }
-  } catch(e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-center py-2">Gagal memuat</p>';
-  }
+    } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
+  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
 }
 
 async function updateFeatureRequestStatus(reqId, status) {
   const noteInput = document.getElementById('admin-note-' + reqId);
   const adminNote = noteInput ? noteInput.value.trim() : '';
   try {
-    const res = await fetch('/api/admin/feature-request/update', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, requestId: reqId, status, adminNote })
-    });
+    const res = await fetch('/api/admin/feature-request/update', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, requestId: reqId, status, adminNote }) });
     const data = await res.json();
-    if (data.success) {
-      showToast('Request ' + (status === 'approved' ? 'disetujui' : 'ditolak'), 'success');
-      loadAdminFeatureRequests();
-    } else {
-      showToast(data.message, 'error');
-    }
-  } catch(e) {
-    showToast('Gagal update', 'error');
-  }
+    if (data.success) { showToast('Diupdate', 'success'); loadAdminFeatureRequests(); }
+    else showToast(data.message, 'error');
+  } catch(e) { showToast('Gagal', 'error'); }
 }
 
 async function deleteFeatureRequest(reqId) {
   if (!confirm('Hapus request ini?')) return;
   try {
-    const res = await fetch('/api/admin/feature-request/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, requestId: reqId })
-    });
+    const res = await fetch('/api/admin/feature-request/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, requestId: reqId }) });
     const data = await res.json();
-    if (data.success) {
-      showToast('Request dihapus', 'success');
-      loadAdminFeatureRequests();
-    }
+    if (data.success) { showToast('Dihapus', 'success'); loadAdminFeatureRequests(); }
   } catch(e) {}
 }
 
-// ============ ADMIN: VIP SHOP MANAGEMENT ============
 async function loadAdminVipShop() {
   if (!isAdminUser) return;
   const container = document.getElementById('admin-vip-shop-list');
   if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 animate-pulse">Memuat layanan VIP...</p>';
+  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px;">Memuat...</p>';
   try {
     const res = await fetch('/api/vip-shop');
     const data = await res.json();
     if (data.success && data.items && Object.keys(data.items).length > 0) {
-      const items = Object.entries(data.items).sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
-      container.innerHTML = items.map(([id, item]) => 
-        '<div class="flex justify-between items-center p-2 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(245,158,11,0.2);">' +
-          '<div class="flex-1 min-w-0">' +
-            '<p class="text-xs font-bold text-amber-300">' + escapeHtml(item.name) + '</p>' +
-            '<p class="text-[9px] text-slate-500">' + item.days + ' hari • Rp ' + Number(item.price).toLocaleString('id-ID') + ' • ' + (item.active !== false ? '✅ Aktif' : '❌ Nonaktif') + '</p>' +
-          '</div>' +
-          '<div class="flex gap-1 shrink-0">' +
-            '<button onclick="editVipShopItem(\\'' + id + '\\', \\'' + encodeURIComponent(item.name) + '\\', ' + item.price + ', ' + item.days + ')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(6,182,212,0.2); color: #67e8f9;">Edit</button>' +
-            '<button onclick="toggleVipShopItem(\\'' + id + '\\', ' + (item.active !== false) + ')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(245,158,11,0.2); color: #fbbf24;">' + (item.active !== false ? 'Off' : 'On') + '</button>' +
-            '<button onclick="deleteVipShopItem(\\'' + id + '\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(244,63,94,0.2); color: #fda4af;">×</button>' +
-          '</div>' +
-        '</div>'
-      ).join('');
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada layanan VIP</p>';
-    }
-  } catch(e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-center py-2">Gagal memuat</p>';
-  }
+      const items = Object.entries(data.items).sort((a,b) => (a[1].order||0) - (b[1].order||0));
+      container.innerHTML = items.map(([id, item]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700; color:var(--warn);">' + escapeHtml(item.name) + '</div><div style="font-size:9px; color:var(--text-2);">' + item.days + 'd • Rp ' + Number(item.price).toLocaleString('id-ID') + ' • ' + (item.active !== false ? '✅' : '❌') + '</div></div><div style="display:flex; gap:3px; flex-shrink:0;"><button onclick="editVipShopItem(\\'' + id + '\\', \\'' + encodeURIComponent(item.name) + '\\', ' + item.price + ', ' + item.days + ')" class="btn btn-ghost btn-xs">E</button><button onclick="toggleVipShopItem(\\'' + id + '\\', ' + (item.active !== false) + ')" class="btn btn-ghost btn-xs">' + (item.active !== false ? 'O' : 'X') + '</button><button onclick="deleteVipShopItem(\\'' + id + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
+    } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px;">Belum ada</p>';
+  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:6px;">Gagal</p>'; }
 }
 
 async function handleSaveVipShop() {
@@ -5026,28 +2526,15 @@ async function handleSaveVipShop() {
   const name = document.getElementById('vip-shop-name').value.trim();
   const price = parseInt(document.getElementById('vip-shop-price').value);
   const days = parseInt(document.getElementById('vip-shop-days').value);
-
-  if (!name || isNaN(price) || isNaN(days)) return showToast('Lengkapi semua field!', 'error');
-  if (price < 1000) return showToast('Harga minimal Rp 1.000!', 'error');
-  if (days < 1) return showToast('Masa aktif minimal 1 hari!', 'error');
-
+  if (!name || isNaN(price) || isNaN(days)) return showToast('Lengkapi!', 'error');
+  if (price < 1000) return showToast('Min Rp 1.000', 'error');
+  if (days < 1) return showToast('Min 1 hari', 'error');
   try {
-    const res = await fetch('/api/admin/vip-shop/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, id: editId, name, price, days })
-    });
+    const res = await fetch('/api/admin/vip-shop/save', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, id: editId, name, price, days }) });
     const data = await res.json();
-    if (data.success) {
-      showToast(data.message, 'success');
-      resetVipShopForm();
-      loadAdminVipShop();
-    } else {
-      showToast(data.message, 'error');
-    }
-  } catch(e) {
-    showToast('Gagal menyimpan', 'error');
-  }
+    if (data.success) { showToast(data.message, 'success'); resetVipShopForm(); loadAdminVipShop(); }
+    else showToast(data.message, 'error');
+  } catch(e) { showToast('Gagal', 'error'); }
 }
 
 function editVipShopItem(id, encName, price, days) {
@@ -5055,8 +2542,8 @@ function editVipShopItem(id, encName, price, days) {
   document.getElementById('vip-shop-name').value = decodeURIComponent(encName);
   document.getElementById('vip-shop-price').value = price;
   document.getElementById('vip-shop-days').value = days;
-  document.getElementById('vip-shop-submit-btn').innerText = 'Perbarui Layanan';
-  document.getElementById('vip-shop-cancel-btn').classList.remove('hidden');
+  document.getElementById('vip-shop-submit-btn').innerText = 'Perbarui';
+  document.getElementById('vip-shop-cancel-btn').classList.remove('hide');
 }
 
 function resetVipShopForm() {
@@ -5065,46 +2552,31 @@ function resetVipShopForm() {
   document.getElementById('vip-shop-price').value = '';
   document.getElementById('vip-shop-days').value = '';
   document.getElementById('vip-shop-submit-btn').innerText = 'Tambah Layanan';
-  document.getElementById('vip-shop-cancel-btn').classList.add('hidden');
+  document.getElementById('vip-shop-cancel-btn').classList.add('hide');
 }
 
 async function toggleVipShopItem(id, currentActive) {
   try {
-    const res = await fetch('/api/admin/vip-shop/toggle', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, id, active: !currentActive })
-    });
+    const res = await fetch('/api/admin/vip-shop/toggle', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, id, active: !currentActive }) });
     const data = await res.json();
-    if (data.success) {
-      showToast(data.message, 'success');
-      loadAdminVipShop();
-    }
+    if (data.success) { showToast(data.message, 'success'); loadAdminVipShop(); }
   } catch(e) {}
 }
 
 async function deleteVipShopItem(id) {
-  if (!confirm('Hapus layanan VIP ini?')) return;
+  if (!confirm('Hapus layanan?')) return;
   try {
-    const res = await fetch('/api/admin/vip-shop/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, id })
-    });
+    const res = await fetch('/api/admin/vip-shop/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, id }) });
     const data = await res.json();
-    if (data.success) {
-      showToast('Layanan dihapus', 'success');
-      loadAdminVipShop();
-    }
+    if (data.success) { showToast('Dihapus', 'success'); loadAdminVipShop(); }
   } catch(e) {}
 }
 
-// ============ ADMIN: TRANSACTIONS ============
 async function loadAdminTransactions() {
   if (!isAdminUser) return;
   const container = document.getElementById('admin-transactions-list');
   if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 animate-pulse">Memuat transaksi...</p>';
+  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Memuat...</p>';
   try {
     const res = await fetch('/api/admin/transactions?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
@@ -5112,457 +2584,220 @@ async function loadAdminTransactions() {
       const pending = data.transactions.filter(t => t.status === 'pending' || t.status === 'process');
       const others = data.transactions.filter(t => t.status !== 'pending' && t.status !== 'process');
       const sorted = [...pending, ...others];
-      
       container.innerHTML = sorted.map(t => {
-        const statusClass = t.status === 'success' ? 'status-success' : t.status === 'failed' ? 'status-failed' : t.status === 'process' ? 'status-process' : 'status-pending';
+        const statusBadge = t.status === 'success' ? 'badge-ok' : t.status === 'failed' ? 'badge-err' : t.status === 'process' ? 'badge-info' : 'badge-warn';
         const statusText = t.status === 'success' ? '✓ Sukses' : t.status === 'failed' ? '✗ Gagal' : t.status === 'process' ? '⚙ Diproses' : '⏳ Menunggu';
         const priceFormatted = 'Rp ' + Number(t.vipPrice).toLocaleString('id-ID');
-        return '<div class="p-2.5 rounded-lg animate-slide-up" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(6,182,212,0.2);">' +
-          '<div class="flex justify-between items-start mb-1">' +
-            '<div class="flex-1 min-w-0">' +
-              '<p class="text-xs font-bold text-white">' + escapeHtml(t.vipName) + ' <span class="text-[9px] text-slate-500">oleh ' + escapeHtml(t.username) + '</span></p>' +
-              '<p class="text-[9px] text-slate-500 mono">ID: ' + escapeHtml(t.transactionId) + '</p>' +
-            '</div>' +
-            '<span class="payment-status-badge ' + statusClass + '" style="font-size: 0.55rem; padding: 0.15rem 0.45rem;">' + statusText + '</span>' +
-          '</div>' +
-          '<div class="flex justify-between items-center text-[10px] mt-1">' +
-            '<span class="text-amber-300 font-bold">' + priceFormatted + '</span>' +
-            '<span class="text-slate-500">' + new Date(t.createdAt).toLocaleDateString('id-ID') + '</span>' +
-          '</div>' +
-          (t.proofImage ? '<img src="' + t.proofImage + '" alt="Bukti" style="max-width:100%; max-height:120px; border-radius:0.5rem; margin-top:0.5rem; cursor:pointer;" onclick="window.open(this.src)">' : '<p class="text-[9px] text-rose-400 mt-1">Belum upload bukti</p>') +
-          '<div class="flex gap-1.5 mt-2 pt-1.5 border-t border-slate-800">' +
-            (t.status === 'pending' || t.status === 'process' ? 
-              '<button onclick="confirmTransaction(\\'' + t.transactionId + '\\', \\'success\\')" class="flex-1 py-1 rounded text-[9px] font-bold" style="background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);">✓ Konfirmasi</button>' +
-              '<button onclick="confirmTransaction(\\'' + t.transactionId + '\\', \\'failed\\')" class="flex-1 py-1 rounded text-[9px] font-bold" style="background: rgba(244,63,94,0.2); color: #fda4af; border: 1px solid rgba(244,63,94,0.4);">✗ Tolak</button>' : '') +
-            '<button onclick="deleteTransaction(\\'' + t.transactionId + '\\')" class="px-2 py-1 rounded text-[9px] font-bold" style="background: rgba(148,163,184,0.2); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.4);">🗑</button>' +
-          '</div>' +
-        '</div>';
+        return '<div class="hist-item"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700;">' + escapeHtml(t.vipName) + ' <span style="font-size:9px; color:var(--text-2);">oleh ' + escapeHtml(t.username) + '</span></div><div class="mono" style="font-size:9px; color:var(--text-2);">' + escapeHtml(t.transactionId) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; margin-top:4px;"><span style="color:var(--warn); font-weight:700;">' + priceFormatted + '</span><span style="color:var(--text-2);">' + new Date(t.createdAt).toLocaleDateString('id-ID') + '</span></div>' + (t.proofImage ? '<img src="' + t.proofImage + '" alt="Bukti" style="max-width:100%; max-height:100px; border-radius:6px; margin-top:6px; cursor:pointer;" onclick="window.open(this.src)">' : '<div style="font-size:9px; color:var(--err); margin-top:4px;">Belum upload bukti</div>') + '<div style="display:flex; gap:4px; margin-top:6px; padding-top:6px; border-top:1px solid var(--line);">' + ((t.status === 'pending' || t.status === 'process') ? '<button onclick="confirmTransaction(\\'' + t.transactionId + '\\', \\'success\\')" class="btn btn-ok btn-xs" style="flex:1;">✓ Konfirmasi</button><button onclick="confirmTransaction(\\'' + t.transactionId + '\\', \\'failed\\')" class="btn btn-err btn-xs" style="flex:1;">✗ Tolak</button>' : '') + '<button onclick="deleteTransaction(\\'' + t.transactionId + '\\')" class="btn btn-ghost btn-xs">🗑</button></div></div>';
       }).join('');
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada transaksi</p>';
-    }
-  } catch(e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-center py-2">Gagal memuat</p>';
-  }
+    } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
+  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
 }
 
 async function confirmTransaction(transactionId, status) {
   const note = prompt('Catatan admin (opsional):') || '';
   try {
-    const res = await fetch('/api/admin/transaction/confirm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, transactionId, status, adminNote: note })
-    });
+    const res = await fetch('/api/admin/transaction/confirm', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, transactionId, status, adminNote: note }) });
     const data = await res.json();
-    if (data.success) {
-      showToast(data.message, 'success');
-      loadAdminTransactions();
-      loadAllUsers();
-    } else {
-      showToast(data.message, 'error');
-    }
-  } catch(e) {
-    showToast('Gagal konfirmasi', 'error');
-  }
+    if (data.success) { showToast(data.message, 'success'); loadAdminTransactions(); loadAllUsers(); }
+    else showToast(data.message, 'error');
+  } catch(e) { showToast('Gagal', 'error'); }
 }
 
 async function deleteTransaction(transactionId) {
-  if (!confirm('Hapus transaksi ini?')) return;
+  if (!confirm('Hapus transaksi?')) return;
   try {
-    const res = await fetch('/api/admin/transaction/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, transactionId })
-    });
+    const res = await fetch('/api/admin/transaction/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, transactionId }) });
     const data = await res.json();
-    if (data.success) {
-      showToast('Transaksi dihapus', 'success');
-      loadAdminTransactions();
-    }
+    if (data.success) { showToast('Dihapus', 'success'); loadAdminTransactions(); }
   } catch(e) {}
 }
 
-// ============ GANTI PASSWORD ============
 async function handleChangePassword() {
   const oldPassword = document.getElementById('old-password-input').value;
   const newPassword = document.getElementById('new-password-input').value;
   const confirmPassword = document.getElementById('confirm-password-input').value;
-
-  if (!oldPassword || !newPassword || !confirmPassword) {
-    return showToast('Semua field password harus diisi!', 'error');
-  }
-  if (newPassword.length < 4) {
-    return showToast('Password baru minimal 4 karakter!', 'error');
-  }
-  if (newPassword !== confirmPassword) {
-    return showToast('Konfirmasi password tidak cocok!', 'error');
-  }
-
+  if (!oldPassword || !newPassword || !confirmPassword) return showToast('Semua field wajib!', 'error');
+  if (newPassword.length < 4) return showToast('Min 4 karakter!', 'error');
+  if (newPassword !== confirmPassword) return showToast('Konfirmasi tidak cocok!', 'error');
   try {
-    const res = await fetch('/api/user/change-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, oldPassword, newPassword })
-    });
+    const res = await fetch('/api/user/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, oldPassword, newPassword }) });
     const data = await res.json();
     if (data.success) {
-      showToast('Password berhasil diubah!', 'success');
+      showToast('Password diubah!', 'success');
       document.getElementById('old-password-input').value = '';
       document.getElementById('new-password-input').value = '';
       document.getElementById('confirm-password-input').value = '';
-    } else {
-      showToast(data.message || 'Gagal ganti password', 'error');
-    }
-  } catch (e) {
-    showToast('Kesalahan koneksi', 'error');
-  }
+    } else showToast(data.message || 'Gagal', 'error');
+  } catch(e) { showToast('Kesalahan koneksi', 'error'); }
 }
 
-// ============ USERNAME UPDATE ============
 async function triggerUpdateUsername() {
   const newUsername = document.getElementById('new-username-input').value.trim();
   if (!newUsername) return showToast('Masukkan username baru!', 'error');
   try {
-    const response = await fetch('/api/user/username', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (localStorage.getItem('authToken') || '') },
-      body: JSON.stringify({ currentUsername: loggedInUsername, newUsername })
-    });
+    const response = await fetch('/api/user/username', { method:'PUT', headers:{'Content-Type':'application/json', 'Authorization': 'Bearer ' + (localStorage.getItem('authToken') || '')}, body: JSON.stringify({ currentUsername: loggedInUsername, newUsername }) });
     const result = await response.json();
     if (response.ok && result.success) {
-      showToast('Username berhasil diubah!', 'success');
+      showToast('Username diubah!', 'success');
       loggedInUsername = result.newUsername;
       localStorage.setItem('savedUsername', loggedInUsername);
       document.getElementById('logged-username').innerText = loggedInUsername;
       document.getElementById('profile-uname').innerText = loggedInUsername;
       document.getElementById('drawer-username').innerText = loggedInUsername;
       document.getElementById('new-username-input').value = '';
-    } else {
-      showToast(result.message || 'Gagal mengubah username.', 'error');
-    }
-  } catch (e) {
-    showToast('Kesalahan jaringan', 'error');
-  }
+    } else showToast(result.message || 'Gagal', 'error');
+  } catch (e) { showToast('Kesalahan jaringan', 'error'); }
 }
 
-// ============ RIWAYAT GMAIL & COUNTDOWN RESET ============
 async function loadVerifiedEmails(force = false) {
   if (!loggedInUsername) return;
   const now = Date.now();
-  if (!force && now - lastEmailsFetch < CACHE_DURATION.emails) {
-    const cached = getCached('verifiedEmails');
-    if (cached) { renderVerifiedEmails(cached); return; }
-  }
+  if (!force && now - lastEmailsFetch < CACHE_DURATION.emails) { const cached = getCached('verifiedEmails'); if (cached) { renderVerifiedEmails(cached); return; } }
   const container = document.getElementById('verified-emails-list');
   if (!container) return;
-  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 text-xs animate-pulse">⏳ Memuat riwayat...</p>';
-
+  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">⏳ Memuat...</p>';
   try {
     const res = await fetch('/api/user/my-emails?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
-
-    if (!data.success) {
-      container.innerHTML = '<p class="text-rose-400 italic text-center py-2 text-xs">Gagal memuat riwayat</p>';
-      return;
-    }
-
-    lastEmailsFetch = now;
-    setCache('verifiedEmails', data, CACHE_DURATION.emails);
-    renderVerifiedEmails(data);
-  } catch (e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-center py-2 text-xs">Kesalahan koneksi</p>';
-  }
+    if (!data.success) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; return; }
+    lastEmailsFetch = now; setCache('verifiedEmails', data, CACHE_DURATION.emails); renderVerifiedEmails(data);
+  } catch (e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Kesalahan koneksi</p>'; }
 }
 
 function renderVerifiedEmails(data) {
   const container = document.getElementById('verified-emails-list');
   if (!container) return;
-
   updateQuotaStatusCard(data);
   handleCountdown(data);
-  updateNetflixQuotaDisplay();
-  updateApkQuotaDisplay();
-  updateMailQuotaDisplay();
-
+  updateNetflixQuotaDisplay(); updateApkQuotaDisplay(); updateMailQuotaDisplay();
   const emails = data.activatedEmails || [];
   if (emails.length === 0) {
-    container.innerHTML = 
-      '<div class="p-3 rounded-xl text-center" style="background: rgba(148,163,184,0.05); border: 1px dashed rgba(148,163,184,0.2);">' +
-        '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.5" style="margin: 0 auto 0.5rem; display: block;">' +
-          '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>' +
-        '</svg>' +
-        '<p class="text-xs text-slate-400 font-semibold">Belum ada Gmail terverifikasi</p>' +
-        '<p class="text-[10px] text-slate-500 mt-0.5">Gmail yang berhasil diverifikasi akan muncul di sini</p>' +
-      '</div>';
+    container.innerHTML = '<div style="padding:11px; text-align:center; background:var(--bg-2); border:1px dashed var(--line-2); border-radius:9px;"><div style="font-size:11.5px; color:var(--text-1); font-weight:600;">Belum ada Gmail</div><div style="font-size:10px; color:var(--text-2); margin-top:2px;">Gmail yang terverifikasi akan muncul di sini</div></div>';
     return;
   }
-
   container.innerHTML = emails.map((email, idx) => {
     const isLatest = idx === emails.length - 1;
     const safeEmail = email.replace(/'/g, "\\\\'");
-    return '<div class="p-2.5 rounded-xl animate-slide-up flex items-center justify-between gap-2" ' +
-      'style="background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.22);">' +
-      '<div class="flex items-center gap-2.5 min-w-0 flex-1">' +
-        '<div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background: rgba(6,182,212,0.15);">' +
-          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#67e8f9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
-            '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>' +
-          '</svg>' +
-        '</div>' +
-        '<div class="min-w-0 flex-1">' +
-          '<p class="text-xs font-bold text-white truncate mono">' + escapeHtml(email) + '</p>' +
-          '<div class="flex items-center gap-1.5 mt-0.5">' +
-            '<span class="text-[9px] text-emerald-400 font-bold flex items-center gap-1">' +
-              '<span class="w-1 h-1 rounded-full bg-emerald-400"></span> Terverifikasi' +
-            '</span>' +
-            (isLatest ? '<span class="text-[9px] text-amber-300 font-bold">• Terbaru</span>' : '') +
-          '</div>' +
-        '</div>' +
-      '</div>' +
-      '<button onclick="copyEmail(\\'' + safeEmail + '\\')" class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" ' +
-      'style="background: rgba(168,85,247,0.15); border: 1px solid rgba(168,85,247,0.25);" title="Copy email">' +
-        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="2.5">' +
-          '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>' +
-        '</svg>' +
-      '</button>' +
-    '</div>';
+    return '<div style="padding:8px 11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px; display:flex; align-items:center; justify-content:space-between; gap:8px;"><div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;"><div style="width:28px; height:28px; border-radius:7px; background:rgba(96,165,250,0.15); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div><div style="min-width:0; flex:1;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(email) + '</div><div style="display:flex; align-items:center; gap:4px; margin-top:2px;"><span style="font-size:9px; color:var(--ok); font-weight:700;">●</span><span style="font-size:9px; color:var(--ok); font-weight:700;">Terverifikasi</span>' + (isLatest ? '<span style="font-size:9px; color:var(--warn); font-weight:700;">• Terbaru</span>' : '') + '</div></div></div><button onclick="copyEmail(\\'' + safeEmail + '\\')" class="btn btn-ghost btn-xs" style="flex-shrink:0;">Copy</button></div>';
   }).join('');
 }
 
 function updateQuotaStatusCard(data) {
-  const total = data.totalQuota || 1;
+  const total = data.totalQuota || BASE_QUOTA;
   const used = data.usedQuota || 0;
   const remain = Math.max(0, total - used);
-
   document.getElementById('quota-used-display').innerText = used;
-  document.getElementById('quota-remain-display').innerText = data.isAdmin || data.isVip ? '∞' : remain;
-  document.getElementById('quota-total-display').innerText = data.isAdmin || data.isVip ? '∞' : total;
-
+  document.getElementById('quota-remain-display').innerText = (data.isAdmin || data.isVip) ? '∞' : remain;
+  document.getElementById('quota-total-display').innerText = (data.isAdmin || data.isVip) ? '∞' : total;
   const card = document.getElementById('quota-status-card');
   const badge = document.getElementById('quota-status-badge');
-
-  if (data.isAdmin || data.isVip) {
-    card.style.background = 'rgba(168,85,247,0.08)';
-    card.style.borderColor = 'rgba(168,85,247,0.3)';
-    badge.className = 'badge badge-vip';
-    badge.innerText = data.isAdmin ? '👑 Admin' : '⭐ VIP';
-  } else if (remain <= 0) {
-    card.style.background = 'rgba(244,63,94,0.08)';
-    card.style.borderColor = 'rgba(244,63,94,0.3)';
-    badge.className = 'badge badge-offline';
-    badge.innerText = '✗ Habis';
-  } else if (remain <= 1) {
-    card.style.background = 'rgba(245,158,11,0.08)';
-    card.style.borderColor = 'rgba(245,158,11,0.3)';
-    badge.className = 'badge badge-admin';
-    badge.innerText = '⚠ Terbatas';
-  } else {
-    card.style.background = 'rgba(6,182,212,0.06)';
-    card.style.borderColor = 'rgba(6,182,212,0.25)';
-    badge.className = 'badge badge-online';
-    badge.innerText = '✓ Tersedia';
-  }
-
-  userQuotaData = {
-    usedQuota: used,
-    bonusQuota: data.bonusQuota || 0,
-    totalQuota: total,
-    nextResetTime: data.nextResetTime || 0,
-    lastResetTime: data.lastResetTime || 0
-  };
+  if (data.isAdmin || data.isVip) { card.style.background = 'var(--accent-soft)'; card.style.borderColor = 'rgba(139,124,246,0.3)'; badge.className = 'badge badge-accent'; badge.innerText = data.isAdmin ? '👑 Admin' : '⭐ VIP'; }
+  else if (remain <= 0) { card.style.background = 'var(--err-soft)'; card.style.borderColor = 'rgba(248,113,113,0.3)'; badge.className = 'badge badge-err'; badge.innerText = '✗ Habis'; }
+  else if (remain <= 1) { card.style.background = 'var(--warn-soft)'; card.style.borderColor = 'rgba(251,191,36,0.3)'; badge.className = 'badge badge-warn'; badge.innerText = '⚠ Terbatas'; }
+  else { card.style.background = 'var(--info-soft)'; card.style.borderColor = 'rgba(96,165,250,0.25)'; badge.className = 'badge badge-ok'; badge.innerText = '✓ Tersedia'; }
+  userQuotaData = { usedQuota: used, bonusQuota: data.bonusQuota || 0, totalQuota: total, nextResetTime: data.nextResetTime || 0, lastResetTime: data.lastResetTime || 0 };
 }
 
 function handleCountdown(data) {
   const countdownCard = document.getElementById('reset-countdown-card');
   const resetBannerMain = document.getElementById('reset-banner-main');
-  const total = data.totalQuota || 1;
+  const total = data.totalQuota || BASE_QUOTA;
   const used = data.usedQuota || 0;
   const remain = Math.max(0, total - used);
-
   if (quotaCountdownInterval) { clearInterval(quotaCountdownInterval); quotaCountdownInterval = null; }
   if (globalCountdownInterval) { clearInterval(globalCountdownInterval); globalCountdownInterval = null; }
-
-  if (countdownCard) countdownCard.classList.add('hidden');
-  if (resetBannerMain) resetBannerMain.classList.add('hidden');
-
+  if (countdownCard) countdownCard.classList.add('hide');
+  if (resetBannerMain) resetBannerMain.classList.add('hide');
   updateResetTimerDisplay(data);
-
   const shouldShow = remain <= 0 && !data.isAdmin && !data.isVip && data.nextResetTime > 0;
   if (!shouldShow) return;
-
-  if (countdownCard) countdownCard.classList.remove('hidden');
-  if (resetBannerMain) resetBannerMain.classList.remove('hidden');
-
-  userQuotaData = {
-    usedQuota: used,
-    bonusQuota: data.bonusQuota || 0,
-    totalQuota: total,
-    nextResetTime: data.nextResetTime,
-    lastResetTime: data.lastResetTime
-  };
-
+  if (countdownCard) countdownCard.classList.remove('hide');
+  if (resetBannerMain) resetBannerMain.classList.remove('hide');
+  userQuotaData = { usedQuota: used, bonusQuota: data.bonusQuota || 0, totalQuota: total, nextResetTime: data.nextResetTime, lastResetTime: data.lastResetTime };
   const nextResetDate = new Date(data.nextResetTime);
-  const timeStr = nextResetDate.toLocaleString('id-ID', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  });
+  const timeStr = nextResetDate.toLocaleString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
   const nextResetEl = document.getElementById('next-reset-time');
   if (nextResetEl) nextResetEl.innerText = timeStr;
-
   const totalDuration = data.nextResetTime - data.lastResetTime;
-
   function tick() {
     if (!isPageVisible) return;
     const now = Date.now();
     const msLeft = userQuotaData.nextResetTime - now;
-
     if (msLeft <= 0) {
-      clearInterval(quotaCountdownInterval);
-      quotaCountdownInterval = null;
-      ['countdown-hours', 'countdown-minutes', 'countdown-seconds', 'cd-hours-main', 'cd-minutes-main', 'cd-seconds-main'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.innerText = '00';
-      });
-      showToast('🎉 Kuota Anda telah direset! Silakan verifikasi Gmail baru.', 'success', 5000);
-      setTimeout(() => {
-        loadVerifiedEmails(true);
-        checkSavedSession();
-      }, 2000);
+      clearInterval(quotaCountdownInterval); quotaCountdownInterval = null;
+      ['countdown-hours','countdown-minutes','countdown-seconds','cd-hours-main','cd-minutes-main','cd-seconds-main'].forEach(id => { const el = document.getElementById(id); if (el) el.innerText = '00'; });
+      showToast('🎉 Kuota direset!', 'success', 5000);
+      setTimeout(() => { loadVerifiedEmails(true); checkSavedSession(); }, 2000);
       return;
     }
-
-    const hours = Math.floor(msLeft / 3600000);
-    const minutes = Math.floor((msLeft % 3600000) / 60000);
-    const seconds = Math.floor((msLeft % 60000) / 1000);
-
-    const hh = String(hours).padStart(2, '0');
-    const mm = String(minutes).padStart(2, '0');
-    const ss = String(seconds).padStart(2, '0');
-
-    const elH = document.getElementById('countdown-hours');
-    const elM = document.getElementById('countdown-minutes');
-    const elS = document.getElementById('countdown-seconds');
-    if (elH) elH.innerText = hh;
-    if (elM) elM.innerText = mm;
-    if (elS) elS.innerText = ss;
-
-    const elH2 = document.getElementById('cd-hours-main');
-    const elM2 = document.getElementById('cd-minutes-main');
-    const elS2 = document.getElementById('cd-seconds-main');
-    if (elH2) elH2.innerText = hh;
-    if (elM2) elM2.innerText = mm;
-    if (elS2) elS2.innerText = ss;
-
+    const hh = String(Math.floor(msLeft / 3600000)).padStart(2, '0');
+    const mm = String(Math.floor((msLeft % 3600000) / 60000)).padStart(2, '0');
+    const ss = String(Math.floor((msLeft % 60000) / 1000)).padStart(2, '0');
+    ['countdown-hours','cd-hours-main'].forEach(id => { const el = document.getElementById(id); if (el) el.innerText = hh; });
+    ['countdown-minutes','cd-minutes-main'].forEach(id => { const el = document.getElementById(id); if (el) el.innerText = mm; });
+    ['countdown-seconds','cd-seconds-main'].forEach(id => { const el = document.getElementById(id); if (el) el.innerText = ss; });
     const elapsed = totalDuration - msLeft;
     const percent = Math.min(100, Math.max(0, (elapsed / totalDuration) * 100));
     const pf = document.getElementById('reset-progress-fill');
     if (pf) pf.style.width = percent + '%';
   }
-
-  tick();
-  quotaCountdownInterval = setInterval(tick, 1000);
+  tick(); quotaCountdownInterval = setInterval(tick, 1000);
 }
 
 function updateResetTimerDisplay(data) {
-  const total = data.totalQuota || 1;
+  const total = data.totalQuota || BASE_QUOTA;
   const used = data.usedQuota || 0;
   const remain = Math.max(0, total - used);
   const el = document.getElementById('reset-timer-display');
   if (!el) return;
-
-  if (data.isAdmin || data.isVip) {
-    el.innerText = '∞';
-    el.style.color = '#d8b4fe';
-    return;
-  }
-
-  if (remain > 0) {
-    el.innerText = '24 Jam';
-    el.style.color = 'white';
-    return;
-  }
-
+  if (data.isAdmin || data.isVip) { el.innerText = '∞'; el.style.color = 'var(--accent)'; return; }
+  if (remain > 0) { el.innerText = '24 Jam'; el.style.color = 'white'; return; }
   if (globalCountdownInterval) clearInterval(globalCountdownInterval);
-
   function updateStatCard() {
     if (!isPageVisible) return;
     const now = Date.now();
     const msLeft = data.nextResetTime - now;
-    if (msLeft <= 0) {
-      clearInterval(globalCountdownInterval);
-      globalCountdownInterval = null;
-      el.innerText = 'Reset!';
-      return;
-    }
+    if (msLeft <= 0) { clearInterval(globalCountdownInterval); globalCountdownInterval = null; el.innerText = 'Reset!'; return; }
     const h = Math.floor(msLeft / 3600000);
     const m = Math.floor((msLeft % 3600000) / 60000);
-    el.innerText = h + 'j ' + m + 'm';
-    el.style.color = '#fda4af';
+    el.innerText = h + 'j ' + m + 'm'; el.style.color = 'var(--err)';
   }
-  updateStatCard();
-  globalCountdownInterval = setInterval(updateStatCard, 60000);
+  updateStatCard(); globalCountdownInterval = setInterval(updateStatCard, 60000);
 }
 
-function copyEmail(email) {
-  navigator.clipboard.writeText(email).then(() => {
-    showToast('Email "' + email + '" tersalin!', 'success');
-  }).catch(() => {
-    showToast('Gagal copy email', 'error');
-  });
-}
+function copyEmail(email) { navigator.clipboard.writeText(email).then(() => showToast('Tersalin!', 'success')).catch(() => showToast('Gagal', 'error')); }
 
-// ============ CHUNKED UPLOAD ============
 function initFileDrop() {
   const dropZone = document.getElementById('file-drop-zone');
   const fileInput = document.getElementById('admin-video-file');
   if (!dropZone || !fileInput) return;
-  
   dropZone.addEventListener('click', () => fileInput.click());
   dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
   dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-  dropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-    if (e.dataTransfer.files.length) {
-      fileInput.files = e.dataTransfer.files;
-      handleFileSelect(e.dataTransfer.files[0]);
-    }
-  });
-  fileInput.addEventListener('change', (e) => {
-    if (e.target.files.length) handleFileSelect(e.target.files[0]);
-  });
+  dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); if (e.dataTransfer.files.length) { fileInput.files = e.dataTransfer.files; handleFileSelect(e.dataTransfer.files[0]); } });
+  fileInput.addEventListener('change', (e) => { if (e.target.files.length) handleFileSelect(e.target.files[0]); });
 }
 
 function handleFileSelect(file) {
   const info = document.getElementById('file-info');
   const btn = document.getElementById('btn-upload-video');
-  
-  if (!file.type.startsWith('video/')) {
-    showToast('File harus berupa video!', 'error');
-    return;
-  }
-  if (file.size > 200 * 1024 * 1024) {
-    showToast('File terlalu besar! Maksimal 200MB', 'error');
-    return;
-  }
-  
+  if (!file.type.startsWith('video/')) return showToast('Harus video!', 'error');
+  if (file.size > 200 * 1024 * 1024) return showToast('Max 200MB', 'error');
   selectedVideoFile = file;
   const sizeMB = (file.size / 1024 / 1024).toFixed(2);
   info.innerText = '📁 ' + file.name + ' (' + sizeMB + ' MB)';
-  info.classList.remove('hidden');
-  btn.disabled = false;
-  showToast('Video siap diupload: ' + sizeMB + 'MB', 'info');
+  info.classList.remove('hide'); btn.disabled = false;
+  showToast('Video siap: ' + sizeMB + 'MB', 'info');
 }
 
 async function handleUploadVideo() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
-  if (!selectedVideoFile) return showToast('Pilih video terlebih dahulu!', 'error');
-
+  if (!selectedVideoFile) return showToast('Pilih video!', 'error');
   const file = selectedVideoFile;
   const CHUNK_SIZE = 512 * 1024;
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
   const uploadId = 'up_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
-
   const progressContainer = document.getElementById('upload-progress-container');
   const progressFill = document.getElementById('upload-progress-fill');
   const percentText = document.getElementById('upload-percent');
@@ -5570,96 +2805,47 @@ async function handleUploadVideo() {
   const speedText = document.getElementById('upload-speed');
   const btn = document.getElementById('btn-upload-video');
   const btnText = document.getElementById('btn-upload-text');
-
-  progressContainer.classList.remove('hidden');
-  btn.disabled = true;
-  btnText.innerText = 'Mengunggah...';
-
+  progressContainer.classList.remove('hide'); btn.disabled = true; btnText.innerText = 'Mengunggah...';
   const startTime = Date.now();
   let uploadedBytes = 0;
-
   try {
-    statusText.innerText = 'Memulai upload...';
-    const initRes = await fetch('/api/admin/upload-init', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: loggedInUsername,
-        uploadId,
-        filename: file.name,
-        totalChunks,
-        fileSize: file.size,
-        fileType: file.type
-      })
-    });
+    statusText.innerText = 'Memulai...';
+    const initRes = await fetch('/api/admin/upload-init', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, uploadId, filename: file.name, totalChunks, fileSize: file.size, fileType: file.type }) });
     const initData = await initRes.json();
-    if (!initData.success) throw new Error(initData.message || 'Gagal init upload');
-
+    if (!initData.success) throw new Error(initData.message || 'Gagal init');
     for (let i = 0; i < totalChunks; i++) {
       const start = i * CHUNK_SIZE;
       const end = Math.min(start + CHUNK_SIZE, file.size);
       const chunk = file.slice(start, end);
-      
       const chunkBase64 = await blobToBase64(chunk);
-      
-      statusText.innerText = 'Upload chunk ' + (i + 1) + '/' + totalChunks;
-      
-      const chunkRes = await fetch('/api/admin/upload-chunk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: loggedInUsername,
-          uploadId,
-          chunkIndex: i,
-          chunkData: chunkBase64
-        })
-      });
+      statusText.innerText = 'Chunk ' + (i+1) + '/' + totalChunks;
+      const chunkRes = await fetch('/api/admin/upload-chunk', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, uploadId, chunkIndex: i, chunkData: chunkBase64 }) });
       const chunkData = await chunkRes.json();
-      if (!chunkData.success) throw new Error(chunkData.message || 'Gagal upload chunk ' + i);
-
+      if (!chunkData.success) throw new Error(chunkData.message || 'Gagal chunk ' + i);
       uploadedBytes += chunk.size;
       const percent = Math.round((uploadedBytes / file.size) * 100);
       progressFill.style.width = percent + '%';
       percentText.innerText = percent + '%';
-
       const elapsed = (Date.now() - startTime) / 1000;
       const speed = (uploadedBytes / 1024 / 1024) / elapsed;
-      speedText.innerText = '⚡ ' + speed.toFixed(2) + ' MB/s • ' + (uploadedBytes / 1024 / 1024).toFixed(2) + ' / ' + (file.size / 1024 / 1024).toFixed(2) + ' MB';
+      speedText.innerText = '⚡ ' + speed.toFixed(2) + ' MB/s • ' + (uploadedBytes/1024/1024).toFixed(2) + '/' + (file.size/1024/1024).toFixed(2) + ' MB';
     }
-
-    statusText.innerText = 'Menyelesaikan...';
-    const finalRes = await fetch('/api/admin/upload-finalize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, uploadId })
-    });
+    statusText.innerText = 'Finalizing...';
+    const finalRes = await fetch('/api/admin/upload-finalize', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, uploadId }) });
     const finalData = await finalRes.json();
     if (!finalData.success) throw new Error(finalData.message || 'Gagal finalize');
-
-    progressFill.style.width = '100%';
-    percentText.innerText = '100%';
-    statusText.innerText = '✓ Upload berhasil!';
-    speedText.innerText = 'Total waktu: ' + ((Date.now() - startTime) / 1000).toFixed(1) + 's';
-    
-    showToast('Video berhasil diperbarui!', 'success');
+    progressFill.style.width = '100%'; percentText.innerText = '100%';
+    statusText.innerText = '✓ Berhasil!'; speedText.innerText = 'Waktu: ' + ((Date.now() - startTime) / 1000).toFixed(1) + 's';
+    showToast('Video diperbarui!', 'success');
     selectedVideoFile = null;
     document.getElementById('admin-video-file').value = '';
-    document.getElementById('file-info').classList.add('hidden');
+    document.getElementById('file-info').classList.add('hide');
     fetchFeaturedVideo(true);
-
-    setTimeout(() => {
-      progressContainer.classList.add('hidden');
-      progressFill.style.width = '0%';
-    }, 2500);
-
+    setTimeout(() => { progressContainer.classList.add('hide'); progressFill.style.width = '0%'; }, 2500);
   } catch (err) {
     showToast('Upload gagal: ' + err.message, 'error');
-    statusText.innerText = '✗ Upload gagal';
-    progressFill.style.background = 'linear-gradient(90deg, #f43f5e, #dc2626)';
-  } finally {
-    btn.disabled = false;
-    btnText.innerText = 'Upload & Perbarui Video';
-  }
+    statusText.innerText = '✗ Gagal'; progressFill.style.background = 'var(--err)';
+  } finally { btn.disabled = false; btnText.innerText = 'Upload Video'; }
 }
 
 function blobToBase64(blob) {
@@ -5671,63 +2857,36 @@ function blobToBase64(blob) {
   });
 }
 
-// ============ QUOTA & VIP ============
 function updateQuotaDisplay(data) {
-  if (data.isAdmin || data.isVip) {
-    document.getElementById('quota-display').innerText = '∞';
-  } else {
-    document.getElementById('quota-display').innerText = (data.usedQuota || 0) + '/' + (1 + (data.bonusQuota || 0));
-  }
+  if (data.isAdmin || data.isVip) document.getElementById('quota-display').innerText = '∞';
+  else { const total = data.totalQuota || BASE_QUOTA + (data.bonusQuota || 0); document.getElementById('quota-display').innerText = (data.usedQuota || 0) + '/' + total; }
 }
 function checkVipStatus(data) {
   const banner = document.getElementById('vip-status-banner');
-  if (data.isVip && !data.isAdmin) {
-    banner.classList.remove('hidden');
-    document.getElementById('vip-expiry-text').innerText = 'Aktif hingga: ' + new Date(data.vipUntil).toLocaleString('id-ID');
-  } else {
-    banner.classList.add('hidden');
-  }
+  if (data.isVip && !data.isAdmin) { banner.classList.remove('hide'); document.getElementById('vip-expiry-text').innerText = 'Aktif hingga: ' + new Date(data.vipUntil).toLocaleString('id-ID'); }
+  else banner.classList.add('hide');
 }
 
-// ============ ADMIN ACTIONS ============
 async function changeServerState(newState) {
   if (!isAdminUser) return;
   try {
-    const res = await fetch('/api/admin/set-status', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newState, username: loggedInUsername })
-    });
+    const res = await fetch('/api/admin/set-status', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ status: newState, username: loggedInUsername }) });
     const data = await res.json();
-    if (data.success) {
-      updateStatusUI(newState);
-      serverOnline = (newState === 'online');
-      setCache('serverStatus', newState, CACHE_DURATION.status);
-      showToast('Server: ' + newState.toUpperCase(), 'success');
-    }
-  } catch(e) { showToast('Gagal ubah status', 'error'); }
+    if (data.success) { updateStatusUI(newState); serverOnline = (newState === 'online'); setCache('serverStatus', newState, CACHE_DURATION.status); showToast('Server: ' + newState.toUpperCase(), 'success'); }
+  } catch(e) { showToast('Gagal', 'error'); }
 }
 
 async function handleSetVip() {
   if (!isAdminUser) return;
   const targetUser = document.getElementById('vip-target-user').value.trim();
   const days = parseInt(document.getElementById('vip-duration-days').value);
-  if (!targetUser || isNaN(days)) return showToast('Lengkapi username dan hari!', 'error');
+  if (!targetUser || isNaN(days)) return showToast('Lengkapi!', 'error');
   try {
-    const res = await fetch('/api/admin/set-vip', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, targetUser, days })
-    });
+    const res = await fetch('/api/admin/set-vip', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, targetUser, days }) });
     const data = await res.json();
-    if (data.success) {
-      showToast(data.message, 'success');
-      document.getElementById('vip-target-user').value = '';
-      document.getElementById('vip-duration-days').value = '';
-      loadAdminVipList();
-      loadAllUsers();
-    } else showToast(data.message, 'error');
-  } catch(e) { showToast('Gagal set VIP', 'error'); }
+    if (data.success) { showToast(data.message, 'success'); document.getElementById('vip-target-user').value = ''; document.getElementById('vip-duration-days').value = ''; loadAdminVipList(); loadAllUsers(); }
+    else showToast(data.message, 'error');
+  } catch(e) { showToast('Gagal', 'error'); }
 }
 
 async function loadAdminVipList() {
@@ -5737,78 +2896,39 @@ async function loadAdminVipList() {
     const data = await res.json();
     const container = document.getElementById('admin-vip-list');
     if (data.success && Object.keys(data.vipUsers).length > 0) {
-      container.innerHTML = Object.entries(data.vipUsers).map(([uname, val]) => 
-        '<div class="flex justify-between items-center p-2 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(245,158,11,0.2);">' +
-          '<div><span class="text-amber-300 font-bold">' + uname + '</span>' +
-          '<span class="text-slate-500 block text-[9px]">Exp: ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span></div>' +
-          '<button onclick="handleRemoveVip(\\'' + uname + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(244,63,94,0.2); color: #fda4af; border: 1px solid rgba(244,63,94,0.3);">Hapus</button>' +
-        '</div>'
-      ).join('');
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Tidak ada VIP aktif</p>';
-    }
+      container.innerHTML = Object.entries(data.vipUsers).map(([uname, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div><span style="color:var(--warn); font-weight:700;">' + uname + '</span><span style="color:var(--text-2); display:block; font-size:9px;">Exp: ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span></div><button onclick="handleRemoveVip(\\'' + uname + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">Hapus</button></div>').join('');
+    } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Tidak ada</p>';
   } catch(e) {}
 }
 
 async function handleRemoveVip(targetUser) {
   if (!confirm('Cabut VIP untuk ' + targetUser + '?')) return;
   try {
-    const res = await fetch('/api/admin/remove-vip', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, targetUser })
-    });
+    const res = await fetch('/api/admin/remove-vip', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, targetUser }) });
     const data = await res.json();
-    if (data.success) { 
-      showToast('VIP dicabut', 'success'); 
-      loadAdminVipList(); 
-      loadAllUsers();
-    }
+    if (data.success) { showToast('Dicabut', 'success'); loadAdminVipList(); loadAllUsers(); }
   } catch(e) {}
 }
 
-// ============ CREATE VIP ACCOUNT ============
 async function handleCreateVipAccount() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
   const vipUsername = document.getElementById('vip-create-username').value.trim().toLowerCase();
   const vipPassword = document.getElementById('vip-create-password').value.trim();
   const vipDays = parseInt(document.getElementById('vip-create-days').value);
-
-  if (!vipUsername || !vipPassword || isNaN(vipDays)) {
-    return showToast('Lengkapi semua field!', 'error');
-  }
-  if (vipPassword.length < 4) {
-    return showToast('Password minimal 4 karakter!', 'error');
-  }
-  if (vipDays < 1) {
-    return showToast('Masa aktif minimal 1 hari!', 'error');
-  }
-
+  if (!vipUsername || !vipPassword || isNaN(vipDays)) return showToast('Lengkapi!', 'error');
+  if (vipPassword.length < 4) return showToast('Pass min 4!', 'error');
+  if (vipDays < 1) return showToast('Min 1 hari!', 'error');
   try {
-    const res = await fetch('/api/admin/create-vip-account', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        adminUsername: loggedInUsername,
-        vipUsername,
-        vipPassword,
-        vipDays
-      })
-    });
+    const res = await fetch('/api/admin/create-vip-account', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, vipUsername, vipPassword, vipDays }) });
     const data = await res.json();
     if (data.success) {
       showToast(data.message, 'success');
       document.getElementById('vip-create-username').value = '';
       document.getElementById('vip-create-password').value = '';
       document.getElementById('vip-create-days').value = '';
-      loadVipAccounts();
-      loadAllUsers();
-    } else {
-      showToast(data.message, 'error');
-    }
-  } catch(e) {
-    showToast('Gagal membuat akun VIP', 'error');
-  }
+      loadVipAccounts(); loadAllUsers();
+    } else showToast(data.message, 'error');
+  } catch(e) { showToast('Gagal', 'error'); }
 }
 
 async function loadVipAccounts() {
@@ -5821,274 +2941,114 @@ async function loadVipAccounts() {
       const now = Date.now();
       container.innerHTML = Object.entries(data.vipAccounts).map(([uname, val]) => {
         const isActive = val.vipUntil > now;
-        const statusBadge = isActive 
-          ? '<span class="text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(16,185,129,0.15); color: #6ee7b7;">AKTIF</span>'
-          : '<span class="text-[9px] px-1.5 py-0.5 rounded-full" style="background: rgba(244,63,94,0.15); color: #fda4af;">EXPIRED</span>';
-        
-        return '<div class="vip-account-card">' +
-          '<div class="flex justify-between items-start mb-1.5">' +
-            '<div class="flex-1 min-w-0">' +
-              '<p class="text-xs font-bold text-white mono truncate">' + escapeHtml(uname) + '</p>' +
-              '<p class="text-[10px] text-slate-400 mono">Pwd: ' + escapeHtml(val.password) + '</p>' +
-            '</div>' +
-            statusBadge +
-          '</div>' +
-          '<div class="flex items-center justify-between text-[10px]">' +
-            '<span class="text-amber-300">⭐ s/d ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span>' +
-            '<div class="flex gap-1">' +
-              '<button onclick="copyVipCredentials(\\'' + escapeHtml(uname) + '\\', \\'' + escapeHtml(val.password) + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.3);">📋 Copy</button>' +
-              '<button onclick="deleteVipAccount(\\'' + escapeHtml(uname) + '\\')" class="delete-btn">🗑 Hapus</button>' +
-            '</div>' +
-          '</div>' +
-        '</div>';
+        return '<div style="padding:9px 11px; background:linear-gradient(135deg,var(--warn-soft),var(--accent-soft)); border:1px solid rgba(251,191,36,0.3); border-radius:8px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(uname) + '</div><div class="mono" style="font-size:10px; color:var(--text-2);">Pwd: ' + escapeHtml(val.password) + '</div></div><span class="badge ' + (isActive ? 'badge-ok' : 'badge-err') + '">' + (isActive ? 'AKTIF' : 'EXPIRED') + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px;"><span style="color:var(--warn);">⭐ s/d ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span><div style="display:flex; gap:3px;"><button onclick="copyVipCredentials(\\'' + escapeHtml(uname) + '\\', \\'' + escapeHtml(val.password) + '\\')" class="btn btn-ghost btn-xs">📋</button><button onclick="deleteVipAccount(\\'' + escapeHtml(uname) + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">🗑</button></div></div></div>';
       }).join('');
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada akun VIP</p>';
-    }
+    } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Belum ada</p>';
   } catch(e) {}
 }
 
 function copyVipCredentials(username, password) {
   const text = 'Username: ' + username + '\\nPassword: ' + password;
-  navigator.clipboard.writeText(text).then(() => {
-    showToast('Kredensial VIP tersalin!', 'success');
-  });
+  navigator.clipboard.writeText(text).then(() => showToast('Tersalin!', 'success'));
 }
 
 async function deleteVipAccount(vipUsername) {
-  if (!confirm('Hapus akun VIP ' + vipUsername + '? User yang login dengan akun ini akan kehilangan akses.')) return;
+  if (!confirm('Hapus akun VIP ' + vipUsername + '?')) return;
   try {
-    const res = await fetch('/api/admin/delete-vip-account', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, vipUsername })
-    });
+    const res = await fetch('/api/admin/delete-vip-account', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, vipUsername }) });
     const data = await res.json();
-    if (data.success) {
-      showToast('Akun VIP dihapus', 'success');
-      loadVipAccounts();
-      loadAllUsers();
-    } else {
-      showToast(data.message, 'error');
-    }
-  } catch(e) {
-    showToast('Gagal hapus akun VIP', 'error');
-  }
+    if (data.success) { showToast('Dihapus', 'success'); loadVipAccounts(); loadAllUsers(); }
+    else showToast(data.message, 'error');
+  } catch(e) { showToast('Gagal', 'error'); }
 }
 
-// ============ CEK USER TERDAFTAR ============
 async function loadAllUsers() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
   const container = document.getElementById('all-users-list');
-  container.innerHTML = '<p class="text-slate-500 italic text-center py-2 animate-pulse">⏳ Memuat daftar user...</p>';
-
+  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">⏳ Memuat...</p>';
   try {
     const res = await fetch('/api/admin/get-all-users?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
-
-    if (!data.success) {
-      container.innerHTML = '<p class="text-rose-400 italic text-center py-2">Gagal: ' + (data.message || 'Error') + '</p>';
-      return;
-    }
-
+    if (!data.success) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal: ' + (data.message || 'Error') + '</p>'; return; }
     cachedUserList = data.users || [];
     document.getElementById('stat-total').innerText = data.stats.total;
     document.getElementById('stat-admins').innerText = data.stats.admins;
     document.getElementById('stat-vips').innerText = data.stats.vips;
     document.getElementById('stat-reset').innerText = data.stats.resetDue;
-
     renderUserList();
-    showToast('Berhasil memuat ' + data.stats.total + ' user', 'success');
-  } catch (e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-center py-2">Kesalahan koneksi</p>';
-    showToast('Gagal memuat daftar user', 'error');
-  }
+    showToast('Loaded ' + data.stats.total + ' user', 'success');
+  } catch (e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Kesalahan koneksi</p>'; }
 }
 
 function setUserFilter(filter) {
   currentUserFilter = filter;
   document.querySelectorAll('.user-filter-btn').forEach(btn => {
     const isActive = btn.dataset.filter === filter;
-    if (isActive) {
-      btn.style.background = 'rgba(168,85,247,0.25)';
-      btn.style.borderColor = 'rgba(168,85,247,0.6)';
-      btn.style.color = 'white';
-    } else {
-      btn.style.background = '';
-      btn.style.borderColor = '';
-      btn.style.color = '';
-    }
+    btn.style.background = isActive ? 'var(--accent)' : '';
+    btn.style.color = isActive ? 'white' : '';
   });
   renderUserList();
 }
 
-function filterUserList() {
-  renderUserList();
-}
+function filterUserList() { renderUserList(); }
 
 function renderUserList() {
   const container = document.getElementById('all-users-list');
   const search = (document.getElementById('user-search-input').value || '').toLowerCase().trim();
-
   let filtered = cachedUserList.filter(u => {
     if (currentUserFilter === 'admin' && !u.isAdmin) return false;
     if (currentUserFilter === 'vip' && !u.isVip) return false;
     if (currentUserFilter === 'regular' && (u.isAdmin || u.isVip)) return false;
     if (currentUserFilter === 'reset' && !u.isResetDue) return false;
-    if (search) {
-      return u.username.toLowerCase().includes(search) ||
-             (u.email && u.email.toLowerCase().includes(search));
-    }
+    if (search) return u.username.toLowerCase().includes(search) || (u.email && u.email.toLowerCase().includes(search));
     return true;
   });
-
-  if (filtered.length === 0) {
-    container.innerHTML = '<p class="text-slate-500 italic text-center py-3">Tidak ada user yang cocok.</p>';
-    return;
-  }
-
+  if (filtered.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Tidak ada</p>'; return; }
   const now = Date.now();
   container.innerHTML = filtered.map(u => {
-    let badgeClass = 'badge-user';
-    let badgeText = '👤 User';
-    let borderColor = 'rgba(148,163,184,0.25)';
-    if (u.isAdmin) {
-      badgeClass = 'badge-admin';
-      badgeText = '👑 Admin';
-      borderColor = 'rgba(245,158,11,0.4)';
-    } else if (u.isVip) {
-      badgeClass = 'badge-vip';
-      badgeText = '⭐ VIP';
-      borderColor = 'rgba(168,85,247,0.45)';
-    }
-
-    let quotaText = '';
-    let quotaColor = '#67e8f9';
-    if (u.isAdmin) {
-      quotaText = '∞ Unlimited';
-      quotaColor = '#fbbf24';
-    } else if (u.isVip) {
-      quotaText = '⭐ Unlimited (VIP)';
-      quotaColor = '#d8b4fe';
-    } else {
-      quotaText = u.usedQuota + '/' + u.totalQuota + ' (+' + u.bonusQuota + ' bonus)';
-      quotaColor = u.usedQuota >= u.totalQuota ? '#fda4af' : '#67e8f9';
-    }
-
+    let badgeClass = 'badge-muted', badgeText = '👤 User', borderColor = 'var(--line-2)';
+    if (u.isAdmin) { badgeClass = 'badge-warn'; badgeText = '👑 Admin'; borderColor = 'rgba(251,191,36,0.4)'; }
+    else if (u.isVip) { badgeClass = 'badge-accent'; badgeText = '⭐ VIP'; borderColor = 'rgba(139,124,246,0.45)'; }
+    let quotaText = '', quotaColor = 'var(--info)';
+    if (u.isAdmin) { quotaText = '∞ Unlimited'; quotaColor = 'var(--warn)'; }
+    else if (u.isVip) { quotaText = '⭐ Unlimited'; quotaColor = 'var(--accent)'; }
+    else { quotaText = u.usedQuota + '/' + u.totalQuota + ' (+' + u.bonusQuota + ')'; quotaColor = u.usedQuota >= u.totalQuota ? 'var(--err)' : 'var(--info)'; }
     let resetText = '';
-    if (u.isResetDue) {
-      resetText = '🔄 Reset Tersedia';
-    } else if (u.nextResetTime > now) {
-      const msLeft = u.nextResetTime - now;
-      const hoursLeft = Math.floor(msLeft / 3600000);
-      const minsLeft = Math.floor((msLeft % 3600000) / 60000);
-      resetText = '⏱ ' + hoursLeft + 'j ' + minsLeft + 'm lagi';
-    } else {
-      resetText = '✓ Baru saja direset';
-    }
-
+    if (u.isResetDue) resetText = '🔄 Reset Tersedia';
+    else if (u.nextResetTime > now) { const msLeft = u.nextResetTime - now; resetText = '⏱ ' + Math.floor(msLeft / 3600000) + 'j ' + Math.floor((msLeft % 3600000) / 60000) + 'm'; }
+    else resetText = '✓ Baru direset';
     let vipText = '';
-    if (u.isVip && u.vipUntil) {
-      vipText = '⭐ VIP s/d ' + new Date(u.vipUntil).toLocaleDateString('id-ID');
-    }
-
+    if (u.isVip && u.vipUntil) vipText = '⭐ VIP s/d ' + new Date(u.vipUntil).toLocaleDateString('id-ID');
     const safeUser = u.username.replace(/'/g, "\\\\'");
-
-    return '<div class="p-2.5 rounded-lg animate-slide-up" style="background: rgba(7,4,15,0.6); border: 1px solid ' + borderColor + ';">' +
-      '<div class="flex justify-between items-start gap-2 mb-1.5">' +
-        '<div class="flex-1 min-w-0">' +
-          '<div class="flex items-center gap-1.5 flex-wrap">' +
-            '<span class="font-bold text-white mono text-[12px]">' + escapeHtml(u.username) + '</span>' +
-            '<span class="badge ' + badgeClass + '" style="font-size: 0.6rem; padding: 0.15rem 0.5rem;">' + badgeText + '</span>' +
-          '</div>' +
-          '<p class="text-slate-400 text-[10px] truncate mt-0.5">📧 ' + escapeHtml(u.email) + '</p>' +
-        '</div>' +
-      '</div>' +
-      '<div class="grid grid-cols-2 gap-1.5 text-[10px]">' +
-        '<div class="p-1.5 rounded" style="background: rgba(6,182,212,0.06);">' +
-          '<p class="text-slate-500 text-[9px] uppercase font-bold">Kuota</p>' +
-          '<p class="mono font-bold" style="color: ' + quotaColor + ';">' + quotaText + '</p>' +
-        '</div>' +
-        '<div class="p-1.5 rounded" style="background: rgba(168,85,247,0.06);">' +
-          '<p class="text-slate-500 text-[9px] uppercase font-bold">Reset</p>' +
-          '<p class="mono font-bold text-purple-300">' + resetText + '</p>' +
-        '</div>' +
-      '</div>' +
-      (vipText ? '<p class="text-[10px] text-amber-300 mt-1.5 font-semibold">' + vipText + '</p>' : '') +
-      (u.activatedEmails && u.activatedEmails.length > 0 ? 
-        '<details class="mt-1.5">' +
-          '<summary class="text-[10px] text-cyan-300 cursor-pointer hover:text-cyan-200">📨 ' + u.activatedEmails.length + ' email diaktivasi</summary>' +
-          '<div class="mt-1 space-y-0.5 pl-2">' + 
-            u.activatedEmails.slice(0, 10).map(e => '<p class="text-[9px] text-slate-400 mono truncate">• ' + escapeHtml(e) + '</p>').join('') +
-            (u.activatedEmails.length > 10 ? '<p class="text-[9px] text-slate-500 italic">... dan ' + (u.activatedEmails.length - 10) + ' lainnya</p>' : '') +
-          '</div>' +
-        '</details>' : '') +
-      '<div class="flex gap-1.5 mt-2 pt-2 border-t border-slate-800">' +
-        '<button onclick="quickSetVip(\\'' + safeUser + '\\')" class="flex-1 py-1 rounded text-[10px] font-bold transition" style="background: rgba(168,85,247,0.15); color: #d8b4fe; border: 1px solid rgba(168,85,247,0.3);">⭐ Set VIP</button>' +
-        '<button onclick="copyUsername(\\'' + safeUser + '\\')" class="flex-1 py-1 rounded text-[10px] font-bold transition" style="background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.3);">📋 Copy</button>' +
-        (u.isAdmin && u.username === loggedInUsername ? '' : 
-          '<button onclick="deleteUserAccount(\\'' + safeUser + '\\', ' + (u.isAdmin ? 'true' : 'false') + ')" class="flex-1 py-1 rounded text-[10px] font-bold transition" style="background: rgba(244,63,94,0.15); color: #fda4af; border: 1px solid rgba(244,63,94,0.3);">🗑 Hapus</button>') +
-      '</div>' +
-    '</div>';
+    return '<div style="padding:8px 10px; background:var(--bg-0); border:1px solid ' + borderColor + '; border-radius:7px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;"><span class="mono" style="font-weight:700; color:var(--text-0); font-size:11.5px;">' + escapeHtml(u.username) + '</span><span class="badge ' + badgeClass + '" style="font-size:9px;">' + badgeText + '</span></div><div style="font-size:9.5px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:1px;">📧 ' + escapeHtml(u.email) + '</div></div></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:5px; font-size:9.5px;"><div style="padding:5px; background:var(--info-soft); border-radius:5px;"><div style="color:var(--text-2); font-size:8px; text-transform:uppercase; font-weight:700;">Kuota</div><div class="mono" style="color:' + quotaColor + '; font-weight:700;">' + quotaText + '</div></div><div style="padding:5px; background:var(--accent-soft); border-radius:5px;"><div style="color:var(--text-2); font-size:8px; text-transform:uppercase; font-weight:700;">Reset</div><div class="mono" style="color:var(--accent); font-weight:700;">' + resetText + '</div></div></div>' + (vipText ? '<div style="font-size:9.5px; color:var(--warn); margin-top:5px; font-weight:600;">' + vipText + '</div>' : '') + (u.activatedEmails && u.activatedEmails.length > 0 ? '<details style="margin-top:5px;"><summary style="font-size:9.5px; color:var(--info); cursor:pointer;">📨 ' + u.activatedEmails.length + ' email</summary><div style="margin-top:3px; padding-left:6px;">' + u.activatedEmails.slice(0, 10).map(e => '<div class="mono" style="font-size:9px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">• ' + escapeHtml(e) + '</div>').join('') + (u.activatedEmails.length > 10 ? '<div style="font-size:9px; color:var(--text-2); font-style:italic;">... +' + (u.activatedEmails.length - 10) + '</div>' : '') + '</div></details>' : '') + '<div style="display:flex; gap:4px; margin-top:6px; padding-top:6px; border-top:1px solid var(--line);"><button onclick="quickSetVip(\\'' + safeUser + '\\')" class="btn btn-ghost btn-xs" style="flex:1;">⭐ VIP</button><button onclick="copyUsername(\\'' + safeUser + '\\')" class="btn btn-ghost btn-xs" style="flex:1;">📋 Copy</button>' + (u.isAdmin && u.username === loggedInUsername ? '' : '<button onclick="deleteUserAccount(\\'' + safeUser + '\\', ' + (u.isAdmin ? 'true' : 'false') + ')" class="btn btn-ghost btn-xs" style="flex:1; color:var(--err);">🗑 Hapus</button>') + '</div></div>';
   }).join('');
 }
 
-// ============ HAPUS AKUN ============
 async function deleteUserAccount(targetUsername, isTargetAdmin) {
-  const confirmText = isTargetAdmin 
-    ? '⚠️ HAPUS AKUN ADMIN "' + targetUsername + '"?\\n\\nAkun ini akan dihapus permanen!'
-    : 'Hapus akun "' + targetUsername + '"?';
-  
+  const confirmText = isTargetAdmin ? '⚠️ HAPUS ADMIN "' + targetUsername + '"?\\n\\nPermanen!' : 'Hapus akun "' + targetUsername + '"?';
   if (!confirm(confirmText)) return;
-  
-  if (isTargetAdmin) {
-    const secondConfirm = prompt('Ketik "HAPUS" untuk konfirmasi hapus akun admin:');
-    if (secondConfirm !== 'HAPUS') {
-      showToast('Penghapusan dibatalkan', 'info');
-      return;
-    }
-  }
-
+  if (isTargetAdmin) { const second = prompt('Ketik "HAPUS" untuk konfirmasi:'); if (second !== 'HAPUS') { showToast('Dibatalkan', 'info'); return; } }
   try {
-    const res = await fetch('/api/admin/delete-user', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, targetUsername })
-    });
+    const res = await fetch('/api/admin/delete-user', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, targetUsername }) });
     const data = await res.json();
-    if (data.success) {
-      showToast('Akun "' + targetUsername + '" berhasil dihapus!', 'success');
-      loadAllUsers();
-    } else {
-      showToast(data.message || 'Gagal menghapus akun', 'error');
-    }
-  } catch(e) {
-    showToast('Kesalahan koneksi', 'error');
-  }
+    if (data.success) { showToast('Akun dihapus!', 'success'); loadAllUsers(); }
+    else showToast(data.message || 'Gagal', 'error');
+  } catch(e) { showToast('Kesalahan koneksi', 'error'); }
 }
 
 function quickSetVip(username) {
   document.getElementById('vip-target-user').value = username;
   document.getElementById('vip-duration-days').focus();
-  showToast('Username "' + username + '" siap di-set VIP', 'info');
+  showToast('Username siap: ' + username, 'info');
   document.getElementById('vip-target-user').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
-function copyUsername(username) {
-  navigator.clipboard.writeText(username).then(() => {
-    showToast('Username "' + username + '" tersalin!', 'success');
-  });
-}
+function copyUsername(username) { navigator.clipboard.writeText(username).then(() => showToast('Tersalin!', 'success')); }
 
-// ============ GLOBAL CHAT ============
 function updateChatBadge() {
   const badge = document.getElementById('chat-unread-badge');
-  if (unreadChatCount > 0) {
-    badge.textContent = unreadChatCount > 99 ? '99+' : unreadChatCount;
-    badge.classList.remove('hidden');
-  } else {
-    badge.classList.add('hidden');
-  }
+  if (unreadChatCount > 0) { badge.textContent = unreadChatCount > 99 ? '99+' : unreadChatCount; badge.classList.remove('hide'); }
+  else badge.classList.add('hide');
 }
 
 async function checkNewChatMessages() {
@@ -6102,12 +3062,8 @@ async function checkNewChatMessages() {
       const entries = Object.entries(data.messages).sort((a,b) => a[1].timestamp - b[1].timestamp);
       if (entries.length > 0) {
         const latestId = entries[entries.length - 1][0];
-        if (lastChatMessageId && latestId !== lastChatMessageId && entries[entries.length-1][1].username !== loggedInUsername) {
-          unreadChatCount++;
-          updateChatBadge();
-        }
-        lastChatMessageId = latestId;
-        lastChatFetch = now;
+        if (lastChatMessageId && latestId !== lastChatMessageId && entries[entries.length-1][1].username !== loggedInUsername) { unreadChatCount++; updateChatBadge(); }
+        lastChatMessageId = latestId; lastChatFetch = now;
       }
     }
   } catch(e) {}
@@ -6116,146 +3072,71 @@ async function checkNewChatMessages() {
 async function loadGlobalChat(force = false) {
   if (!loggedInUsername || !isPageVisible) return;
   const now = Date.now();
-  if (!force && now - lastChatFetch < CACHE_DURATION.chat) {
-    const cached = getCached('globalChat');
-    if (cached) { renderGlobalChat(cached); return; }
-  }
+  if (!force && now - lastChatFetch < CACHE_DURATION.chat) { const cached = getCached('globalChat'); if (cached) { renderGlobalChat(cached); return; } }
   const container = document.getElementById('chat-messages');
-  
   try {
     const res = await fetch('/api/chat/messages');
     const data = await res.json();
-    lastChatFetch = now;
-    setCache('globalChat', data, CACHE_DURATION.chat);
-    renderGlobalChat(data);
-  } catch(e) {
-    container.innerHTML = '<p class="text-rose-400 italic text-xs text-center py-3">Gagal memuat chat</p>';
-  }
+    lastChatFetch = now; setCache('globalChat', data, CACHE_DURATION.chat); renderGlobalChat(data);
+  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
 }
 
 function renderGlobalChat(data) {
   const container = document.getElementById('chat-messages');
   if (!container) return;
-
-  if (!data.success || !data.messages) {
-    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada pesan</p>';
-    return;
-  }
-
+  if (!data.success || !data.messages) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada</p>'; return; }
   const entries = Object.entries(data.messages).sort((a,b) => a[1].timestamp - b[1].timestamp);
-  
-  if (entries.length === 0) {
-    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada pesan. Jadilah yang pertama!</p>';
-    return;
-  }
-
-  if (entries.length > 0) {
-    lastChatMessageId = entries[entries.length - 1][0];
-  }
-
+  if (entries.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada. Jadilah yang pertama!</p>'; return; }
+  if (entries.length > 0) lastChatMessageId = entries[entries.length - 1][0];
   const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 60;
-
   container.innerHTML = entries.map(([id, msg]) => {
     const isMe = msg.username === loggedInUsername;
     const isAdmin = msg.isAdmin;
     const isVip = msg.isVip;
-    
-    let bubbleClass = isMe ? 'chat-bubble-me' : 'chat-bubble-other';
-    if (isAdmin) bubbleClass += ' chat-bubble-admin';
-    else if (isVip) bubbleClass += ' chat-bubble-vip';
-
-    let roleIcon = '';
-    if (isAdmin) roleIcon = '👑 ';
-    else if (isVip) roleIcon = '⭐ ';
-    else roleIcon = '👤 ';
-
+    const bubbleClass = isMe ? 'chat-msg-me' : 'chat-msg-them';
+    const roleIcon = isAdmin ? '👑 ' : isVip ? '⭐ ' : '👤 ';
     const time = new Date(msg.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
     const date = new Date(msg.timestamp).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
     const isToday = new Date(msg.timestamp).toDateString() === new Date().toDateString();
     const timeStr = isToday ? time : date + ' ' + time;
-
-    const deleteBtn = isAdminUser ? 
-      '<button onclick="deleteChatMessage(\\'' + id + '\\')" class="text-[9px] opacity-50 hover:opacity-100 ml-1" title="Hapus">🗑</button>' : '';
-
-    return '<div class="chat-bubble ' + bubbleClass + '">' +
-      '<div class="chat-meta">' +
-        roleIcon + '<span>' + escapeHtml(msg.username) + '</span>' +
-        (isAdmin ? '<span class="text-amber-300">ADMIN</span>' : '') +
-        (isVip && !isAdmin ? '<span class="text-purple-300">VIP</span>' : '') +
-        deleteBtn +
-      '</div>' +
-      '<div>' + escapeHtml(msg.message) + '</div>' +
-      '<div class="chat-timestamp">' + timeStr + '</div>' +
-    '</div>';
+    const deleteBtn = isAdminUser ? ' <button onclick="deleteChatMessage(\\'' + id + '\\')" style="background:none; border:none; font-size:9px; opacity:0.5; cursor:pointer; margin-left:2px;">🗑</button>' : '';
+    return '<div class="chat-msg ' + bubbleClass + '"><div class="chat-msg-header">' + roleIcon + '<span>' + escapeHtml(msg.username) + '</span>' + (isAdmin ? ' · ADMIN' : '') + (isVip && !isAdmin ? ' · VIP' : '') + deleteBtn + '</div><div>' + escapeHtml(msg.message) + '</div><div class="chat-time">' + timeStr + '</div></div>';
   }).join('');
-
-  if (wasAtBottom || container.scrollTop === 0) {
-    container.scrollTop = container.scrollHeight;
-  }
-
-  const uniqueUsers = new Set(entries.slice(-50).map(e => e[1].username)).size;
-  document.getElementById('chat-online-count').innerText = '👥 ' + uniqueUsers + ' user aktif';
+  if (wasAtBottom || container.scrollTop === 0) container.scrollTop = container.scrollHeight;
+  updateOnlineCount(onlineUsersCount);
 }
 
 async function sendChatMessage() {
-  if (!loggedInUsername) return showToast('Harus login dulu!', 'error');
+  if (!loggedInUsername) return showToast('Harus login!', 'error');
   const input = document.getElementById('chat-input');
   const message = input.value.trim();
   if (!message) return;
-  
   input.value = '';
-  
   try {
-    const res = await fetch('/api/chat/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, message })
-    });
+    const res = await fetch('/api/chat/send', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, message }) });
     const data = await res.json();
-    if (data.success) {
-      lastChatFetch = 0;
-      await loadGlobalChat(true);
-    } else {
-      showToast(data.message || 'Gagal kirim pesan', 'error');
-      input.value = message;
-    }
-  } catch(e) {
-    showToast('Kesalahan koneksi', 'error');
-    input.value = message;
-  }
+    if (data.success) { lastChatFetch = 0; await loadGlobalChat(true); }
+    else { showToast(data.message || 'Gagal', 'error'); input.value = message; }
+  } catch(e) { showToast('Kesalahan koneksi', 'error'); input.value = message; }
 }
 
 async function deleteChatMessage(messageId) {
   if (!isAdminUser) return;
-  if (!confirm('Hapus pesan ini?')) return;
+  if (!confirm('Hapus pesan?')) return;
   try {
-    const res = await fetch('/api/chat/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, messageId })
-    });
+    const res = await fetch('/api/chat/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, messageId }) });
     const data = await res.json();
-    if (data.success) {
-      showToast('Pesan dihapus', 'success');
-      lastChatFetch = 0;
-      loadGlobalChat(true);
-    }
+    if (data.success) { showToast('Dihapus', 'success'); lastChatFetch = 0; loadGlobalChat(true); }
   } catch(e) {}
 }
 
-// ============ ANNOUNCEMENTS ============
 async function loadUserAnnouncements(force = false) {
   const now = Date.now();
-  if (!force && now - lastAnnouncementsFetch < CACHE_DURATION.announcements) {
-    const cached = getCached('userAnnouncements');
-    if (cached) { renderUserAnnouncements(cached); return; }
-  }
+  if (!force && now - lastAnnouncementsFetch < CACHE_DURATION.announcements) { const cached = getCached('userAnnouncements'); if (cached) { renderUserAnnouncements(cached); return; } }
   try {
     const res = await fetch('/api/announcements');
     const data = await res.json();
-    lastAnnouncementsFetch = now;
-    setCache('userAnnouncements', data, CACHE_DURATION.announcements);
-    renderUserAnnouncements(data);
+    lastAnnouncementsFetch = now; setCache('userAnnouncements', data, CACHE_DURATION.announcements); renderUserAnnouncements(data);
   } catch(e) {}
 }
 
@@ -6264,18 +3145,8 @@ function renderUserAnnouncements(data) {
   if (!container) return;
   if (data.success && Object.keys(data.announcements).length > 0) {
     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
-    container.innerHTML = entries.map(([id, val]) => 
-      '<div class="p-3 rounded-xl animate-slide-up" style="background: rgba(168,85,247,0.06); border: 1px solid rgba(168,85,247,0.18);">' +
-        '<div class="flex justify-between items-start mb-1.5">' +
-          '<span class="text-cyan-300 font-bold text-xs">' + escapeHtml(val.title) + '</span>' +
-          '<span class="text-[9px] text-slate-500 mono">' + new Date(val.timestamp).toLocaleDateString('id-ID') + '</span>' +
-        '</div>' +
-        '<p class="text-slate-300 whitespace-pre-line text-[11px] leading-relaxed">' + escapeHtml(val.content) + '</p>' +
-      '</div>'
-    ).join('');
-  } else {
-    container.innerHTML = '<p class="text-slate-500 italic text-xs text-center py-3">Belum ada informasi</p>';
-  }
+    container.innerHTML = entries.map(([id, val]) => '<div style="padding:11px 13px; background:var(--accent-soft); border:1px solid rgba(139,124,246,0.2); border-radius:9px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="font-size:11.5px; font-weight:700; color:var(--accent);">' + escapeHtml(val.title) + '</div><div class="mono" style="font-size:9px; color:var(--text-2);">' + new Date(val.timestamp).toLocaleDateString('id-ID') + '</div></div><div style="font-size:11px; color:var(--text-1); line-height:1.5; white-space:pre-line;">' + escapeHtml(val.content) + '</div></div>').join('');
+  } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada</p>';
 }
 
 async function loadAdminAnnouncements() {
@@ -6286,18 +3157,8 @@ async function loadAdminAnnouncements() {
     const container = document.getElementById('admin-info-list');
     if (data.success && Object.keys(data.announcements).length > 0) {
       const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
-      container.innerHTML = entries.map(([id, val]) => 
-        '<div class="flex justify-between items-center p-2 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(245,158,11,0.2);">' +
-          '<div class="truncate mr-2 flex-1"><span class="text-amber-300 font-bold block truncate">' + escapeHtml(val.title) + '</span></div>' +
-          '<div class="flex gap-1 shrink-0">' +
-            '<button onclick="editAnnouncement(\\'' + id + '\\', \\'' + encodeURIComponent(val.title) + '\\', \\'' + encodeURIComponent(val.content) + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(6,182,212,0.2); color: #67e8f9;">Edit</button>' +
-            '<button onclick="deleteAnnouncement(\\'' + id + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(244,63,94,0.2); color: #fda4af;">×</button>' +
-          '</div>' +
-        '</div>'
-      ).join('');
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada info</p>';
-    }
+      container.innerHTML = entries.map(([id, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div style="flex:1; min-width:0;"><span style="color:var(--warn); font-weight:700; font-size:10.5px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(val.title) + '</span></div><div style="display:flex; gap:2px; flex-shrink:0;"><button onclick="editAnnouncement(\\'' + id + '\\', \\'' + encodeURIComponent(val.title) + '\\', \\'' + encodeURIComponent(val.content) + '\\')" class="btn btn-ghost btn-xs">E</button><button onclick="deleteAnnouncement(\\'' + id + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
+    } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Belum ada</p>';
   } catch(e) {}
 }
 
@@ -6306,31 +3167,25 @@ async function handleSaveAnnouncement() {
   const id = document.getElementById('info-edit-id').value;
   const title = document.getElementById('info-title').value.trim();
   const content = document.getElementById('info-content').value.trim();
-  if (!title || !content) return showToast('Lengkapi judul & isi!', 'error');
+  if (!title || !content) return showToast('Lengkapi!', 'error');
   const endpoint = id ? '/api/admin/update-announcement' : '/api/admin/create-announcement';
   try {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, id, title, content })
-    });
+    const res = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, id, title, content }) });
     const data = await res.json();
     if (data.success) {
       showToast(data.message, 'success');
-      resetInfoForm();
-      loadAdminAnnouncements();
-      lastAnnouncementsFetch = 0;
-      loadUserAnnouncements(true);
+      resetInfoForm(); loadAdminAnnouncements();
+      lastAnnouncementsFetch = 0; loadUserAnnouncements(true);
     } else showToast(data.message, 'error');
-  } catch(e) { showToast('Gagal simpan', 'error'); }
+  } catch(e) { showToast('Gagal', 'error'); }
 }
 
 function editAnnouncement(id, encTitle, encContent) {
   document.getElementById('info-edit-id').value = id;
   document.getElementById('info-title').value = decodeURIComponent(encTitle);
   document.getElementById('info-content').value = decodeURIComponent(encContent);
-  document.getElementById('info-submit-btn').innerText = 'Perbarui Info';
-  document.getElementById('info-cancel-btn').classList.remove('hidden');
+  document.getElementById('info-submit-btn').innerText = 'Perbarui';
+  document.getElementById('info-cancel-btn').classList.remove('hide');
 }
 
 function resetInfoForm() {
@@ -6338,59 +3193,35 @@ function resetInfoForm() {
   document.getElementById('info-title').value = '';
   document.getElementById('info-content').value = '';
   document.getElementById('info-submit-btn').innerText = 'Publikasikan';
-  document.getElementById('info-cancel-btn').classList.add('hidden');
+  document.getElementById('info-cancel-btn').classList.add('hide');
 }
 
 async function deleteAnnouncement(id) {
   if (!confirm('Hapus informasi ini?')) return;
   try {
-    const res = await fetch('/api/admin/delete-announcement', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, id })
-    });
+    const res = await fetch('/api/admin/delete-announcement', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, id }) });
     const data = await res.json();
-    if (data.success) {
-      showToast('Info dihapus', 'success');
-      loadAdminAnnouncements();
-      lastAnnouncementsFetch = 0;
-      loadUserAnnouncements(true);
-    }
+    if (data.success) { showToast('Dihapus', 'success'); loadAdminAnnouncements(); lastAnnouncementsFetch = 0; loadUserAnnouncements(true); }
   } catch(e) {}
 }
 
-// ============ REDEEM (ADMIN) ============
 async function handleCreateRedeem() {
   if (!isAdminUser) return;
   const code = document.getElementById('gen-code').value.trim().toUpperCase();
   const quotaPerUser = parseInt(document.getElementById('gen-quota-per-user').value);
   const maxClaims = parseInt(document.getElementById('gen-max-claims').value);
-  
-  if (!code || isNaN(quotaPerUser) || isNaN(maxClaims)) {
-    return showToast('Lengkapi semua field!', 'error');
-  }
-  if (quotaPerUser < 1) {
-    return showToast('Kuota per user minimal 1!', 'error');
-  }
-  if (maxClaims < 1) {
-    return showToast('Maksimal klaim minimal 1!', 'error');
-  }
-  
+  if (!code || isNaN(quotaPerUser) || isNaN(maxClaims)) return showToast('Lengkapi!', 'error');
+  if (quotaPerUser < 1) return showToast('Min 1!', 'error');
+  if (maxClaims < 1) return showToast('Min 1!', 'error');
   try {
-    const res = await fetch('/api/admin/create-redeem', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, code, quotaPerUser, maxClaims })
-    });
+    const res = await fetch('/api/admin/create-redeem', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, code, quotaPerUser, maxClaims }) });
     const data = await res.json();
     if (data.success) {
       showToast(data.message, 'success');
       document.getElementById('gen-code').value = '';
       document.getElementById('gen-quota-per-user').value = '';
       document.getElementById('gen-max-claims').value = '';
-      loadAdminRedeems();
-      lastRedeemsFetch = 0;
-      loadActiveRedeems(true);
+      loadAdminRedeems(); lastRedeemsFetch = 0; loadActiveRedeems(true);
     } else showToast(data.message, 'error');
   } catch(e) {}
 }
@@ -6402,81 +3233,47 @@ async function loadAdminRedeems() {
     const data = await res.json();
     const container = document.getElementById('admin-redeem-list');
     if (data.success && Object.keys(data.redeems).length > 0) {
-      container.innerHTML = Object.entries(data.redeems).map(([code, val]) => 
-        '<div class="flex justify-between items-center p-2 rounded-lg" style="background: rgba(7,4,15,0.6); border: 1px solid rgba(245,158,11,0.2);">' +
-          '<div><span class="text-amber-300 font-bold mono">' + code + '</span>' +
-          '<span class="text-slate-500 block text-[9px]">Kuota: ' + (val.quotaPerUser || 1) + '/user | Klaim: ' + val.claimedCount + '/' + val.maxClaims + '</span></div>' +
-          '<button onclick="handleDeleteRedeem(\\'' + code + '\\')" class="px-2 py-1 rounded text-[10px]" style="background: rgba(244,63,94,0.2); color: #fda4af;">×</button>' +
-        '</div>'
-      ).join('');
-    } else {
-      container.innerHTML = '<p class="text-slate-500 italic text-center py-2">Belum ada kode</p>';
-    }
+      container.innerHTML = Object.entries(data.redeems).map(([code, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div><span class="mono" style="color:var(--warn); font-weight:700; font-size:10.5px;">' + code + '</span><span style="color:var(--text-2); display:block; font-size:9px;">' + (val.quotaPerUser || 1) + '/user • ' + val.claimedCount + '/' + val.maxClaims + '</span></div><button onclick="handleDeleteRedeem(\\'' + code + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div>').join('');
+    } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Belum ada</p>';
   } catch(e) {}
 }
 
 async function handleDeleteRedeem(code) {
   if (!confirm('Hapus kode ' + code + '?')) return;
   try {
-    const res = await fetch('/api/admin/delete-redeem', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, code })
-    });
+    const res = await fetch('/api/admin/delete-redeem', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, code }) });
     const data = await res.json();
-    if (data.success) { showToast('Kode dihapus', 'success'); loadAdminRedeems(); lastRedeemsFetch = 0; loadActiveRedeems(true); }
+    if (data.success) { showToast('Dihapus', 'success'); loadAdminRedeems(); lastRedeemsFetch = 0; loadActiveRedeems(true); }
   } catch(e) {}
 }
 
-// ============ GENERATOR ACTIONS ============
 async function handleSendEmail() {
   const email = document.getElementById('target-email').value.trim();
-  if (!email) return showToast('Masukkan email target!', 'error');
-  
-  // CHECK SERVER ONLINE
-  if (!guardServerOnline('Alight Motion Generator')) return;
-  
+  if (!email) return showToast('Masukkan email!', 'error');
+  if (!guardServerOnline('Alight Motion')) return;
   const btn = document.getElementById('btn-send');
   const sendText = document.getElementById('send-text');
-  btn.disabled = true;
-  sendText.innerText = 'Mengirim...';
+  btn.disabled = true; sendText.innerText = 'Mengirim...';
   const resultBox = document.getElementById('result-box');
   const resultText = document.getElementById('result-text');
-  resultBox.classList.remove('hidden');
-  resultText.innerText = '⏳ Memproses...';
+  resultBox.classList.remove('hide'); resultText.innerText = '⏳ Memproses...';
   try {
-    const res = await fetch('/api/magiclink', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, email })
-    });
+    const res = await fetch('/api/magiclink', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, email }) });
     const data = await res.json();
     if (data.success) {
       sendText.innerText = 'Kirim Magic Link';
       currentResultText = JSON.stringify(data.result, null, 2);
       resultText.innerText = currentResultText;
-      
-      // Tampilkan Order ID
-      if (data.orderId) {
-        showToast('✅ Order ID: ' + data.orderId + ' — Magic link terkirim!', 'order', 5000);
-      } else {
-        showToast('Magic link terkirim!', 'success');
-      }
-      
+      if (data.orderId) showToast('✅ Order ID: ' + data.orderId, 'order', 5000);
+      else showToast('Magic link terkirim!', 'success');
       if (!isAdminUser && data.quotaInfo) updateQuotaDisplay(data.quotaInfo);
       loadVerifiedEmails(true);
     } else {
       sendText.innerText = 'Kirim Magic Link';
       currentResultText = 'Error: ' + data.message;
       resultText.innerText = currentResultText;
-      
-      // GAGAL - REFILL QUOTA
-      if (data.refilled) {
-        showToast(data.message || 'Gagal! Kuota Anda dikembalikan.', 'error', 4000);
-      } else {
-        showToast(data.message, 'error');
-      }
-      
+      if (data.refilled) showToast(data.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
+      else showToast(data.message, 'error');
       if (data.quotaInfo) updateQuotaDisplay(data.quotaInfo);
       loadVerifiedEmails(true);
     }
@@ -6485,34 +3282,24 @@ async function handleSendEmail() {
     currentResultText = 'Error: ' + err.message;
     resultText.innerText = currentResultText;
     showToast('Gagal kirim', 'error');
-  } finally {
-    btn.disabled = false;
-  }
+  } finally { btn.disabled = false; }
 }
 
 async function handleActivate() {
   const email = document.getElementById('target-email').value;
   const magicUrl = document.getElementById('magic-url').value;
-  if (!email || !magicUrl) return showToast('Email dan URL wajib diisi!', 'error');
-  
-  // CHECK SERVER ONLINE
+  if (!email || !magicUrl) return showToast('Email & URL wajib!', 'error');
   if (!guardServerOnline('Alight Motion Verifikasi')) return;
-  
   const resultBox = document.getElementById('result-box');
   const resultText = document.getElementById('result-text');
-  resultBox.classList.remove('hidden');
-  resultText.innerText = '⏳ Memverifikasi...';
+  resultBox.classList.remove('hide'); resultText.innerText = '⏳ Memverifikasi...';
   try {
-    const res = await fetch('/api/verif', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, url: magicUrl, username: loggedInUsername })
-    });
+    const res = await fetch('/api/verif', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, url: magicUrl, username: loggedInUsername }) });
     const data = await res.json();
     currentResultText = JSON.stringify(data, null, 2);
     resultText.innerText = currentResultText;
     if (data.success || !data.error) showToast('Verifikasi selesai!', 'success');
-    else showToast(data.error || 'Verifikasi gagal', 'error');
+    else showToast(data.error || 'Gagal', 'error');
   } catch (err) {
     currentResultText = 'Error: ' + err.message;
     resultText.innerText = currentResultText;
@@ -6522,7 +3309,7 @@ async function handleActivate() {
 
 function copyResult() {
   if (!currentResultText) return;
-  navigator.clipboard.writeText(currentResultText).then(() => showToast('Tersalin ke clipboard!', 'success'));
+  navigator.clipboard.writeText(currentResultText).then(() => showToast('Tersalin!', 'success'));
 }
 
 function escapeHtml(text) {
@@ -6531,13 +3318,14 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function handleLogout() {
+async function handleLogout() {
+  await markOffline();
+  stopOnlineTracking();
   if (quotaCountdownInterval) clearInterval(quotaCountdownInterval);
   if (globalCountdownInterval) clearInterval(globalCountdownInterval);
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   if (statusPollInterval) clearInterval(statusPollInterval);
   if (videoPollInterval) clearInterval(videoPollInterval);
-  if (tempMailCheckInterval) clearInterval(tempMailCheckInterval);
   localStorage.removeItem('authToken');
   localStorage.removeItem('savedUsername');
   sessionStorage.clear();
@@ -6577,10 +3365,7 @@ function readBody(req) {
     let size = 0;
     req.on('data', chunk => {
       size += chunk.length;
-      if (size > 50 * 1024 * 1024) {
-        reject(new Error('Payload too large'));
-        req.destroy();
-      }
+      if (size > 50 * 1024 * 1024) { reject(new Error('Payload too large')); req.destroy(); }
       body += chunk;
     });
     req.on('end', () => resolve(body));
@@ -6590,7 +3375,6 @@ function readBody(req) {
 
 const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
-
   let currentServerStatus = await getServerStatusFromDb();
 
   try {
@@ -6617,230 +3401,138 @@ const server = http.createServer(async (req, res) => {
       const items = await getVipShopFromDb();
       jsonResponse(res, 200, { success: true, items });
 
-    // ====== TEMP MAIL ENDPOINTS (NEW) ======
+    // ====== ONLINE TRACKING ======
+    } else if (parsedUrl.pathname === '/api/online/heartbeat' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username } = JSON.parse(body);
+      if (!username) return jsonResponse(res, 400, { success: false });
+      const cleanUser = username.toLowerCase();
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 404, { success: false });
+      await checkAndExpireBonusQuota(cleanUser);
+      await saveOnlineUserToDb(cleanUser, {
+        username: cleanUser,
+        lastSeen: Date.now(),
+        isAdmin: !!userObj.isAdmin,
+        isVip: !!(userObj.vipUntil && userObj.vipUntil > Date.now())
+      });
+      const onlineUsers = await getOnlineUsersFromDb();
+      const now = Date.now();
+      let count = 0;
+      for (const [u, d] of Object.entries(onlineUsers)) {
+        if (now - (d.lastSeen || 0) <= ONLINE_TIMEOUT) count++;
+      }
+      jsonResponse(res, 200, { success: true, count });
+
+    } else if (parsedUrl.pathname === '/api/online/offline' && req.method === 'POST') {
+      try {
+        const body = await readBody(req);
+        const { username } = JSON.parse(body);
+        if (username) await removeOnlineUserFromDb(username.toLowerCase());
+      } catch(e) {}
+      jsonResponse(res, 200, { success: true });
+
+    } else if (parsedUrl.pathname === '/api/online/count' && req.method === 'GET') {
+      const onlineUsers = await getOnlineUsersFromDb();
+      const now = Date.now();
+      const active = [];
+      for (const [u, d] of Object.entries(onlineUsers)) {
+        if (now - (d.lastSeen || 0) <= ONLINE_TIMEOUT) active.push({ username: u, isAdmin: d.isAdmin, isVip: d.isVip, lastSeen: d.lastSeen });
+        else await removeOnlineUserFromDb(u);
+      }
+      jsonResponse(res, 200, { success: true, count: active.length, users: active });
+
+    // ====== TEMP MAIL ======
     } else if (parsedUrl.pathname === '/api/tempmail/check-quota' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-
       const cleanUser = username.toLowerCase();
+      await checkAndExpireBonusQuota(cleanUser);
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
-      
       if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
-        userObj.activatedEmails = [];
-        userObj.lastResetTime = now;
+        userObj.activatedEmails = []; userObj.lastResetTime = now;
         await saveUserToDb(cleanUser, userObj);
       }
-
       const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
       const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
-      const totalQuota = 1 + (userObj.bonusQuota || 0);
-      
-      if (userObj.isAdmin || isVipActive) {
-        return jsonResponse(res, 200, { 
-          success: true, 
-          allowed: true, 
-          message: 'Unlimited access',
-          quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
-        });
-      }
-
-      if (usedQuota >= totalQuota) {
-        return jsonResponse(res, 200, { 
-          success: true, 
-          allowed: false, 
-          message: 'Quota habis! Tunggu reset 24 jam atau klaim kode redeem.',
-          quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
-        });
-      }
-
-      jsonResponse(res, 200, { 
-        success: true, 
-        allowed: true, 
-        message: 'Quota tersedia',
-        quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
-      });
+      const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
+      if (userObj.isAdmin || isVipActive) return jsonResponse(res, 200, { success: true, allowed: true, message: 'Unlimited', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+      if (usedQuota >= totalQuota) return jsonResponse(res, 200, { success: true, allowed: false, message: 'Quota habis!', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+      jsonResponse(res, 200, { success: true, allowed: true, message: 'Quota tersedia', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
 
     } else if (parsedUrl.pathname === '/api/tempmail/generate' && req.method === 'POST') {
       const body = await readBody(req);
       const { username } = JSON.parse(body);
-      
       const cleanUser = username ? username.toLowerCase() : '';
+      await checkAndExpireBonusQuota(cleanUser);
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
-
-      // CHECK SERVER ONLINE (kecuali admin)
-      if (currentServerStatus !== 'online' && !userObj.isAdmin) {
-        return jsonResponse(res, 403, { 
-          success: false, 
-          message: 'Server sedang OFFLINE! Temp Mail Generator tidak tersedia.' 
-        });
-      }
-
+      if (currentServerStatus !== 'online' && !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Server offline!' });
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
-      
-      if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
-        userObj.activatedEmails = [];
-        userObj.lastResetTime = now;
-      }
-
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) { userObj.activatedEmails = []; userObj.lastResetTime = now; }
       const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
       const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
-      const totalQuota = 1 + (userObj.bonusQuota || 0);
-
-      if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) {
-        return jsonResponse(res, 403, { 
-          success: false, 
-          message: 'Quota habis! Tunggu reset 24 jam atau klaim kode redeem.' 
-        });
-      }
-
-      // Catat quota entry
+      const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
+      if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) return jsonResponse(res, 403, { success: false, message: 'Quota habis!' });
       const quotaEntry = 'tempmail_' + now + '_' + Math.random().toString(36).substring(2, 6);
       if (!userObj.isAdmin && !isVipActive) {
         if (!userObj.activatedEmails) userObj.activatedEmails = [];
         userObj.activatedEmails.push(quotaEntry);
+        if (userObj.bonusQuota > 0) { userObj.lastBonusActivity = now; userObj.bonusGrantedAt = userObj.bonusGrantedAt || now; }
         await saveUserToDb(cleanUser, userObj);
       }
-
-      // Create temp mail session
       const sessionId = 'mail_' + now + '_' + Math.random().toString(36).substring(2, 8);
-      const sessionState = {
-        cookie: "",
-        visitorId: crypto.randomUUID(),
-        currentEmail: null
-      };
-      
+      const sessionState = { cookie: "", visitorId: crypto.randomUUID(), currentEmail: null };
       tempMailSessions[sessionId] = sessionState;
-
       try {
-        // Generate email
         const email = await generateTempMail(sessionState);
-        
-        // Generate Order ID
         const orderId = generateOrderId('MAIL');
-
-        // Save order
-        await saveOrderToDb(orderId, {
-          orderId,
-          username: cleanUser,
-          type: 'mail',
-          detail: email,
-          result: 'Email sementara berhasil dibuat',
-          timestamp: now,
-          quotaEntry
-        });
-
-        // Save temp mail record
-        await saveTempMailToDb(sessionId, {
-          id: sessionId,
-          orderId,
-          username: cleanUser,
-          email: email,
-          createdAt: now,
-          sessionState: sessionState
-        });
-
-        jsonResponse(res, 200, {
-          success: true,
-          orderId,
-          email: email,
-          sessionId: sessionId,
-          quotaInfo: { 
-            usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, 
-            bonusQuota: userObj.bonusQuota || 0,
-            totalQuota,
-            isAdmin: userObj.isAdmin,
-            isVip: isVipActive
-          }
-        });
+        await saveOrderToDb(orderId, { orderId, username: cleanUser, type: 'mail', detail: email, result: 'Email sementara berhasil dibuat', timestamp: now, quotaEntry });
+        await saveTempMailToDb(sessionId, { id: sessionId, orderId, username: cleanUser, email, createdAt: now, sessionState });
+        jsonResponse(res, 200, { success: true, orderId, email, sessionId, quotaInfo: { usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
       } catch (apiErr) {
-        // GAGAL - REFILL QUOTA
         const refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
         const refreshedUser = await getUserFromDb(cleanUser);
         const refreshedUsed = refreshedUser.activatedEmails ? refreshedUser.activatedEmails.length : 0;
-        
-        // Clean up session
         delete tempMailSessions[sessionId];
-        
-        jsonResponse(res, 500, {
-          success: false,
-          refilled,
-          message: refilled 
-            ? 'Generate gagal: ' + apiErr.message + '. Kuota Anda telah dikembalikan.'
-            : 'Generate gagal: ' + apiErr.message,
-          quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0, totalQuota }
-        });
+        jsonResponse(res, 500, { success: false, refilled, message: refilled ? 'Generate gagal: ' + apiErr.message + '. Kuota dikembalikan.' : 'Generate gagal: ' + apiErr.message, quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
       }
 
     } else if (parsedUrl.pathname === '/api/tempmail/check' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, sessionId } = JSON.parse(body);
-      
       const cleanUser = username ? username.toLowerCase() : '';
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
-
-      if (currentServerStatus !== 'online' && !userObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Server sedang OFFLINE!' });
-      }
-
-      // Get session state
+      if (currentServerStatus !== 'online' && !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Server offline!' });
       let sessionState = tempMailSessions[sessionId];
-      
       if (!sessionState) {
-        // Try to restore from DB
         const dbRecord = await getTempMailFromDb(sessionId);
-        if (dbRecord && dbRecord.sessionState) {
-          sessionState = dbRecord.sessionState;
-          tempMailSessions[sessionId] = sessionState;
-        } else {
-          return jsonResponse(res, 404, { success: false, message: 'Sesi tidak ditemukan. Generate email baru.' });
-        }
+        if (dbRecord && dbRecord.sessionState) { sessionState = dbRecord.sessionState; tempMailSessions[sessionId] = sessionState; }
+        else return jsonResponse(res, 404, { success: false, message: 'Sesi tidak ditemukan' });
       }
-
       try {
         const result = await quickCheckTempMailInbox(sessionState);
-        
-        // Update session in DB
         const dbRecord = await getTempMailFromDb(sessionId);
-        if (dbRecord) {
-          dbRecord.sessionState = sessionState;
-          dbRecord.lastChecked = Date.now();
-          await saveTempMailToDb(sessionId, dbRecord);
-        }
-        
-        jsonResponse(res, 200, {
-          success: true,
-          email: result.email,
-          messages: result.messages,
-          message_count: result.message_count
-        });
+        if (dbRecord) { dbRecord.sessionState = sessionState; dbRecord.lastChecked = Date.now(); await saveTempMailToDb(sessionId, dbRecord); }
+        jsonResponse(res, 200, { success: true, email: result.email, messages: result.messages, message_count: result.message_count });
       } catch (apiErr) {
-        jsonResponse(res, 500, {
-          success: false,
-          message: 'Gagal cek inbox: ' + apiErr.message
-        });
+        jsonResponse(res, 500, { success: false, message: 'Gagal cek inbox: ' + apiErr.message });
       }
 
     } else if (parsedUrl.pathname === '/api/tempmail/history' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-
       const cleanUser = username.toLowerCase();
       const allMails = await getTempMailsFromDb();
-      const myMails = Object.values(allMails)
-        .filter(m => m.username === cleanUser)
-        .sort((a, b) => b.createdAt - a.createdAt)
-        .slice(0, 20);
-
+      const myMails = Object.values(allMails).filter(m => m.username === cleanUser).sort((a, b) => b.createdAt - a.createdAt).slice(0, 20);
       jsonResponse(res, 200, { success: true, results: myMails });
 
-    // ====== APK MOD ENDPOINTS ======
+    // ====== APK MOD ======
     } else if (parsedUrl.pathname === '/api/apk-mods' && req.method === 'GET') {
       const items = await getApkModsFromDb();
       jsonResponse(res, 200, { success: true, items });
@@ -6848,182 +3540,71 @@ const server = http.createServer(async (req, res) => {
     } else if (parsedUrl.pathname === '/api/apk/check-quota' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-
       const cleanUser = username.toLowerCase();
+      await checkAndExpireBonusQuota(cleanUser);
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
-      
-      if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
-        userObj.activatedEmails = [];
-        userObj.lastResetTime = now;
-        await saveUserToDb(cleanUser, userObj);
-      }
-
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) { userObj.activatedEmails = []; userObj.lastResetTime = now; await saveUserToDb(cleanUser, userObj); }
       const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
       const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
-      const totalQuota = 1 + (userObj.bonusQuota || 0);
-      
-      if (userObj.isAdmin || isVipActive) {
-        return jsonResponse(res, 200, { 
-          success: true, 
-          allowed: true, 
-          message: 'Unlimited access',
-          quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
-        });
-      }
-
-      if (usedQuota >= totalQuota) {
-        return jsonResponse(res, 200, { 
-          success: true, 
-          allowed: false, 
-          message: 'Quota habis! Tunggu reset 24 jam atau klaim kode redeem.',
-          quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
-        });
-      }
-
-      jsonResponse(res, 200, { 
-        success: true, 
-        allowed: true, 
-        message: 'Quota tersedia',
-        quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
-      });
+      const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
+      if (userObj.isAdmin || isVipActive) return jsonResponse(res, 200, { success: true, allowed: true, message: 'Unlimited', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+      if (usedQuota >= totalQuota) return jsonResponse(res, 200, { success: true, allowed: false, message: 'Quota habis!', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+      jsonResponse(res, 200, { success: true, allowed: true, message: 'Quota tersedia', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
 
     } else if (parsedUrl.pathname === '/api/apk/request' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, apkId } = JSON.parse(body);
-      
       const cleanUser = username ? username.toLowerCase() : '';
+      await checkAndExpireBonusQuota(cleanUser);
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
-
-      // CHECK SERVER ONLINE (kecuali admin)
-      if (currentServerStatus !== 'online' && !userObj.isAdmin) {
-        return jsonResponse(res, 403, { 
-          success: false, 
-          message: 'Server sedang OFFLINE! Generator APK MOD tidak tersedia.' 
-        });
-      }
-
+      if (currentServerStatus !== 'online' && !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Server offline!' });
       const apkObj = await getApkModFromDb(apkId);
-      if (!apkObj) return jsonResponse(res, 404, { success: false, message: 'APK MOD tidak ditemukan!' });
-      if (apkObj.active === false) return jsonResponse(res, 400, { success: false, message: 'APK MOD tidak tersedia!' });
-
+      if (!apkObj) return jsonResponse(res, 404, { success: false, message: 'APK tidak ditemukan!' });
+      if (apkObj.active === false) return jsonResponse(res, 400, { success: false, message: 'APK tidak tersedia!' });
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
-      
-      if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
-        userObj.activatedEmails = [];
-        userObj.lastResetTime = now;
-      }
-
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) { userObj.activatedEmails = []; userObj.lastResetTime = now; }
       const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
       const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
-      const totalQuota = 1 + (userObj.bonusQuota || 0);
-
-      // Cek quota
-      if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) {
-        return jsonResponse(res, 403, { 
-          success: false, 
-          message: 'Quota habis! Tunggu reset 24 jam atau klaim kode redeem.' 
-        });
-      }
-
-      // Kurangi quota (kecuali admin/vip)
+      const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
+      if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) return jsonResponse(res, 403, { success: false, message: 'Quota habis!' });
       const quotaEntry = 'apk_' + now + '_' + Math.random().toString(36).substring(2, 6);
       if (!userObj.isAdmin && !isVipActive) {
         if (!userObj.activatedEmails) userObj.activatedEmails = [];
         userObj.activatedEmails.push(quotaEntry);
+        if (userObj.bonusQuota > 0) { userObj.lastBonusActivity = now; userObj.bonusGrantedAt = userObj.bonusGrantedAt || now; }
         await saveUserToDb(cleanUser, userObj);
       }
-
-      // Generate Order ID
       const orderId = generateOrderId('APK');
-
-      // Simpan order
-      await saveOrderToDb(orderId, {
-        orderId,
-        username: cleanUser,
-        type: 'apk',
-        detail: apkObj.name,
-        result: apkObj.link,
-        timestamp: now,
-        quotaEntry
-      });
-
-      // Simpan history request
+      await saveOrderToDb(orderId, { orderId, username: cleanUser, type: 'apk', detail: apkObj.name, result: apkObj.link, timestamp: now, quotaEntry });
       const reqId = 'apk_req_' + now + '_' + Math.random().toString(36).substring(2, 8);
-      await saveApkRequestToDb(reqId, {
-        id: reqId,
-        orderId,
-        username: cleanUser,
-        apkId,
-        name: apkObj.name,
-        link: apkObj.link,
-        description: apkObj.description || '',
-        timestamp: now
-      });
-
-      jsonResponse(res, 200, {
-        success: true,
-        orderId,
-        result: {
-          name: apkObj.name,
-          link: apkObj.link,
-          description: apkObj.description || '',
-          requestedAt: now,
-          orderId
-        },
-        quotaInfo: { 
-          usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, 
-          bonusQuota: userObj.bonusQuota || 0,
-          totalQuota,
-          isAdmin: userObj.isAdmin,
-          isVip: isVipActive
-        }
-      });
+      await saveApkRequestToDb(reqId, { id: reqId, orderId, username: cleanUser, apkId, name: apkObj.name, link: apkObj.link, description: apkObj.description || '', timestamp: now });
+      jsonResponse(res, 200, { success: true, orderId, result: { name: apkObj.name, link: apkObj.link, description: apkObj.description || '', requestedAt: now, orderId }, quotaInfo: { usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
 
     } else if (parsedUrl.pathname === '/api/apk/history' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-
       const cleanUser = username.toLowerCase();
       const allRequests = await getApkRequestsFromDb();
-      const myRequests = Object.values(allRequests)
-        .filter(r => r.username === cleanUser)
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 20);
-
+      const myRequests = Object.values(allRequests).filter(r => r.username === cleanUser).sort((a, b) => b.timestamp - a.timestamp).slice(0, 20);
       jsonResponse(res, 200, { success: true, results: myRequests });
 
-    // ====== ADMIN APK MOD MANAGEMENT ======
     } else if (parsedUrl.pathname === '/api/admin/apk-mod/save' && req.method === 'POST') {
       const body = await readBody(req);
       const { adminUsername, id, name, link, description } = JSON.parse(body);
       const adminObj = await getUserFromDb(adminUsername.toLowerCase());
       if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-
-      if (!name || !link) return jsonResponse(res, 400, { success: false, message: 'Nama dan link harus diisi!' });
-      if (!link.startsWith('http://') && !link.startsWith('https://')) {
-        return jsonResponse(res, 400, { success: false, message: 'Link harus dimulai dengan http:// atau https://' });
-      }
-
+      if (!name || !link) return jsonResponse(res, 400, { success: false, message: 'Nama dan link wajib!' });
+      if (!link.startsWith('http://') && !link.startsWith('https://')) return jsonResponse(res, 400, { success: false, message: 'Link harus http/https' });
       const apkId = id || ('apk_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
       const apks = await getApkModsFromDb();
       const order = id ? (apks[id]?.order || Object.keys(apks).length + 1) : Object.keys(apks).length + 1;
-
-      await saveApkModToDb(apkId, {
-        id: apkId,
-        name,
-        link,
-        description: description || '',
-        active: true,
-        order
-      });
-
-      jsonResponse(res, 200, { success: true, message: id ? 'APK MOD diperbarui!' : 'APK MOD ditambahkan!' });
+      await saveApkModToDb(apkId, { id: apkId, name, link, description: description || '', active: true, order });
+      jsonResponse(res, 200, { success: true, message: id ? 'APK diperbarui!' : 'APK ditambahkan!' });
 
     } else if (parsedUrl.pathname === '/api/admin/apk-mod/toggle' && req.method === 'POST') {
       const body = await readBody(req);
@@ -7031,10 +3612,10 @@ const server = http.createServer(async (req, res) => {
       const adminObj = await getUserFromDb(adminUsername.toLowerCase());
       if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
       const apkObj = await getApkModFromDb(id);
-      if (!apkObj) return jsonResponse(res, 404, { success: false, message: 'APK MOD tidak ditemukan!' });
+      if (!apkObj) return jsonResponse(res, 404, { success: false, message: 'APK tidak ditemukan!' });
       apkObj.active = active;
       await saveApkModToDb(id, apkObj);
-      jsonResponse(res, 200, { success: true, message: active ? 'APK MOD diaktifkan' : 'APK MOD dinonaktifkan' });
+      jsonResponse(res, 200, { success: true, message: active ? 'Diaktifkan' : 'Dinonaktifkan' });
 
     } else if (parsedUrl.pathname === '/api/admin/apk-mod/delete' && req.method === 'POST') {
       const body = await readBody(req);
@@ -7042,233 +3623,97 @@ const server = http.createServer(async (req, res) => {
       const adminObj = await getUserFromDb(adminUsername.toLowerCase());
       if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
       await removeApkModFromDb(id);
-      jsonResponse(res, 200, { success: true, message: 'APK MOD dihapus' });
+      jsonResponse(res, 200, { success: true, message: 'APK dihapus' });
 
-    // ====== ORDERS ENDPOINTS ======
+    // ====== ORDERS ======
     } else if (parsedUrl.pathname === '/api/orders/my' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-      
       const cleanUser = username.toLowerCase();
       const allOrders = await getOrdersFromDb();
-      const myOrders = Object.values(allOrders)
-        .filter(o => o.username === cleanUser)
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 100);
-
+      const myOrders = Object.values(allOrders).filter(o => o.username === cleanUser).sort((a, b) => b.timestamp - a.timestamp).slice(0, 100);
       jsonResponse(res, 200, { success: true, orders: myOrders });
 
     } else if (parsedUrl.pathname === '/api/admin/orders' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
       if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      
       const allOrders = await getOrdersFromDb();
-      const orders = Object.values(allOrders)
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 500);
-
+      const orders = Object.values(allOrders).sort((a, b) => b.timestamp - a.timestamp).slice(0, 500);
       jsonResponse(res, 200, { success: true, orders });
 
-    // ====== NETFLIX ENDPOINTS ======
+    // ====== NETFLIX ======
     } else if (parsedUrl.pathname === '/api/netflix/check-quota' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-
       const cleanUser = username.toLowerCase();
+      await checkAndExpireBonusQuota(cleanUser);
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
-      
-      if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
-        userObj.activatedEmails = [];
-        userObj.lastResetTime = now;
-        await saveUserToDb(cleanUser, userObj);
-      }
-
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) { userObj.activatedEmails = []; userObj.lastResetTime = now; await saveUserToDb(cleanUser, userObj); }
       const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
       const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
-      const totalQuota = 1 + (userObj.bonusQuota || 0);
-      
-      if (userObj.isAdmin || isVipActive) {
-        return jsonResponse(res, 200, { 
-          success: true, 
-          allowed: true, 
-          message: 'Unlimited access',
-          quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
-        });
-      }
-
-      if (usedQuota >= totalQuota) {
-        return jsonResponse(res, 200, { 
-          success: true, 
-          allowed: false, 
-          message: 'Quota habis! Tunggu reset 24 jam atau klaim kode redeem.',
-          quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
-        });
-      }
-
-      jsonResponse(res, 200, { 
-        success: true, 
-        allowed: true, 
-        message: 'Quota tersedia',
-        quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota }
-      });
+      const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
+      if (userObj.isAdmin || isVipActive) return jsonResponse(res, 200, { success: true, allowed: true, message: 'Unlimited', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+      if (usedQuota >= totalQuota) return jsonResponse(res, 200, { success: true, allowed: false, message: 'Quota habis!', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+      jsonResponse(res, 200, { success: true, allowed: true, message: 'Quota tersedia', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
 
     } else if (parsedUrl.pathname === '/api/netflix/generate' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, plan, useProxy } = JSON.parse(body);
-      
       const cleanUser = username ? username.toLowerCase() : '';
+      await checkAndExpireBonusQuota(cleanUser);
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
-
-      // CHECK SERVER ONLINE (kecuali admin)
-      if (currentServerStatus !== 'online' && !userObj.isAdmin) {
-        return jsonResponse(res, 403, { 
-          success: false, 
-          message: 'Server sedang OFFLINE! Generator Netflix tidak tersedia.' 
-        });
-      }
-
+      if (currentServerStatus !== 'online' && !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Server offline!' });
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
-      
-      if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
-        userObj.activatedEmails = [];
-        userObj.lastResetTime = now;
-      }
-
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) { userObj.activatedEmails = []; userObj.lastResetTime = now; }
       const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
       const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
-      const totalQuota = 1 + (userObj.bonusQuota || 0);
-
-      if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) {
-        return jsonResponse(res, 403, { 
-          success: false, 
-          message: 'Quota habis! Tunggu reset 24 jam atau klaim kode redeem.' 
-        });
-      }
-
-      // Catat quota entry
+      const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
+      if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) return jsonResponse(res, 403, { success: false, message: 'Quota habis!' });
       const quotaEntry = 'netflix_' + now + '_' + Math.random().toString(36).substring(2, 6);
       if (!userObj.isAdmin && !isVipActive) {
         if (!userObj.activatedEmails) userObj.activatedEmails = [];
         userObj.activatedEmails.push(quotaEntry);
+        if (userObj.bonusQuota > 0) { userObj.lastBonusActivity = now; userObj.bonusGrantedAt = userObj.bonusGrantedAt || now; }
         await saveUserToDb(cleanUser, userObj);
       }
-
-      // Coba generate token
       const genResult = await generateNetflixToken(plan || 'premium', useProxy);
-      
       if (!genResult.success) {
-        // GAGAL - REFILL QUOTA
         let refilled = false;
-        if (!userObj.isAdmin && !isVipActive) {
-          refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
-        }
-        
+        if (!userObj.isAdmin && !isVipActive) refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
         const refreshedUser = await getUserFromDb(cleanUser);
         const refreshedUsed = refreshedUser.activatedEmails ? refreshedUser.activatedEmails.length : 0;
-        
-        return jsonResponse(res, 500, { 
-          success: false, 
-          refilled,
-          message: refilled 
-            ? 'Generate gagal! Kuota Anda telah dikembalikan (' + refreshedUsed + '/' + totalQuota + ').'
-            : (genResult.error || 'Gagal generate token'),
-          quotaInfo: { 
-            usedQuota: refreshedUsed, 
-            bonusQuota: userObj.bonusQuota || 0,
-            totalQuota,
-            isAdmin: userObj.isAdmin,
-            isVip: isVipActive
-          }
-        });
+        return jsonResponse(res, 500, { success: false, refilled, message: refilled ? 'Generate gagal! Kuota dikembalikan.' : (genResult.error || 'Gagal'), quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
       }
-
-      // Generate Order ID
       const orderId = generateOrderId('NFLX');
-
-      // Simpan order
-      await saveOrderToDb(orderId, {
-        orderId,
-        username: cleanUser,
-        type: 'netflix',
-        detail: (plan || 'premium').toUpperCase() + ' • ' + (genResult.quality || 'HD') + ' • ' + (genResult.country || 'US'),
-        result: genResult.url,
-        timestamp: now,
-        quotaEntry
-      });
-
-      // Simpan history
+      await saveOrderToDb(orderId, { orderId, username: cleanUser, type: 'netflix', detail: (plan || 'premium').toUpperCase() + ' • ' + (genResult.quality || 'HD') + ' • ' + (genResult.country || 'US'), result: genResult.url, timestamp: now, quotaEntry });
       const historyId = 'nf_' + now + '_' + Math.random().toString(36).substring(2, 8);
-      await saveNetflixResultToDb(historyId, {
-        id: historyId,
-        orderId,
-        username: cleanUser,
-        plan: genResult.plan,
-        quality: genResult.quality,
-        country: genResult.country,
-        url: genResult.url,
-        expires: genResult.expires,
-        pool: genResult.pool,
-        timestamp: now
-      });
-
-      jsonResponse(res, 200, {
-        success: true,
-        orderId,
-        result: genResult,
-        quotaInfo: { 
-          usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, 
-          bonusQuota: userObj.bonusQuota || 0,
-          totalQuota,
-          isAdmin: userObj.isAdmin,
-          isVip: isVipActive
-        }
-      });
+      await saveNetflixResultToDb(historyId, { id: historyId, orderId, username: cleanUser, plan: genResult.plan, quality: genResult.quality, country: genResult.country, url: genResult.url, expires: genResult.expires, pool: genResult.pool, timestamp: now });
+      jsonResponse(res, 200, { success: true, orderId, result: genResult, quotaInfo: { usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
 
     } else if (parsedUrl.pathname === '/api/netflix/history' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-
       const cleanUser = username.toLowerCase();
       const allResults = await getNetflixResultsFromDb();
-      const myResults = Object.values(allResults)
-        .filter(r => r.username === cleanUser)
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 20);
-
+      const myResults = Object.values(allResults).filter(r => r.username === cleanUser).sort((a, b) => b.timestamp - a.timestamp).slice(0, 20);
       jsonResponse(res, 200, { success: true, results: myResults });
 
-    // ====== TRANSACTION ENDPOINTS ======
+    // ====== TRANSACTIONS ======
     } else if (parsedUrl.pathname === '/api/transaction/create' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, vipId, vipName, vipPrice, vipDays } = JSON.parse(body);
       const cleanUser = username ? username.toLowerCase() : '';
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
-
       const transactionId = 'TRX-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-      await saveTransactionToDb(transactionId, {
-        transactionId,
-        username: cleanUser,
-        vipId,
-        vipName,
-        vipPrice: parseInt(vipPrice),
-        vipDays: parseInt(vipDays),
-        status: 'pending',
-        proofImage: null,
-        proofFileName: null,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        adminNote: ''
-      });
-
-      jsonResponse(res, 200, { success: true, transactionId, message: 'Pesanan dibuat! Silakan transfer via DANA & upload bukti.' });
+      await saveTransactionToDb(transactionId, { transactionId, username: cleanUser, vipId, vipName, vipPrice: parseInt(vipPrice), vipDays: parseInt(vipDays), status: 'pending', proofImage: null, proofFileName: null, createdAt: Date.now(), updatedAt: Date.now(), adminNote: '' });
+      jsonResponse(res, 200, { success: true, transactionId, message: 'Pesanan dibuat! Transfer via DANA & upload bukti.' });
 
     } else if (parsedUrl.pathname === '/api/transaction/upload-proof' && req.method === 'POST') {
       const body = await readBody(req);
@@ -7277,23 +3722,16 @@ const server = http.createServer(async (req, res) => {
       const trx = await getTransactionFromDb(transactionId);
       if (!trx) return jsonResponse(res, 404, { success: false, message: 'Transaksi tidak ditemukan!' });
       if (trx.username !== cleanUser) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-
-      trx.proofImage = proofImage;
-      trx.proofFileName = fileName;
-      trx.status = 'process';
-      trx.updatedAt = Date.now();
+      trx.proofImage = proofImage; trx.proofFileName = fileName; trx.status = 'process'; trx.updatedAt = Date.now();
       await saveTransactionToDb(transactionId, trx);
-
-      jsonResponse(res, 200, { success: true, message: 'Bukti pembayaran terkirim! Menunggu konfirmasi admin.' });
+      jsonResponse(res, 200, { success: true, message: 'Bukti terkirim!' });
 
     } else if (parsedUrl.pathname === '/api/transaction/my' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
       const cleanUser = username.toLowerCase();
       const allTrx = await getTransactionsFromDb();
-      const myTrx = Object.values(allTrx)
-        .filter(t => t.username === cleanUser)
-        .sort((a, b) => b.createdAt - a.createdAt);
+      const myTrx = Object.values(allTrx).filter(t => t.username === cleanUser).sort((a, b) => b.createdAt - a.createdAt);
       jsonResponse(res, 200, { success: true, transactions: myTrx });
 
     } else if (parsedUrl.pathname === '/api/admin/transactions' && req.method === 'GET') {
@@ -7309,27 +3747,15 @@ const server = http.createServer(async (req, res) => {
       const { adminUsername, transactionId, status, adminNote } = JSON.parse(body);
       const adminObj = await getUserFromDb(adminUsername.toLowerCase());
       if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-
       const trx = await getTransactionFromDb(transactionId);
       if (!trx) return jsonResponse(res, 404, { success: false, message: 'Transaksi tidak ditemukan!' });
-
-      trx.status = status;
-      trx.adminNote = adminNote || '';
-      trx.updatedAt = Date.now();
+      trx.status = status; trx.adminNote = adminNote || ''; trx.updatedAt = Date.now();
       await saveTransactionToDb(transactionId, trx);
-
       if (status === 'success') {
         const targetUser = await getUserFromDb(trx.username);
-        if (targetUser) {
-          targetUser.vipUntil = Date.now() + (trx.vipDays * 24 * 60 * 60 * 1000);
-          await saveUserToDb(trx.username, targetUser);
-        }
+        if (targetUser) { targetUser.vipUntil = Date.now() + (trx.vipDays * 24 * 60 * 60 * 1000); await saveUserToDb(trx.username, targetUser); }
       }
-
-      jsonResponse(res, 200, { 
-        success: true, 
-        message: status === 'success' ? 'Pembayaran dikonfirmasi! User ' + trx.username + ' sekarang VIP.' : 'Pembayaran ditolak.' 
-      });
+      jsonResponse(res, 200, { success: true, message: status === 'success' ? 'Pembayaran dikonfirmasi! User VIP.' : 'Pembayaran ditolak.' });
 
     } else if (parsedUrl.pathname === '/api/admin/transaction/delete' && req.method === 'POST') {
       const body = await readBody(req);
@@ -7344,25 +3770,14 @@ const server = http.createServer(async (req, res) => {
       const { adminUsername, id, name, price, days } = JSON.parse(body);
       const adminObj = await getUserFromDb(adminUsername.toLowerCase());
       if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-
-      if (!name || !price || !days) return jsonResponse(res, 400, { success: false, message: 'Lengkapi semua field!' });
-      if (price < 1000) return jsonResponse(res, 400, { success: false, message: 'Harga minimal Rp 1.000!' });
-      if (days < 1) return jsonResponse(res, 400, { success: false, message: 'Masa aktif minimal 1 hari!' });
-
+      if (!name || !price || !days) return jsonResponse(res, 400, { success: false, message: 'Lengkapi!' });
+      if (price < 1000) return jsonResponse(res, 400, { success: false, message: 'Min Rp 1.000!' });
+      if (days < 1) return jsonResponse(res, 400, { success: false, message: 'Min 1 hari!' });
       const itemId = id || ('vip_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
       const shop = await getVipShopFromDb();
       const order = id ? (shop[id]?.order || Object.keys(shop).length + 1) : Object.keys(shop).length + 1;
-
-      await saveVipShopToDb(itemId, {
-        id: itemId,
-        name,
-        price: parseInt(price),
-        days: parseInt(days),
-        active: true,
-        order
-      });
-
-      jsonResponse(res, 200, { success: true, message: id ? 'Layanan VIP diperbarui!' : 'Layanan VIP ditambahkan!' });
+      await saveVipShopToDb(itemId, { id: itemId, name, price: parseInt(price), days: parseInt(days), active: true, order });
+      jsonResponse(res, 200, { success: true, message: id ? 'Layanan diperbarui!' : 'Layanan ditambahkan!' });
 
     } else if (parsedUrl.pathname === '/api/admin/vip-shop/toggle' && req.method === 'POST') {
       const body = await readBody(req);
@@ -7373,7 +3788,7 @@ const server = http.createServer(async (req, res) => {
       if (!item[id]) return jsonResponse(res, 404, { success: false, message: 'Layanan tidak ditemukan!' });
       item[id].active = active;
       await saveVipShopToDb(id, item[id]);
-      jsonResponse(res, 200, { success: true, message: active ? 'Layanan diaktifkan' : 'Layanan dinonaktifkan' });
+      jsonResponse(res, 200, { success: true, message: active ? 'Diaktifkan' : 'Dinonaktifkan' });
 
     } else if (parsedUrl.pathname === '/api/admin/vip-shop/delete' && req.method === 'POST') {
       const body = await readBody(req);
@@ -7381,91 +3796,53 @@ const server = http.createServer(async (req, res) => {
       const adminObj = await getUserFromDb(adminUsername.toLowerCase());
       if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
       await removeVipShopFromDb(id);
-      jsonResponse(res, 200, { success: true, message: 'Layanan VIP dihapus' });
+      jsonResponse(res, 200, { success: true, message: 'Layanan dihapus' });
 
     } else if (parsedUrl.pathname === '/api/redeems/active' && req.method === 'GET') {
       const allRedeems = await getAllRedeemsFromDb();
       const activeRedeems = {};
-      
       for (const [code, val] of Object.entries(allRedeems)) {
         const remainingClaims = val.maxClaims - val.claimedCount;
-        if (remainingClaims > 0) {
-          activeRedeems[code] = {
-            quotaPerUser: val.quotaPerUser || 1,
-            maxClaims: val.maxClaims,
-            claimedCount: val.claimedCount
-          };
-        }
+        if (remainingClaims > 0) activeRedeems[code] = { quotaPerUser: val.quotaPerUser || 1, maxClaims: val.maxClaims, claimedCount: val.claimedCount };
       }
-      
       jsonResponse(res, 200, { success: true, redeems: activeRedeems });
 
     } else if (parsedUrl.pathname === '/api/redeems/claimed' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 200, { success: true, claimedCodes: {} });
-      
       const cleanUser = username.toLowerCase();
       const allRedeems = await getAllRedeemsFromDb();
       const claimedCodes = {};
-      
       for (const [code, val] of Object.entries(allRedeems)) {
-        if (val.claimedUsers && val.claimedUsers.includes(cleanUser)) {
-          claimedCodes[code] = true;
-        }
+        if (val.claimedUsers && val.claimedUsers.includes(cleanUser)) claimedCodes[code] = true;
       }
-      
       jsonResponse(res, 200, { success: true, claimedCodes });
 
     } else if (parsedUrl.pathname === '/api/feature-request/submit' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, title, description } = JSON.parse(body);
-      
       const cleanUser = username ? username.toLowerCase() : '';
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
-
-      if (!title || !description) {
-        return jsonResponse(res, 400, { success: false, message: 'Judul dan deskripsi harus diisi!' });
-      }
-      if (title.length < 3 || title.length > 100) {
-        return jsonResponse(res, 400, { success: false, message: 'Judul 3-100 karakter!' });
-      }
-      if (description.length < 10 || description.length > 1000) {
-        return jsonResponse(res, 400, { success: false, message: 'Deskripsi 10-1000 karakter!' });
-      }
-
+      if (!title || !description) return jsonResponse(res, 400, { success: false, message: 'Lengkapi!' });
+      if (title.length < 3 || title.length > 100) return jsonResponse(res, 400, { success: false, message: 'Judul 3-100!' });
+      if (description.length < 10 || description.length > 1000) return jsonResponse(res, 400, { success: false, message: 'Deskripsi 10-1000!' });
       const reqId = 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
-      await saveFeatureRequestToDb(reqId, {
-        id: reqId,
-        username: cleanUser,
-        title: title.trim(),
-        description: description.trim(),
-        status: 'pending',
-        timestamp: Date.now(),
-        adminNote: ''
-      });
-
-      jsonResponse(res, 200, { success: true, message: 'Request fitur berhasil dikirim!' });
+      await saveFeatureRequestToDb(reqId, { id: reqId, username: cleanUser, title: title.trim(), description: description.trim(), status: 'pending', timestamp: Date.now(), adminNote: '' });
+      jsonResponse(res, 200, { success: true, message: 'Request terkirim!' });
 
     } else if (parsedUrl.pathname === '/api/feature-request/my' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-
       const allRequests = await getFeatureRequestsFromDb();
       const cleanUser = username.toLowerCase();
-      const myRequests = Object.values(allRequests)
-        .filter(r => r.username === cleanUser)
-        .sort((a, b) => b.timestamp - a.timestamp);
-
+      const myRequests = Object.values(allRequests).filter(r => r.username === cleanUser).sort((a, b) => b.timestamp - a.timestamp);
       jsonResponse(res, 200, { success: true, requests: myRequests });
 
     } else if (parsedUrl.pathname === '/api/admin/feature-requests' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      }
-
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
       const allRequests = await getFeatureRequestsFromDb();
       const requests = Object.values(allRequests).sort((a, b) => b.timestamp - a.timestamp);
       jsonResponse(res, 200, { success: true, requests });
@@ -7473,321 +3850,156 @@ const server = http.createServer(async (req, res) => {
     } else if (parsedUrl.pathname === '/api/admin/feature-request/update' && req.method === 'POST') {
       const body = await readBody(req);
       const { adminUsername, requestId, status, adminNote } = JSON.parse(body);
-      
       const adminObj = await getUserFromDb(adminUsername.toLowerCase());
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      }
-
-      if (!['pending', 'approved', 'rejected'].includes(status)) {
-        return jsonResponse(res, 400, { success: false, message: 'Status tidak valid!' });
-      }
-
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      if (!['pending', 'approved', 'rejected'].includes(status)) return jsonResponse(res, 400, { success: false, message: 'Status tidak valid!' });
       const allRequests = await getFeatureRequestsFromDb();
       const reqObj = allRequests[requestId];
       if (!reqObj) return jsonResponse(res, 404, { success: false, message: 'Request tidak ditemukan!' });
-
-      reqObj.status = status;
-      reqObj.adminNote = adminNote || '';
-      reqObj.updatedAt = Date.now();
+      reqObj.status = status; reqObj.adminNote = adminNote || ''; reqObj.updatedAt = Date.now();
       await saveFeatureRequestToDb(requestId, reqObj);
-
       jsonResponse(res, 200, { success: true, message: 'Request diupdate!' });
 
     } else if (parsedUrl.pathname === '/api/admin/feature-request/delete' && req.method === 'POST') {
       const body = await readBody(req);
       const { adminUsername, requestId } = JSON.parse(body);
-      
       const adminObj = await getUserFromDb(adminUsername.toLowerCase());
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      }
-
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
       await removeFeatureRequestFromDb(requestId);
       jsonResponse(res, 200, { success: true, message: 'Request dihapus!' });
 
     } else if (parsedUrl.pathname === '/api/user/my-emails') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-
       const cleanUser = username.toLowerCase();
+      await checkAndExpireBonusQuota(cleanUser);
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
       const lastReset = userObj.lastResetTime || now;
       const nextReset = lastReset + twentyFourHours;
       const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
-
       if (now - lastReset >= twentyFourHours) {
-        userObj.activatedEmails = [];
-        userObj.lastResetTime = now;
+        userObj.activatedEmails = []; userObj.lastResetTime = now;
         await saveUserToDb(cleanUser, userObj);
-        return jsonResponse(res, 200, {
-          success: true,
-          activatedEmails: [],
-          usedQuota: 0,
-          bonusQuota: userObj.bonusQuota || 0,
-          totalQuota: 1 + (userObj.bonusQuota || 0),
-          lastResetTime: now,
-          nextResetTime: now + twentyFourHours,
-          isVip: isVipActive,
-          isAdmin: !!userObj.isAdmin,
-          resetJustNow: true
-        });
+        return jsonResponse(res, 200, { success: true, activatedEmails: [], usedQuota: 0, bonusQuota: userObj.bonusQuota || 0, totalQuota: (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0), lastResetTime: now, nextResetTime: now + twentyFourHours, isVip: isVipActive, isAdmin: !!userObj.isAdmin, resetJustNow: true });
       }
-
-      jsonResponse(res, 200, {
-        success: true,
-        activatedEmails: userObj.activatedEmails || [],
-        usedQuota: userObj.activatedEmails ? userObj.activatedEmails.length : 0,
-        bonusQuota: userObj.bonusQuota || 0,
-        totalQuota: 1 + (userObj.bonusQuota || 0),
-        lastResetTime: lastReset,
-        nextResetTime: nextReset,
-        isVip: isVipActive,
-        isAdmin: !!userObj.isAdmin,
-        resetJustNow: false
-      });
+      jsonResponse(res, 200, { success: true, activatedEmails: userObj.activatedEmails || [], usedQuota: userObj.activatedEmails ? userObj.activatedEmails.length : 0, bonusQuota: userObj.bonusQuota || 0, totalQuota: (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0), lastResetTime: lastReset, nextResetTime: nextReset, isVip: isVipActive, isAdmin: !!userObj.isAdmin, resetJustNow: false });
 
     } else if (parsedUrl.pathname === '/api/user/change-password' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, oldPassword, newPassword } = JSON.parse(body);
-      
-      if (!username || !oldPassword || !newPassword) {
-        return jsonResponse(res, 400, { success: false, message: 'Semua field harus diisi!' });
-      }
-      if (newPassword.length < 4) {
-        return jsonResponse(res, 400, { success: false, message: 'Password baru minimal 4 karakter!' });
-      }
-
+      if (!username || !oldPassword || !newPassword) return jsonResponse(res, 400, { success: false, message: 'Semua field wajib!' });
+      if (newPassword.length < 4) return jsonResponse(res, 400, { success: false, message: 'Min 4 karakter!' });
       const cleanUser = username.toLowerCase();
       const userObj = await getUserFromDb(cleanUser);
-      
-      if (!userObj) {
-        return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-      }
-      if (userObj.password !== oldPassword) {
-        return jsonResponse(res, 401, { success: false, message: 'Password lama salah!' });
-      }
-
+      if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
+      if (userObj.password !== oldPassword) return jsonResponse(res, 401, { success: false, message: 'Password lama salah!' });
       userObj.password = newPassword;
       await saveUserToDb(cleanUser, userObj);
-      
-      jsonResponse(res, 200, { success: true, message: 'Password berhasil diubah!' });
+      jsonResponse(res, 200, { success: true, message: 'Password diubah!' });
 
     } else if (parsedUrl.pathname === '/api/chat/messages' && req.method === 'GET') {
       const messages = await getGlobalChatFromDb();
-      
       const now = Date.now();
       const threeDays = 3 * 24 * 60 * 60 * 1000;
       for (const [id, msg] of Object.entries(messages)) {
-        if (now - msg.timestamp > threeDays) {
-          await deleteGlobalChatMessageFromDb(id);
-          delete messages[id];
-        }
+        if (now - msg.timestamp > threeDays) { await deleteGlobalChatMessageFromDb(id); delete messages[id]; }
       }
-      
       jsonResponse(res, 200, { success: true, messages });
 
     } else if (parsedUrl.pathname === '/api/chat/send' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, message } = JSON.parse(body);
-      
-      if (!username || !message) {
-        return jsonResponse(res, 400, { success: false, message: 'Username dan pesan harus diisi!' });
-      }
-      
+      if (!username || !message) return jsonResponse(res, 400, { success: false, message: 'Username dan pesan wajib!' });
       const cleanUser = username.toLowerCase();
       const userObj = await getUserFromDb(cleanUser);
-      
-      if (!userObj) {
-        return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
-      }
-      
+      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
       const trimmedMsg = message.trim().substring(0, 500);
-      if (!trimmedMsg) {
-        return jsonResponse(res, 400, { success: false, message: 'Pesan tidak boleh kosong!' });
-      }
-
+      if (!trimmedMsg) return jsonResponse(res, 400, { success: false, message: 'Pesan kosong!' });
       const now = Date.now();
       const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
-
       const msgId = 'msg_' + now + '_' + Math.random().toString(36).substring(2, 8);
-      await saveGlobalChatMessageToDb(msgId, {
-        username: cleanUser,
-        message: trimmedMsg,
-        timestamp: now,
-        isAdmin: !!userObj.isAdmin,
-        isVip: !!isVipActive
-      });
-      
+      await saveGlobalChatMessageToDb(msgId, { username: cleanUser, message: trimmedMsg, timestamp: now, isAdmin: !!userObj.isAdmin, isVip: !!isVipActive });
       jsonResponse(res, 200, { success: true, message: 'Pesan terkirim!' });
 
     } else if (parsedUrl.pathname === '/api/chat/delete' && req.method === 'POST') {
       const body = await readBody(req);
       const { adminUsername, messageId } = JSON.parse(body);
-      
       const adminObj = await getUserFromDb(adminUsername.toLowerCase());
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      }
-      
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
       await deleteGlobalChatMessageFromDb(messageId);
       jsonResponse(res, 200, { success: true, message: 'Pesan dihapus' });
 
     } else if (parsedUrl.pathname === '/api/admin/create-vip-account' && req.method === 'POST') {
       const body = await readBody(req);
       const { adminUsername, vipUsername, vipPassword, vipDays } = JSON.parse(body);
-      
       const adminObj = await getUserFromDb(adminUsername.toLowerCase());
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      }
-
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
       const cleanVipUser = vipUsername.toLowerCase().trim();
-      
-      if (!cleanVipUser || !vipPassword || !vipDays) {
-        return jsonResponse(res, 400, { success: false, message: 'Lengkapi semua field!' });
-      }
-      if (vipDays < 1 || vipDays > 3650) {
-        return jsonResponse(res, 400, { success: false, message: 'Masa aktif 1-3650 hari!' });
-      }
-
+      if (!cleanVipUser || !vipPassword || !vipDays) return jsonResponse(res, 400, { success: false, message: 'Lengkapi!' });
+      if (vipDays < 1 || vipDays > 3650) return jsonResponse(res, 400, { success: false, message: '1-3650 hari!' });
       const existingUser = await getUserFromDb(cleanVipUser);
-      if (existingUser) {
-        return jsonResponse(res, 400, { success: false, message: 'Username sudah terdaftar!' });
-      }
-
+      if (existingUser) return jsonResponse(res, 400, { success: false, message: 'Username sudah terdaftar!' });
       const now = Date.now();
       const vipUntil = now + (vipDays * 24 * 60 * 60 * 1000);
-
-      await saveUserToDb(cleanVipUser, {
-        password: vipPassword,
-        email: 'vip@am-premium.local',
-        isAdmin: false,
-        activatedEmails: [],
-        bonusQuota: 0,
-        lastResetTime: now,
-        vipUntil: vipUntil,
-        isVipAccount: true,
-        createdBy: adminUsername.toLowerCase(),
-        createdAt: now
-      });
-
+      await saveUserToDb(cleanVipUser, { password: vipPassword, email: 'vip@am-premium.local', isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: now, vipUntil, isVipAccount: true, createdBy: adminUsername.toLowerCase(), createdAt: now });
       const vipAccId = 'vip_' + now + '_' + Math.random().toString(36).substring(2, 8);
-      await saveVipAccountToDb(vipAccId, {
-        username: cleanVipUser,
-        password: vipPassword,
-        vipUntil: vipUntil,
-        createdBy: adminUsername.toLowerCase(),
-        createdAt: now
-      });
-
-      jsonResponse(res, 200, { 
-        success: true, 
-        message: 'Akun VIP "' + cleanVipUser + '" berhasil dibuat untuk ' + vipDays + ' hari!',
-        username: cleanVipUser,
-        vipUntil: vipUntil
-      });
+      await saveVipAccountToDb(vipAccId, { username: cleanVipUser, password: vipPassword, vipUntil, createdBy: adminUsername.toLowerCase(), createdAt: now });
+      jsonResponse(res, 200, { success: true, message: 'Akun VIP "' + cleanVipUser + '" dibuat untuk ' + vipDays + ' hari!', username: cleanVipUser, vipUntil });
 
     } else if (parsedUrl.pathname === '/api/admin/get-vip-accounts' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      }
-
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
       const vipAccounts = await getVipAccountsFromDb();
-      
       const enriched = {};
       const now = Date.now();
       for (const [id, acc] of Object.entries(vipAccounts)) {
         const userData = await getUserFromDb(acc.username);
-        enriched[id] = {
-          ...acc,
-          isActive: userData && userData.vipUntil > now,
-          currentVipUntil: userData ? (userData.vipUntil || 0) : 0,
-          exists: !!userData
-        };
+        enriched[id] = { ...acc, isActive: userData && userData.vipUntil > now, currentVipUntil: userData ? (userData.vipUntil || 0) : 0, exists: !!userData };
       }
-
       jsonResponse(res, 200, { success: true, vipAccounts: enriched });
 
     } else if (parsedUrl.pathname === '/api/admin/delete-vip-account' && req.method === 'POST') {
       const body = await readBody(req);
       const { adminUsername, vipUsername } = JSON.parse(body);
-      
       const adminObj = await getUserFromDb(adminUsername.toLowerCase());
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      }
-
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
       const cleanVipUser = vipUsername.toLowerCase();
-
       await deleteUserFromDb(cleanVipUser);
-
       const vipAccounts = await getVipAccountsFromDb();
       for (const [id, acc] of Object.entries(vipAccounts)) {
-        if (acc.username === cleanVipUser) {
-          await removeVipAccountFromDb(id);
-        }
+        if (acc.username === cleanVipUser) await removeVipAccountFromDb(id);
       }
-
       jsonResponse(res, 200, { success: true, message: 'Akun VIP dihapus!' });
 
     } else if (parsedUrl.pathname === '/api/admin/delete-user' && req.method === 'POST') {
       const body = await readBody(req);
       const { adminUsername, targetUsername } = JSON.parse(body);
-      
       const adminObj = await getUserFromDb(adminUsername.toLowerCase());
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      }
-
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
       const cleanTarget = targetUsername.toLowerCase();
-      
-      if (cleanTarget === adminUsername.toLowerCase()) {
-        return jsonResponse(res, 400, { success: false, message: 'Tidak dapat menghapus akun sendiri!' });
-      }
-
-      if (cleanTarget === 'adminbaguss') {
-        return jsonResponse(res, 400, { success: false, message: 'Akun admin utama tidak dapat dihapus!' });
-      }
-
+      if (cleanTarget === adminUsername.toLowerCase()) return jsonResponse(res, 400, { success: false, message: 'Tidak dapat hapus akun sendiri!' });
+      if (cleanTarget === 'adminbaguss') return jsonResponse(res, 400, { success: false, message: 'Admin utama tidak dapat dihapus!' });
       const targetUser = await getUserFromDb(cleanTarget);
-      if (!targetUser) {
-        return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan!' });
-      }
-
+      if (!targetUser) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan!' });
       await deleteUserFromDb(cleanTarget);
-
       const vipAccounts = await getVipAccountsFromDb();
       for (const [id, acc] of Object.entries(vipAccounts)) {
-        if (acc.username === cleanTarget) {
-          await removeVipAccountFromDb(id);
-        }
+        if (acc.username === cleanTarget) await removeVipAccountFromDb(id);
       }
-
-      jsonResponse(res, 200, { 
-        success: true, 
-        message: 'Akun "' + cleanTarget + '" berhasil dihapus!',
-        deletedUser: cleanTarget
-      });
+      jsonResponse(res, 200, { success: true, message: 'Akun "' + cleanTarget + '" dihapus!', deletedUser: cleanTarget });
 
     } else if (parsedUrl.pathname === '/api/admin/upload-init' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, uploadId, filename, totalChunks, fileSize, fileType } = JSON.parse(body);
       const userObj = await getUserFromDb(username.toLowerCase());
       if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak' });
-
       const uploadSessionDir = path.join(UPLOAD_DIR, uploadId);
       if (!fs.existsSync(uploadSessionDir)) fs.mkdirSync(uploadSessionDir, { recursive: true });
-      fs.writeFileSync(path.join(uploadSessionDir, 'meta.json'), JSON.stringify({
-        filename, totalChunks, fileSize, fileType, createdAt: Date.now()
-      }));
-
+      fs.writeFileSync(path.join(uploadSessionDir, 'meta.json'), JSON.stringify({ filename, totalChunks, fileSize, fileType, createdAt: Date.now() }));
       jsonResponse(res, 200, { success: true, uploadId });
 
     } else if (parsedUrl.pathname === '/api/admin/upload-chunk' && req.method === 'POST') {
@@ -7795,14 +4007,11 @@ const server = http.createServer(async (req, res) => {
       const { username, uploadId, chunkIndex, chunkData } = JSON.parse(body);
       const userObj = await getUserFromDb(username.toLowerCase());
       if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak' });
-
       const uploadSessionDir = path.join(UPLOAD_DIR, uploadId);
       if (!fs.existsSync(uploadSessionDir)) return jsonResponse(res, 404, { success: false, message: 'Sesi tidak ditemukan' });
-
       const base64 = chunkData.split(',')[1];
       const buffer = Buffer.from(base64, 'base64');
       fs.writeFileSync(path.join(uploadSessionDir, 'chunk_' + String(chunkIndex).padStart(6, '0')), buffer);
-
       jsonResponse(res, 200, { success: true, chunkIndex });
 
     } else if (parsedUrl.pathname === '/api/admin/upload-finalize' && req.method === 'POST') {
@@ -7810,42 +4019,28 @@ const server = http.createServer(async (req, res) => {
       const { username, uploadId } = JSON.parse(body);
       const userObj = await getUserFromDb(username.toLowerCase());
       if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak' });
-
       const uploadSessionDir = path.join(UPLOAD_DIR, uploadId);
       if (!fs.existsSync(uploadSessionDir)) return jsonResponse(res, 404, { success: false, message: 'Sesi tidak ditemukan' });
-
       const meta = JSON.parse(fs.readFileSync(path.join(uploadSessionDir, 'meta.json'), 'utf8'));
       const chunks = fs.readdirSync(uploadSessionDir).filter(f => f.startsWith('chunk_')).sort();
-      
-      if (chunks.length !== meta.totalChunks) {
-        return jsonResponse(res, 400, { success: false, message: 'Chunk tidak lengkap: ' + chunks.length + '/' + meta.totalChunks });
-      }
-
+      if (chunks.length !== meta.totalChunks) return jsonResponse(res, 400, { success: false, message: 'Chunk tidak lengkap: ' + chunks.length + '/' + meta.totalChunks });
       const buffers = chunks.map(c => fs.readFileSync(path.join(uploadSessionDir, c)));
       const fullBuffer = Buffer.concat(buffers);
-
       const base64 = fullBuffer.toString('base64');
       const dataUrl = 'data:' + (meta.fileType || 'video/mp4') + ';base64,' + base64;
-
       await saveVideoToDb(dataUrl);
-
       chunks.forEach(c => { try { fs.unlinkSync(path.join(uploadSessionDir, c)); } catch(e){} });
       try { fs.unlinkSync(path.join(uploadSessionDir, 'meta.json')); } catch(e){}
       try { fs.rmdirSync(uploadSessionDir); } catch(e){}
-
       jsonResponse(res, 200, { success: true, message: 'Video tersimpan', size: fullBuffer.length });
 
     } else if (parsedUrl.pathname === '/api/admin/get-all-users') {
       const username = parsedUrl.searchParams.get('username');
       const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      }
-
+      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
       const allUsers = await getAllUsersFromDb();
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
-
       const userList = Object.entries(allUsers).map(([uname, udata]) => {
         const isVip = udata.vipUntil && udata.vipUntil > now;
         const usedQuota = udata.activatedEmails ? udata.activatedEmails.length : 0;
@@ -7853,54 +4048,22 @@ const server = http.createServer(async (req, res) => {
         const lastReset = udata.lastResetTime || 0;
         const nextReset = lastReset + twentyFourHours;
         const isResetDue = now - lastReset >= twentyFourHours;
-
-        return {
-          username: uname,
-          email: udata.email || '-',
-          isAdmin: !!udata.isAdmin,
-          isVip: !!isVip,
-          vipUntil: udata.vipUntil || 0,
-          usedQuota: usedQuota,
-          bonusQuota: bonusQuota,
-          totalQuota: 1 + bonusQuota,
-          lastResetTime: lastReset,
-          nextResetTime: nextReset,
-          isResetDue: isResetDue,
-          activatedEmails: udata.activatedEmails || [],
-          isVipAccount: !!udata.isVipAccount
-        };
+        return { username: uname, email: udata.email || '-', isAdmin: !!udata.isAdmin, isVip: !!isVip, vipUntil: udata.vipUntil || 0, usedQuota, bonusQuota, totalQuota: (udata.baseQuota || BASE_QUOTA) + bonusQuota, lastResetTime: lastReset, nextResetTime: nextReset, isResetDue, activatedEmails: udata.activatedEmails || [], isVipAccount: !!udata.isVipAccount };
       });
-
-      userList.sort((a, b) => {
-        if (a.isAdmin !== b.isAdmin) return a.isAdmin ? -1 : 1;
-        if (a.isVip !== b.isVip) return a.isVip ? -1 : 1;
-        return a.username.localeCompare(b.username);
-      });
-
-      const stats = {
-        total: userList.length,
-        admins: userList.filter(u => u.isAdmin).length,
-        vips: userList.filter(u => u.isVip).length,
-        regulars: userList.filter(u => !u.isAdmin && !u.isVip).length,
-        resetDue: userList.filter(u => u.isResetDue).length
-      };
-
+      userList.sort((a, b) => { if (a.isAdmin !== b.isAdmin) return a.isAdmin ? -1 : 1; if (a.isVip !== b.isVip) return a.isVip ? -1 : 1; return a.username.localeCompare(b.username); });
+      const stats = { total: userList.length, admins: userList.filter(u => u.isAdmin).length, vips: userList.filter(u => u.isVip).length, regulars: userList.filter(u => !u.isAdmin && !u.isVip).length, resetDue: userList.filter(u => u.isResetDue).length };
       jsonResponse(res, 200, { success: true, users: userList, stats });
 
     } else if (parsedUrl.pathname === '/api/user/username' && req.method === 'PUT') {
       const body = await readBody(req);
       const { currentUsername, newUsername } = JSON.parse(body);
       if (!currentUsername || !newUsername) return jsonResponse(res, 400, { success: false, message: 'Username lama dan baru diperlukan.' });
-
       const cleanOld = currentUsername.toLowerCase();
       const cleanNew = newUsername.trim().toLowerCase();
-
       const existingUser = await getUserFromDb(cleanNew);
       if (existingUser) return jsonResponse(res, 400, { success: false, message: 'Username sudah digunakan.' });
-
       const userData = await getUserFromDb(cleanOld);
       if (!userData) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan.' });
-
       await saveUserToDb(cleanNew, userData);
       await set(ref(db, `users/${cleanOld}`), null);
       jsonResponse(res, 200, { success: true, newUsername: cleanNew });
@@ -7918,11 +4081,9 @@ const server = http.createServer(async (req, res) => {
       const { username, targetUser, days } = JSON.parse(body);
       const adminObj = await getUserFromDb(username.toLowerCase());
       if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak.' });
-
       const cleanTarget = targetUser.toLowerCase();
       const targetObj = await getUserFromDb(cleanTarget);
       if (!targetObj) return jsonResponse(res, 400, { success: false, message: 'User target tidak ditemukan!' });
-
       targetObj.vipUntil = Date.now() + (days * 24 * 60 * 60 * 1000);
       await saveUserToDb(cleanTarget, targetObj);
       jsonResponse(res, 200, { success: true, message: 'VIP ' + cleanTarget + ' aktif ' + days + ' hari!' });
@@ -7931,7 +4092,6 @@ const server = http.createServer(async (req, res) => {
       const username = parsedUrl.searchParams.get('username');
       const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
       if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false });
-
       const allUsers = await getAllUsersFromDb();
       const vipUsers = {};
       const now = Date.now();
@@ -7945,13 +4105,9 @@ const server = http.createServer(async (req, res) => {
       const { username, targetUser } = JSON.parse(body);
       const adminObj = await getUserFromDb(username.toLowerCase());
       if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false });
-
       const cleanTarget = targetUser.toLowerCase();
       const targetObj = await getUserFromDb(cleanTarget);
-      if (targetObj) {
-        targetObj.vipUntil = 0;
-        await saveUserToDb(cleanTarget, targetObj);
-      }
+      if (targetObj) { targetObj.vipUntil = 0; await saveUserToDb(cleanTarget, targetObj); }
       jsonResponse(res, 200, { success: true });
 
     } else if (parsedUrl.pathname === '/api/admin/create-announcement' && req.method === 'POST') {
@@ -7959,7 +4115,6 @@ const server = http.createServer(async (req, res) => {
       const { username, title, content } = JSON.parse(body);
       const userObj = await getUserFromDb(username.toLowerCase());
       if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false });
-
       const id = 'info_' + Date.now();
       await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
       jsonResponse(res, 200, { success: true, message: 'Informasi dipublikasikan!' });
@@ -7969,7 +4124,6 @@ const server = http.createServer(async (req, res) => {
       const { username, id, title, content } = JSON.parse(body);
       const userObj = await getUserFromDb(username.toLowerCase());
       if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false });
-
       await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
       jsonResponse(res, 200, { success: true, message: 'Informasi diperbarui!' });
 
@@ -7986,28 +4140,12 @@ const server = http.createServer(async (req, res) => {
       const { username, code, quotaPerUser, maxClaims } = JSON.parse(body);
       const userObj = await getUserFromDb(username.toLowerCase());
       if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false });
-
-      if (!code || !quotaPerUser || !maxClaims) {
-        return jsonResponse(res, 400, { success: false, message: 'Lengkapi semua field!' });
-      }
-      if (quotaPerUser < 1 || maxClaims < 1) {
-        return jsonResponse(res, 400, { success: false, message: 'Kuota dan maks klaim minimal 1!' });
-      }
-
+      if (!code || !quotaPerUser || !maxClaims) return jsonResponse(res, 400, { success: false, message: 'Lengkapi!' });
+      if (quotaPerUser < 1 || maxClaims < 1) return jsonResponse(res, 400, { success: false, message: 'Min 1!' });
       const existingCode = await getRedeemFromDb(code);
-      if (existingCode) return jsonResponse(res, 400, { success: false, message: 'Kode redeem sudah ada!' });
-
-      await saveRedeemToDb(code, { 
-        quotaPerUser: parseInt(quotaPerUser), 
-        maxClaims: parseInt(maxClaims), 
-        claimedCount: 0, 
-        claimedUsers: [] 
-      });
-      
-      jsonResponse(res, 200, { 
-        success: true, 
-        message: 'Kode ' + code + ' dibuat! (' + quotaPerUser + ' kuota/user, maks ' + maxClaims + ' orang)' 
-      });
+      if (existingCode) return jsonResponse(res, 400, { success: false, message: 'Kode sudah ada!' });
+      await saveRedeemToDb(code, { quotaPerUser: parseInt(quotaPerUser), maxClaims: parseInt(maxClaims), claimedCount: 0, claimedUsers: [] });
+      jsonResponse(res, 200, { success: true, message: 'Kode ' + code + ' dibuat! (' + quotaPerUser + ' kuota/user, maks ' + maxClaims + ' orang)' });
 
     } else if (parsedUrl.pathname === '/api/admin/get-redeems') {
       const username = parsedUrl.searchParams.get('username');
@@ -8028,116 +4166,63 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const { username, code } = JSON.parse(body);
       const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-
-      if (currentServerStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
-        return jsonResponse(res, 403, { success: false, message: 'Server offline.' });
-      }
-
+      if (currentServerStatus !== 'online' && (!userObj || !userObj.isAdmin)) return jsonResponse(res, 403, { success: false, message: 'Server offline.' });
       const cleanUser = username.toLowerCase();
       const redeemObj = await getRedeemFromDb(code);
-
       if (!userObj || !redeemObj) return jsonResponse(res, 400, { success: false, message: 'User atau kode tidak valid!' });
-
-      if (redeemObj.claimedUsers && redeemObj.claimedUsers.includes(cleanUser)) {
-        return jsonResponse(res, 400, { success: false, message: 'Anda sudah pernah klaim kode ini!' });
-      }
-      if (redeemObj.claimedCount >= redeemObj.maxClaims) {
-        return jsonResponse(res, 400, { success: false, message: 'Kuota klaim kode habis!' });
-      }
-
+      if (redeemObj.claimedUsers && redeemObj.claimedUsers.includes(cleanUser)) return jsonResponse(res, 400, { success: false, message: 'Anda sudah klaim kode ini!' });
+      if (redeemObj.claimedCount >= redeemObj.maxClaims) return jsonResponse(res, 400, { success: false, message: 'Kuota klaim habis!' });
       const rewardQuota = redeemObj.quotaPerUser || 1;
-
       if (!userObj.bonusQuota) userObj.bonusQuota = 0;
       userObj.bonusQuota += rewardQuota;
-
+      userObj.bonusGrantedAt = Date.now();
+      userObj.lastBonusActivity = Date.now();
       redeemObj.claimedCount += 1;
       if (!redeemObj.claimedUsers) redeemObj.claimedUsers = [];
       redeemObj.claimedUsers.push(cleanUser);
-
       await saveUserToDb(cleanUser, userObj);
       await saveRedeemToDb(code, redeemObj);
-
-      jsonResponse(res, 200, {
-        success: true,
-        message: 'Berhasil klaim! Anda dapat ' + rewardQuota + ' kuota bonus.',
-        usedQuota: userObj.activatedEmails ? userObj.activatedEmails.length : 0,
-        bonusQuota: userObj.bonusQuota,
-        isVip: userObj.vipUntil && userObj.vipUntil > Date.now(),
-        isAdmin: userObj.isAdmin
-      });
+      jsonResponse(res, 200, { success: true, message: 'Berhasil! +' + rewardQuota + ' kuota bonus.', usedQuota: userObj.activatedEmails ? userObj.activatedEmails.length : 0, bonusQuota: userObj.bonusQuota, totalQuota: (userObj.baseQuota || BASE_QUOTA) + userObj.bonusQuota, isVip: userObj.vipUntil && userObj.vipUntil > Date.now(), isAdmin: userObj.isAdmin });
 
     } else if (parsedUrl.pathname === '/api/auth/session' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, token } = JSON.parse(body);
       if (!username || !token) return jsonResponse(res, 400, { success: false });
-
       const cleanUser = username.toLowerCase();
+      await checkAndExpireBonusQuota(cleanUser);
       const existingUser = await getUserFromDb(cleanUser);
       if (!existingUser) return jsonResponse(res, 404, { success: false });
-
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
       if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
-      if (now - existingUser.lastResetTime >= twentyFourHours) {
-        existingUser.activatedEmails = [];
-        existingUser.lastResetTime = now;
-        await saveUserToDb(cleanUser, existingUser);
-      }
-
+      if (now - existingUser.lastResetTime >= twentyFourHours) { existingUser.activatedEmails = []; existingUser.lastResetTime = now; await saveUserToDb(cleanUser, existingUser); }
       const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
       const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
-
-      jsonResponse(res, 200, {
-        success: true, username: cleanUser, isAdmin: existingUser.isAdmin,
-        usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0,
-        isVip: isVipActive, vipUntil: existingUser.vipUntil || 0,
-        serverStatus: currentServerStatus
-      });
+      jsonResponse(res, 200, { success: true, username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus });
 
     } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
       const body = await readBody(req);
       const { mode, username, password, email, deviceToken } = JSON.parse(body);
       const cleanUser = username.trim().toLowerCase();
       let existingUser = await getUserFromDb(cleanUser);
-
       if (mode === 'register') {
-        if (cleanUser === 'adminbaguss' || existingUser) {
-          return jsonResponse(res, 400, { success: false, message: 'Username tidak tersedia!' });
-        }
+        if (cleanUser === 'adminbaguss' || existingUser) return jsonResponse(res, 400, { success: false, message: 'Username tidak tersedia!' });
         const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
-        await saveUserToDb(cleanUser, {
-          password, email, isAdmin: false,
-          activatedEmails: [], bonusQuota: 0,
-          lastResetTime: Date.now(), vipUntil: 0,
-          deviceToken: newDeviceToken
-        });
+        await saveUserToDb(cleanUser, { password, email, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
         const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
-        return jsonResponse(res, 200, {
-          success: true, message: 'Registrasi berhasil!',
-          username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0,
-          isVip: false, serverStatus: currentServerStatus,
-          deviceToken: newDeviceToken, token: fakeAuthToken
-        });
+        return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: fakeAuthToken });
       } else {
         if (existingUser && existingUser.password === password) {
+          await checkAndExpireBonusQuota(cleanUser);
+          existingUser = await getUserFromDb(cleanUser);
           const now = Date.now();
           const twentyFourHours = 24 * 60 * 60 * 1000;
           if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
-          if (now - existingUser.lastResetTime >= twentyFourHours) {
-            existingUser.activatedEmails = [];
-            existingUser.lastResetTime = now;
-            await saveUserToDb(cleanUser, existingUser);
-          }
+          if (now - existingUser.lastResetTime >= twentyFourHours) { existingUser.activatedEmails = []; existingUser.lastResetTime = now; await saveUserToDb(cleanUser, existingUser); }
           const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
           const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
           const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
-          return jsonResponse(res, 200, {
-            success: true, message: 'Login berhasil!',
-            username: cleanUser, isAdmin: existingUser.isAdmin,
-            usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0,
-            isVip: isVipActive, vipUntil: existingUser.vipUntil || 0,
-            serverStatus: currentServerStatus, token: fakeAuthToken
-          });
+          return jsonResponse(res, 200, { success: true, message: 'Login berhasil!', username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus, token: fakeAuthToken });
         }
         return jsonResponse(res, 401, { success: false, message: 'Username atau password salah!' });
       }
@@ -8146,91 +4231,44 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const { username, email } = JSON.parse(body);
       const cleanUser = username ? username.toLowerCase() : '';
+      await checkAndExpireBonusQuota(cleanUser);
       const userObj = await getUserFromDb(cleanUser);
-
       if (!userObj) return jsonResponse(res, 400, { success: false, message: 'User tidak ditemukan.' });
-      
-      // CHECK SERVER ONLINE (kecuali admin)
-      if (currentServerStatus !== 'online' && !userObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Server sedang OFFLINE! Generator Alight Motion tidak tersedia.' });
-      }
-
+      if (currentServerStatus !== 'online' && !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Server offline!' });
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
-      if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
-        userObj.activatedEmails = [];
-        userObj.lastResetTime = now;
-      }
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) { userObj.activatedEmails = []; userObj.lastResetTime = now; }
       if (!userObj.activatedEmails) userObj.activatedEmails = [];
       if (!userObj.bonusQuota) userObj.bonusQuota = 0;
-
       const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
-      const maxAllowed = 1 + userObj.bonusQuota;
-
+      const maxAllowed = (userObj.baseQuota || BASE_QUOTA) + userObj.bonusQuota;
       if (!userObj.isAdmin && !isVipActive) {
-        if (!userObj.activatedEmails.includes(email) && userObj.activatedEmails.length >= maxAllowed) {
-          return jsonResponse(res, 403, { success: false, message: 'Kuota aktivasi Anda habis!' });
-        }
+        if (!userObj.activatedEmails.includes(email) && userObj.activatedEmails.length >= maxAllowed) return jsonResponse(res, 403, { success: false, message: 'Kuota Anda habis!' });
       }
-
-      // Catat quota entry SEBELUM panggil API
       const quotaEntry = email + '_' + Date.now();
       if (!userObj.isAdmin && !isVipActive && !userObj.activatedEmails.includes(email)) {
         userObj.activatedEmails.push(quotaEntry);
+        if (userObj.bonusQuota > 0) { userObj.lastBonusActivity = now; userObj.bonusGrantedAt = userObj.bonusGrantedAt || now; }
         await saveUserToDb(cleanUser, userObj);
       }
-
       try {
         const result = await am.magiclink(email);
-
-        // Generate Order ID
         const orderId = generateOrderId('AM');
-
-        // Simpan order
-        await saveOrderToDb(orderId, {
-          orderId,
-          username: cleanUser,
-          type: 'am',
-          detail: email,
-          result: result ? JSON.stringify(result).substring(0, 300) : 'Magic link terkirim',
-          timestamp: Date.now(),
-          quotaEntry
-        });
-
-        jsonResponse(res, 200, {
-          success: true,
-          orderId,
-          result,
-          quotaInfo: { usedQuota: userObj.activatedEmails.length, bonusQuota: userObj.bonusQuota }
-        });
+        await saveOrderToDb(orderId, { orderId, username: cleanUser, type: 'am', detail: email, result: result ? JSON.stringify(result).substring(0, 300) : 'Magic link terkirim', timestamp: Date.now(), quotaEntry });
+        jsonResponse(res, 200, { success: true, orderId, result, quotaInfo: { usedQuota: userObj.activatedEmails.length, bonusQuota: userObj.bonusQuota, totalQuota: (userObj.baseQuota || BASE_QUOTA) + userObj.bonusQuota } });
       } catch (apiErr) {
-        // GAGAL - REFILL QUOTA
         const refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
         const refreshedUser = await getUserFromDb(cleanUser);
         const refreshedUsed = refreshedUser.activatedEmails ? refreshedUser.activatedEmails.length : 0;
-        
-        jsonResponse(res, 500, {
-          success: false,
-          refilled,
-          message: refilled 
-            ? 'Generate gagal: ' + apiErr.message + '. Kuota Anda telah dikembalikan.'
-            : 'Generate gagal: ' + apiErr.message,
-          quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0 }
-        });
+        jsonResponse(res, 500, { success: false, refilled, message: refilled ? 'Generate gagal: ' + apiErr.message + '. Kuota dikembalikan.' : 'Generate gagal: ' + apiErr.message, quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0, totalQuota: (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0) } });
       }
 
     } else if (parsedUrl.pathname === '/api/verif' && req.method === 'POST') {
       const body = await readBody(req);
       const { email, url: verifyUrl, username } = JSON.parse(body);
       let userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
-      
-      // CHECK SERVER ONLINE (kecuali admin)
-      if (currentServerStatus !== 'online' && (!userObj || !userObj.isAdmin)) {
-        return jsonResponse(res, 403, { error: 'Server sedang offline.' });
-      }
-      
+      if (currentServerStatus !== 'online' && (!userObj || !userObj.isAdmin)) return jsonResponse(res, 403, { error: 'Server offline.' });
       if (!email || !verifyUrl) return jsonResponse(res, 400, { error: 'Parameter email dan url diperlukan.' });
-
       const result = await am.verif(email, verifyUrl);
       jsonResponse(res, 200, result);
 
@@ -8240,37 +4278,24 @@ const server = http.createServer(async (req, res) => {
     }
   } catch (err) {
     console.error('Server error:', err);
-    if (!res.headersSent) {
-      jsonResponse(res, 500, { success: false, message: err.message || 'Internal server error' });
-    }
+    if (!res.headersSent) jsonResponse(res, 500, { success: false, message: err.message || 'Internal server error' });
   }
 });
 
 server.listen(PORT, () => {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v6.0                                  ║');
+  console.log('║  🚀 AM Premium Banggus v7.0                                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
-  console.log('║  💳 Pembayaran via DANA: ' + DANA_ADMIN_NUMBER + '              ║');
+  console.log('║  💳 DANA Admin: ' + DANA_ADMIN_NUMBER + '                     ║');
   console.log('║  ──────────────────────────────────────────────────────────  ║');
-  console.log('║  🆕 FITUR BARU v6.0:                                         ║');
-  console.log('║  📧 TEMP MAIL GENERATOR (Email Sementara)                   ║');
-  console.log('║  🔄 Quota SAMA untuk semua fitur (AM, Netflix, APK, Mail)   ║');
-  console.log('║  🆔 Order ID otomatis setiap generate berhasil              ║');
-  console.log('║  📋 User bisa lihat orderan sendiri                         ║');
-  console.log('║  👑 Admin bisa lihat semua orderan user                     ║');
+  console.log('║  🆕 FITUR BARU v7.0:                                         ║');
+  console.log('║  👥 USER ONLINE TRACKING (heartbeat 20s + auto cleanup)     ║');
+  console.log('║  ⏰ BONUS QUOTA EXPIRY (2 hari tanpa pakai = hangus)        ║');
+  console.log('║  📊 Base Quota = 2 (kuota awal akun baru)                   ║');
+  console.log('║  🎨 UI REDESIGN (Inter + Space Grotesk, natural look)       ║');
   console.log('║  ──────────────────────────────────────────────────────────  ║');
   console.log('║  ✅ Semua fitur lama dipertahankan:                          ║');
-  console.log('║  🎨 Alight Motion Generator                                  ║');
-  console.log('║  🎬 Netflix Generator                                        ║');
-  console.log('║  📱 APK MOD Generator                                        ║');
-  console.log('║  🛒 VIP Shop + Upload Bukti Transfer DANA                    ║');
-  console.log('║  💾 Optimasi: Cache 30-60s, Lazy Load, Visibility API        ║');
-  console.log('║  📦 Chunked Upload Ready (>200MB)                            ║');
-  console.log('║  👥 User List Viewer + Delete Account                        ║');
-  console.log('║  📧 Gmail History + Reset Countdown                          ║');
-  console.log('║  💬 Global Chat (Polling 15s, hemat kuota)                   ║');
-  console.log('║  🔐 Change Password + Create VIP Account                     ║');
-  console.log('║  🎁 Redeem Code (Fixed Quota per User)                       ║');
-  console.log('║  💡 Request Fitur Baru (User → Admin)                        ║');
+  console.log('║  🎨 Alight Motion • 🎬 Netflix • 📱 APK MOD • 📧 Temp Mail  ║');
+  console.log('║  🛒 VIP Shop • 💬 Chat • 📋 Orders • 🎁 Redeem • 👑 Admin   ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
