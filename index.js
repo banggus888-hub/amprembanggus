@@ -228,7 +228,7 @@ async function getOnlineUsersFromDb() {
 async function saveOnlineUserToDb(username, data) { await set(ref(db, `onlineUsers/${username}`), data); }
 async function removeOnlineUserFromDb(username) { await set(ref(db, `onlineUsers/${username}`), null); }
 
-// ====== DEVICE SESSION HELPERS ======
+// ====== DEVICE SESSION HELPERS (BARU) ======
 async function getDeviceSessionsFromDb(username) {
   if (!username) return {};
   const snapshot = await get(child(ref(db), `deviceSessions/${username}`));
@@ -1013,7 +1013,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- SECTION PERANGKAT LOGIN -->
+    <!-- SECTION PERANGKAT LOGIN (BARU) -->
     <div id="section-devices" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0; color:var(--info);">
@@ -1547,29 +1547,6 @@ const htmlTemplate = `<!DOCTYPE html>
           <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Klik Refresh...</p>
         </div>
       </div>
-
-      <!-- ====== FITUR BARU: UBAH PASSWORD & USERNAME USER ====== -->
-      <div style="padding:11px; background:linear-gradient(135deg,var(--err-soft),var(--warn-soft)); border:1px solid rgba(248,113,113,0.3); border-radius:9px;">
-        <div class="section-head" style="color:var(--err); margin-top:0;">🔑 Ubah Password User</div>
-        <p style="font-size:10.5px; color:var(--text-2); margin:0 0 9px 0;">Admin dapat mengubah password user mana pun tanpa perlu password lama.</p>
-        <div style="display:flex; flex-direction:column; gap:7px;">
-          <input type="text" id="admin-change-pwd-username" placeholder="Username target" class="inp mono">
-          <input type="text" id="admin-change-pwd-newpass" placeholder="Password baru" class="inp mono">
-          <button onclick="handleAdminChangePassword()" class="btn btn-err btn-sm">Ubah Password User</button>
-        </div>
-      </div>
-
-      <div style="padding:11px; background:linear-gradient(135deg,var(--accent-soft),var(--info-soft)); border:1px solid rgba(139,124,246,0.3); border-radius:9px;">
-        <div class="section-head" style="color:var(--accent); margin-top:0;">✏️ Ubah Username User</div>
-        <p style="font-size:10.5px; color:var(--text-2); margin:0 0 9px 0;">Admin dapat mengganti username user kapan saja.</p>
-        <div style="display:flex; flex-direction:column; gap:7px;">
-          <input type="text" id="admin-change-uname-old" placeholder="Username lama" class="inp mono">
-          <input type="text" id="admin-change-uname-new" placeholder="Username baru" class="inp mono">
-          <button onclick="handleAdminChangeUsername()" class="btn btn-sm" style="background:var(--accent);">Ubah Username User</button>
-        </div>
-      </div>
-      <!-- ====== END FITUR BARU ====== -->
-
       <div>
         <div class="section-head" style="color:var(--warn);">Generate Redeem</div>
         <input type="text" id="gen-code" placeholder="NAMA-KODE" class="inp mono" style="margin-bottom:7px; text-transform:uppercase; font-weight:700;">
@@ -1734,7 +1711,7 @@ function getCached(key) {
 }
 function setCache(key, data, duration) { memoryCache[key] = { data, time: Date.now(), duration }; }
 
-// ====== DEVICE FINGERPRINT ======
+// ====== DEVICE FINGERPRINT (BARU) ======
 function getDeviceFingerprint() {
   try {
     const nav = window.navigator;
@@ -1751,6 +1728,7 @@ function getDeviceFingerprint() {
       nav.deviceMemory || '',
       nav.maxTouchPoints || ''
     ];
+    // Simple hash
     let hash = 0;
     const str = parts.join('|');
     for (let i = 0; i < str.length; i++) {
@@ -1911,65 +1889,7 @@ function guardServerOnline(featureName) {
   return false;
 }
 
-// ====== FITUR BARU: ADMIN UBAH PASSWORD & USERNAME USER ======
-async function handleAdminChangePassword() {
-  if (!isAdminUser) return showToast('Akses ditolak!', 'error');
-  const targetUsername = document.getElementById('admin-change-pwd-username').value.trim().toLowerCase();
-  const newPassword = document.getElementById('admin-change-pwd-newpass').value.trim();
-  if (!targetUsername) return showToast('Masukkan username target!', 'error');
-  if (!newPassword) return showToast('Masukkan password baru!', 'error');
-  if (newPassword.length < 4) return showToast('Password minimal 4 karakter!', 'error');
-  if (!confirm('Ubah password user "' + targetUsername + '"?\n\nUser akan login dengan password baru.')) return;
-  try {
-    const res = await fetch('/api/admin/change-user-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, targetUsername, newPassword })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('✅ Password "' + targetUsername + '" berhasil diubah!', 'success', 4000);
-      document.getElementById('admin-change-pwd-username').value = '';
-      document.getElementById('admin-change-pwd-newpass').value = '';
-    } else {
-      showToast(data.message || 'Gagal', 'error');
-    }
-  } catch(e) {
-    showToast('Kesalahan koneksi', 'error');
-  }
-}
-
-async function handleAdminChangeUsername() {
-  if (!isAdminUser) return showToast('Akses ditolak!', 'error');
-  const oldUsername = document.getElementById('admin-change-uname-old').value.trim().toLowerCase();
-  const newUsername = document.getElementById('admin-change-uname-new').value.trim().toLowerCase();
-  if (!oldUsername || !newUsername) return showToast('Lengkapi username lama & baru!', 'error');
-  if (oldUsername === newUsername) return showToast('Username sama!', 'error');
-  if (newUsername.length < 3) return showToast('Username minimal 3 karakter!', 'error');
-  if (!/^[a-z0-9_]+$/.test(newUsername)) return showToast('Username hanya huruf kecil, angka, underscore!', 'error');
-  if (!confirm('Ubah username "' + oldUsername + '" menjadi "' + newUsername + '"?\n\nSemua data (kuota, VIP, order) akan dipindahkan.')) return;
-  try {
-    const res = await fetch('/api/admin/change-username', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: loggedInUsername, oldUsername, newUsername })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('✅ Username diubah: "' + oldUsername + '" → "' + newUsername + '"', 'success', 5000);
-      document.getElementById('admin-change-uname-old').value = '';
-      document.getElementById('admin-change-uname-new').value = '';
-      loadAllUsers();
-    } else {
-      showToast(data.message || 'Gagal', 'error');
-    }
-  } catch(e) {
-    showToast('Kesalahan koneksi', 'error');
-  }
-}
-// ====== END FITUR BARU ======
-
-// ====== DEVICE SESSION FUNCTIONS ======
+// ====== DEVICE SESSION FUNCTIONS (BARU) ======
 async function loadDeviceSessions(force = false) {
   if (!loggedInUsername) return;
   const container = document.getElementById('device-sessions-list');
@@ -2190,10 +2110,12 @@ function updateMailQuotaDisplay() {
   if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
 }
 
+// FUNGSI AUTO REFRESH TEMP MAIL
 function startMailAutoRefresh() {
   if (mailAutoRefreshInterval) clearInterval(mailAutoRefreshInterval);
   mailAutoRefreshInterval = setInterval(async () => {
     if (!isPageVisible || !tempMailSession || currentView !== 'tempmail') return;
+    
     try {
       const res = await fetch('/api/tempmail/check', { 
         method:'POST', 
@@ -2201,18 +2123,23 @@ function startMailAutoRefresh() {
         body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession }) 
       });
       const data = await res.json();
+      
       if (data.success && data.messages) {
         if (data.messages.length > lastMailMessageCount) {
           showToast('📧 Pesan baru masuk!', 'mail');
           lastMailMessageCount = data.messages.length;
+          
           document.getElementById('mail-message-count').innerText = data.messages.length + ' pesan';
+          
           const inboxList = document.getElementById('mail-inbox-list');
           if (data.messages.length > 0) {
             inboxList.innerHTML = data.messages.map((msg, idx) => {
               const isNew = idx === 0;
               const animClass = isNew ? 'mail-new' : '';
+              
               const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
                 ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
+              
               return '<div class="hist-item ' + animClass + '" style="border-color:rgba(96,165,250,0.25);"><div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div><div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' + linksHtml + '</div>';
             }).join('');
           } else {
@@ -2220,7 +2147,8 @@ function startMailAutoRefresh() {
           }
         }
       }
-    } catch (e) {}
+    } catch (e) {
+    }
   }, 5000);
 }
 
@@ -2264,7 +2192,9 @@ async function handleGenerateTempMail() {
       resultContainer.classList.remove('hide');
       document.getElementById('mail-inbox-list').innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Menunggu email (Auto-Refresh Aktif)...</p>';
       document.getElementById('mail-message-count').innerText = '0 pesan';
+      
       startMailAutoRefresh();
+      
       if (genData.quotaInfo) { userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(genData.quotaInfo); updateMailQuotaDisplay(); }
       if (genData.orderId) showToast('✅ Order ID: ' + genData.orderId, 'order', 5000);
       else showToast('Email berhasil!', 'mail');
@@ -3963,75 +3893,7 @@ const server = http.createServer(async (req, res) => {
       });
       res.end(htmlTemplate);
 
-    // ====== FITUR BARU: ADMIN UBAH PASSWORD USER ======
-    } else if (parsedUrl.pathname === '/api/admin/change-user-password' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { adminUsername, targetUsername, newPassword } = JSON.parse(body);
-      if (!adminUsername || !targetUsername || !newPassword) {
-        return jsonResponse(res, 400, { success: false, message: 'Parameter tidak lengkap.' });
-      }
-      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak! Anda bukan admin.' });
-      }
-      const cleanTarget = targetUsername.toLowerCase().trim();
-      const targetObj = await getUserFromDb(cleanTarget);
-      if (!targetObj) {
-        return jsonResponse(res, 404, { success: false, message: 'User "' + cleanTarget + '" tidak ditemukan.' });
-      }
-      if (newPassword.length < 4) {
-        return jsonResponse(res, 400, { success: false, message: 'Password minimal 4 karakter.' });
-      }
-      targetObj.password = newPassword;
-      await saveUserToDb(cleanTarget, targetObj);
-      console.log('[ADMIN] ' + adminUsername + ' mengubah password user ' + cleanTarget);
-      jsonResponse(res, 200, { success: true, message: 'Password user "' + cleanTarget + '" berhasil diubah!' });
-
-    // ====== FITUR BARU: ADMIN UBAH USERNAME USER ======
-    } else if (parsedUrl.pathname === '/api/admin/change-username' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { adminUsername, oldUsername, newUsername } = JSON.parse(body);
-      if (!adminUsername || !oldUsername || !newUsername) {
-        return jsonResponse(res, 400, { success: false, message: 'Parameter tidak lengkap.' });
-      }
-      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
-      if (!adminObj || !adminObj.isAdmin) {
-        return jsonResponse(res, 403, { success: false, message: 'Akses ditolak! Anda bukan admin.' });
-      }
-      const cleanOld = oldUsername.toLowerCase().trim();
-      const cleanNew = newUsername.toLowerCase().trim();
-      if (cleanOld === cleanNew) {
-        return jsonResponse(res, 400, { success: false, message: 'Username lama dan baru sama.' });
-      }
-      if (cleanNew.length < 3) {
-        return jsonResponse(res, 400, { success: false, message: 'Username baru minimal 3 karakter.' });
-      }
-      if (!/^[a-z0-9_]+$/.test(cleanNew)) {
-        return jsonResponse(res, 400, { success: false, message: 'Username hanya boleh huruf kecil, angka, dan underscore.' });
-      }
-      const existingTarget = await getUserFromDb(cleanNew);
-      if (existingTarget) {
-        return jsonResponse(res, 400, { success: false, message: 'Username "' + cleanNew + '" sudah digunakan user lain.' });
-      }
-      const targetObj = await getUserFromDb(cleanOld);
-      if (!targetObj) {
-        return jsonResponse(res, 404, { success: false, message: 'User "' + cleanOld + '" tidak ditemukan.' });
-      }
-      // Pindahkan data user ke username baru
-      await saveUserToDb(cleanNew, targetObj);
-      await deleteUserFromDb(cleanOld);
-      // Pindahkan device sessions
-      try {
-        const oldSessions = await getDeviceSessionsFromDb(cleanOld);
-        if (oldSessions && Object.keys(oldSessions).length > 0) {
-          await set(ref(db, `deviceSessions/${cleanNew}`), oldSessions);
-          await removeAllDeviceSessionsFromDb(cleanOld);
-        }
-      } catch(e) {}
-      console.log('[ADMIN] ' + adminUsername + ' mengubah username: ' + cleanOld + ' → ' + cleanNew);
-      jsonResponse(res, 200, { success: true, message: 'Username berhasil diubah dari "' + cleanOld + '" menjadi "' + cleanNew + '".', oldUsername: cleanOld, newUsername: cleanNew });
-
-    // ====== DEVICE SESSION ENDPOINTS ======
+    // ====== DEVICE SESSION ENDPOINTS (BARU) ======
     } else if (parsedUrl.pathname === '/api/devices/list' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       const currentDeviceId = parsedUrl.searchParams.get('deviceId');
@@ -4892,9 +4754,11 @@ const server = http.createServer(async (req, res) => {
       const existingSession = sessions[incomingDeviceId];
       
       if (!existingSession) {
+        // Check if this device was previously kicked
         return jsonResponse(res, 401, { success: false, message: 'Sesi perangkat tidak valid. Silakan login ulang.', kicked: true });
       }
       
+      // Update last active
       existingSession.lastActive = Date.now();
       await saveDeviceSessionToDb(cleanUser, incomingDeviceId, existingSession);
       
@@ -4920,6 +4784,8 @@ const server = http.createServer(async (req, res) => {
         if (cleanUser === 'adminbaguss' || existingUser) return jsonResponse(res, 400, { success: false, message: 'Username tidak tersedia!' });
         const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
         await saveUserToDb(cleanUser, { password, email, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
+        
+        // Register device session
         const sessionId = incomingDeviceId;
         await saveDeviceSessionToDb(cleanUser, sessionId, {
           deviceId: sessionId,
@@ -4930,17 +4796,24 @@ const server = http.createServer(async (req, res) => {
           lastActive: Date.now(),
           deviceToken: newDeviceToken
         });
+        
         const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
         return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: fakeAuthToken, deviceId: sessionId });
       } else {
         if (existingUser && existingUser.password === password) {
           await checkAndExpireBonusQuota(cleanUser);
           existingUser = await getUserFromDb(cleanUser);
+          
+          // Manage device sessions
           const sessions = await getDeviceSessionsFromDb(cleanUser);
           const sessionKeys = Object.keys(sessions);
+          
+          // If max devices reached and this is new device, reject
           if (!sessions[incomingDeviceId] && sessionKeys.length >= MAX_DEVICES_PER_USER) {
             return jsonResponse(res, 403, { success: false, message: 'Batas maksimal ' + MAX_DEVICES_PER_USER + ' perangkat tercapai. Keluarkan perangkat lain terlebih dahulu.', maxDevices: true });
           }
+          
+          // Save/update device session
           await saveDeviceSessionToDb(cleanUser, incomingDeviceId, {
             deviceId: incomingDeviceId,
             deviceInfo,
@@ -4950,6 +4823,7 @@ const server = http.createServer(async (req, res) => {
             lastActive: Date.now(),
             deviceToken: deviceToken || existingUser.deviceToken || null
           });
+          
           const now = Date.now();
           const twentyFourHours = 24 * 60 * 60 * 1000;
           if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
@@ -5026,14 +4900,14 @@ function getDefaultDeviceId(req) {
 
 server.listen(PORT, () => {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v7.3                                  ║');
+  console.log('║  🚀 AM Premium Banggus v7.2                                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
   console.log('║  💳 DANA Admin: ' + DANA_ADMIN_NUMBER + '                     ║');
   console.log('║  ──────────────────────────────────────────────────────────  ║');
-  console.log('║  ✨ UPDATE v7.3:                                             ║');
-  console.log('║  🔑 ADMIN BISA UBAH PASSWORD USER (BARU)                    ║');
-  console.log('║  ✏️  ADMIN BISA UBAH USERNAME USER (BARU)                    ║');
-  console.log('║  📱 Fitur cek perangkat login                              ║');
-  console.log('║  🔒 Keluarkan perangkat lain                                ║');
+  console.log('║  ✨ UPDATE v7.2:                                             ║');
+  console.log('║  📱 FITUR CEK PERANGKAT LOGIN (BARU)                        ║');
+  console.log('║  🔒 KELUARKAN PERANGKAT LAIN (FORCE LOGOUT)                 ║');
+  console.log('║  📧 TEMP MAIL AUTO-REFRESH                                  ║');
+  console.log('║  🎨 UI AUTH REDESIGN                                        ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
