@@ -6,6 +6,8 @@ const os = require('os');
 const tls = require('tls');
 const crypto = require('crypto');
 const Go = require('@xof/fetch');
+const axios = require('axios');
+const FormData = require('form-data');
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, get, set, child, remove } = require('firebase/database');
 
@@ -41,7 +43,7 @@ const BONUS_EXPIRY_MS = 2 * 24 * 60 * 60 * 1000;
 const BASE_QUOTA = 2;
 
 // ====== KONFIGURASI SESI PERANGKAT ======
-const DEVICE_SESSION_TIMEOUT = 30 * 24 * 60 * 60 * 1000; // 30 hari
+const DEVICE_SESSION_TIMEOUT = 30 * 24 * 60 * 60 * 1000;
 const MAX_DEVICES_PER_USER = 5;
 
 // ====== NETFLIX CONFIG ======
@@ -61,6 +63,9 @@ const NETFLIX_COUNTRY = {
 const TEMP_MAIL_BASE_URL = "https://temp-mail.app";
 const TEMP_MAIL_MAX_RETRIES = 20;
 const TEMP_MAIL_RETRY_DELAY = 3000;
+
+// ====== HD PHOTO CONFIG ======
+const HD_PHOTO_API = 'https://app.kyzznekoo.my.id/api/imgbb/upscale-image';
 
 const tempMailSessions = {};
 
@@ -202,6 +207,13 @@ async function getApkRequestsFromDb() {
 }
 async function saveApkRequestToDb(id, data) { await set(ref(db, `apkRequests/${id}`), data); }
 
+// ====== HD PHOTO RESULTS HELPERS ======
+async function getHdPhotoResultsFromDb() {
+  const snapshot = await get(child(ref(db), `hdPhotoResults`));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+async function saveHdPhotoResultToDb(id, data) { await set(ref(db, `hdPhotoResults/${id}`), data); }
+
 // ====== ORDER HELPERS ======
 async function getOrdersFromDb() {
   const snapshot = await get(child(ref(db), `orders`));
@@ -228,7 +240,7 @@ async function getOnlineUsersFromDb() {
 async function saveOnlineUserToDb(username, data) { await set(ref(db, `onlineUsers/${username}`), data); }
 async function removeOnlineUserFromDb(username) { await set(ref(db, `onlineUsers/${username}`), null); }
 
-// ====== DEVICE SESSION HELPERS (BARU) ======
+// ====== DEVICE SESSION HELPERS ======
 async function getDeviceSessionsFromDb(username) {
   if (!username) return {};
   const snapshot = await get(child(ref(db), `deviceSessions/${username}`));
@@ -431,6 +443,29 @@ const am = {
   }
 };
 
+// ====== HD PHOTO UPSCALER ======
+async function upscaleHdPhoto(imageBuffer, filename, mimeType, upscaleLevel = '2') {
+  const form = new FormData();
+  form.append('file', imageBuffer, {
+    filename: filename || 'image.jpg',
+    contentType: mimeType || 'image/jpeg'
+  });
+  form.append('upscale', upscaleLevel);
+
+  const response = await axios.post(HD_PHOTO_API, form, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36',
+      'X-apikey': config.kyzznekooApiKey,
+      ...form.getHeaders()
+    },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+    timeout: 120000
+  });
+
+  return response.data;
+}
+
 // ====== TEMP MAIL FUNCTIONS ======
 function tempMailApiRequest(sessionState, path, params = {}) {
   const urlObj = new URL(`${TEMP_MAIL_BASE_URL}${path}`);
@@ -621,6 +656,7 @@ const htmlTemplate = `<!DOCTYPE html>
     --err: #f87171; --err-soft: rgba(248,113,113,0.12);
     --info: #60a5fa; --info-soft: rgba(96,165,250,0.12);
     --netflix: #e50914; --apk: #4ade80; --mail: #60a5fa;
+    --hd: #f472b6; --hd-soft: rgba(244,114,182,0.12);
   }
   * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
   html, body { width:100%; max-width:100%; overflow-x:hidden; margin:0; padding:0; background:var(--bg-0); color:var(--text-0); font-family:'Inter',system-ui,sans-serif; font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased; }
@@ -657,6 +693,8 @@ const htmlTemplate = `<!DOCTYPE html>
   .btn-apk:hover:not(:disabled) { background:#3ecf70; }
   .btn-mail { background:var(--mail); }
   .btn-mail:hover:not(:disabled) { background:#4a90e2; }
+  .btn-hd { background:var(--hd); }
+  .btn-hd:hover:not(:disabled) { background:#e85d9e; }
   .btn-warn { background:var(--warn); color:#3a2800; }
   .btn-warn:hover:not(:disabled) { background:#e6ac1e; }
   .btn-info { background:var(--info); }
@@ -668,6 +706,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .badge-info { background:var(--info-soft); color:var(--info); border:1px solid rgba(96,165,250,0.25); }
   .badge-accent { background:var(--accent-soft); color:var(--accent); border:1px solid rgba(139,124,246,0.25); }
   .badge-muted { background:var(--bg-2); color:var(--text-1); border:1px solid var(--line-2); }
+  .badge-hd { background:var(--hd-soft); color:var(--hd); border:1px solid rgba(244,114,182,0.25); }
   #nav-drawer { position:fixed; top:0; bottom:0; right:0; width:86%; max-width:340px; background:var(--bg-1); border-left:1px solid var(--line-2); z-index:50; transform:translateX(105%); transition:transform 0.25s cubic-bezier(0.32,0.72,0,1); display:flex; flex-direction:column; padding:16px; overflow-y:auto; }
   #nav-drawer.open { transform:translateX(0); }
   .nav-link { display:flex; align-items:center; gap:10px; width:100%; padding:10px 12px; border-radius:9px; background:transparent; color:var(--text-1); font-size:13px; font-weight:500; border:1px solid transparent; cursor:pointer; text-align:left; font-family:inherit; transition:background 0.12s, color 0.12s, border-color 0.12s; }
@@ -676,6 +715,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .nav-link.netflix-nav.active { background:rgba(229,9,20,0.12); color:#ff6b6b; border-color:rgba(229,9,20,0.3); }
   .nav-link.apk-nav.active { background:var(--ok-soft); color:var(--ok); border-color:rgba(74,222,128,0.3); }
   .nav-link.mail-nav.active { background:var(--info-soft); color:var(--info); border-color:rgba(96,165,250,0.3); }
+  .nav-link.hd-nav.active { background:var(--hd-soft); color:var(--hd); border-color:rgba(244,114,182,0.3); }
   .nav-link.orders-nav.active { background:rgba(96,165,250,0.12); color:#7dd3fc; border-color:rgba(96,165,250,0.3); }
   .nav-section-label { font-size:10px; font-weight:700; color:var(--text-2); text-transform:uppercase; letter-spacing:0.1em; padding:14px 12px 6px 12px; }
   .stat { background:var(--bg-2); border:1px solid var(--line-2); border-radius:10px; padding:11px 13px; display:flex; align-items:center; justify-content:space-between; }
@@ -691,12 +731,13 @@ const htmlTemplate = `<!DOCTYPE html>
   .toast-netflix { background:#3a0a0c; color:#fecaca; border:1px solid #5f0a0d; }
   .toast-apk { background:#1a3a26; color:#a7f3c8; border:1px solid #2d5f3f; }
   .toast-mail { background:#0a1f3a; color:#bfdbfe; border:1px solid #0a3d5f; }
+  .toast-hd { background:#3a1a2a; color:#fbcfe8; border:1px solid #5f0a3d; }
   .toast-order { background:#0a2a3a; color:#bae6fd; border:1px solid #0a4a5f; }
   .toast-device { background:#1a1a3a; color:#c7d2fe; border:1px solid #2f2f5f; }
   .prog { height:6px; background:var(--bg-0); border-radius:999px; overflow:hidden; }
   .prog-fill { height:100%; background:var(--accent); border-radius:999px; transition:width 0.25s; width:0%; }
   .dropzone { border:1.5px dashed var(--line-2); border-radius:10px; padding:20px 12px; text-align:center; cursor:pointer; transition:border-color 0.15s, background 0.15s; }
-  .dropzone:hover, .dropzone.dragover { border-color:var(--accent); background:var(--accent-soft); }
+  .dropzone:hover, .dropzone.dragover { border-color:var(--hd); background:var(--hd-soft); }
   .chat-wrap { height:400px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; display:flex; flex-direction:column; overflow:hidden; }
   .chat-stream { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; }
   .chat-msg { max-width:82%; padding:8px 11px; border-radius:10px; font-size:12.5px; line-height:1.45; word-wrap:break-word; animation:fadeUp 0.25s; }
@@ -793,7 +834,6 @@ const htmlTemplate = `<!DOCTYPE html>
     100% { box-shadow: 0 0 0 0 rgba(96,165,250,0); }
   }
 
-  /* Device session styles */
   .device-card {
     background: var(--bg-2);
     border: 1px solid var(--line-2);
@@ -821,6 +861,23 @@ const htmlTemplate = `<!DOCTYPE html>
   .device-icon.mobile { background: var(--accent-soft); color: var(--accent); }
   .device-icon.desktop { background: var(--info-soft); color: var(--info); }
   .device-icon.tablet { background: var(--warn-soft); color: var(--warn); }
+
+  .hd-preview {
+    width: 100%;
+    border-radius: 10px;
+    border: 1px solid var(--line-2);
+    max-height: 300px;
+    object-fit: contain;
+    background: var(--bg-0);
+  }
+  .hd-preview-sm {
+    width: 100%;
+    max-height: 160px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--line-2);
+    background: var(--bg-0);
+  }
 </style>
 </head>
 <body>
@@ -866,6 +923,7 @@ const htmlTemplate = `<!DOCTYPE html>
     <button onclick="switchView('netflix')" data-nav="netflix" class="nav-link netflix-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/></svg>Netflix Token</button>
     <button onclick="switchView('apkmod')" data-nav="apkmod" class="nav-link apk-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>APK MOD</button>
     <button onclick="switchView('tempmail')" data-nav="tempmail" class="nav-link mail-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>Temp Mail<span class="badge badge-info" style="margin-left:auto; font-size:9px; padding:1px 6px;">NEW</span></button>
+    <button onclick="switchView('hdphoto')" data-nav="hdphoto" class="nav-link hd-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>HD Photo<span class="badge badge-hd" style="margin-left:auto; font-size:9px; padding:1px 6px;">NEW</span></button>
     <button onclick="switchView('orders')" data-nav="orders" class="nav-link orders-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>Orderan Saya</button>
     <div class="nav-section-label">Akun</div>
     <button onclick="switchView('vipshop')" data-nav="vipshop" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>Beli VIP<span class="badge badge-warn" style="margin-left:auto; font-size:9px; padding:1px 6px;">HOT</span></button>
@@ -1013,7 +1071,72 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- SECTION PERANGKAT LOGIN (BARU) -->
+    <!-- ====== SECTION HD PHOTO (BARU) ====== -->
+    <div id="section-hdphoto" class="hide" style="display:flex; flex-direction:column; gap:10px;">
+      <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between; border-color:rgba(244,114,182,0.3);">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,var(--hd),#ec4899); display:flex; align-items:center; justify-content:center; font-weight:900; color:white; font-size:12px;">HD</div>
+          <div><div style="font-weight:700; font-size:13px;">HD Photo</div><div style="font-size:10.5px; color:var(--hd);">Upscale foto ke HD</div></div>
+        </div>
+        <span class="badge badge-ok"><span class="online-dot"></span>Ready</span>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="stat" style="border-color:rgba(244,114,182,0.3);"><div><div class="stat-label">Kuota</div><div id="hd-quota-display" class="stat-value">0</div></div></div>
+        <div class="stat" style="border-color:rgba(244,114,182,0.3);"><div><div class="stat-label">Reset</div><div id="hd-reset-display" class="stat-value">24 Jam</div></div></div>
+      </div>
+      <div style="padding:10px 12px; background:var(--hd-soft); border:1px solid rgba(244,114,182,0.25); border-radius:10px; font-size:11px; color:var(--hd); display:flex; gap:6px; align-items:flex-start;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-top:1px; flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span><strong>Quota sama</strong> dengan semua fitur — setiap upload = -1 quota</span>
+      </div>
+      <div class="card" style="border-color:rgba(244,114,182,0.3); display:flex; flex-direction:column; gap:12px;">
+        <div class="section-head" style="color:var(--hd);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>Upload Foto</div>
+        <div class="dropzone" id="hd-dropzone" onclick="document.getElementById('hd-photo-file').click()">
+          <input type="file" id="hd-photo-file" accept="image/*" class="hide" onchange="handleHdPhotoSelect(event)">
+          <div id="hd-file-info" style="font-size:12px; font-weight:600;">Klik atau drop foto di sini</div>
+          <div style="font-size:10.5px; color:var(--text-2); margin-top:3px;">JPG, PNG, WEBP • max 10MB</div>
+        </div>
+        <div id="hd-preview-container" class="hide">
+          <img id="hd-preview-image" class="hd-preview" alt="Preview">
+        </div>
+        <div>
+          <label class="field-label">Tingkat Upscale</label>
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px;">
+            <button onclick="selectHdUpscale('2')" data-upscale="2" class="btn btn-ghost btn-sm hd-upscale-btn">2x</button>
+            <button onclick="selectHdUpscale('4')" data-upscale="4" class="btn btn-ghost btn-sm hd-upscale-btn">4x</button>
+            <button onclick="selectHdUpscale('8')" data-upscale="8" class="btn btn-ghost btn-sm hd-upscale-btn">8x</button>
+          </div>
+        </div>
+        <button id="btn-generate-hd" onclick="handleGenerateHdPhoto()" class="btn btn-hd"><span id="hd-btn-text">Upscale Sekarang</span></button>
+      </div>
+      <div id="hd-loading" class="hide card" style="border-color:rgba(244,114,182,0.3);">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+          <div style="width:34px; height:34px; border-radius:9px; background:var(--hd-soft); display:flex; align-items:center; justify-content:center;">
+            <svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--hd)" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
+          </div>
+          <div><div style="font-weight:700; font-size:12px;">Memproses...</div><div id="hd-status-text" style="font-size:10.5px; color:var(--text-2);">Menyiapkan gambar</div></div>
+        </div>
+        <div class="prog"><div id="hd-progress-fill" class="prog-fill" style="background:var(--hd);"></div></div>
+        <p id="hd-log-text" class="mono" style="font-size:10px; color:var(--text-2); margin-top:8px; text-align:center;">Initializing...</p>
+      </div>
+      <div id="hd-results-container" class="hide" style="display:flex; flex-direction:column; gap:9px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div class="section-head" style="margin:0; color:var(--hd);">Hasil</div>
+          <button onclick="clearHdResults()" class="btn btn-ghost btn-xs">Bersihkan</button>
+        </div>
+        <div id="hd-results-list" style="display:flex; flex-direction:column; gap:9px;"></div>
+      </div>
+      <div class="card" style="border-color:rgba(244,114,182,0.2);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--hd); letter-spacing:0.06em;">Riwayat</div>
+          <button onclick="loadHdHistory()" class="btn btn-ghost btn-xs">Refresh</button>
+        </div>
+        <div id="hd-history-list" style="display:flex; flex-direction:column; gap:7px; max-height:220px; overflow-y:auto;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION PERANGKAT LOGIN -->
     <div id="section-devices" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0; color:var(--info);">
@@ -1115,7 +1238,7 @@ const htmlTemplate = `<!DOCTYPE html>
         <div style="padding:8px 4px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--info); font-weight:700; text-transform:uppercase;">Total</div><div id="my-orders-total" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
         <div style="padding:8px 4px; background:var(--accent-soft); border:1px solid rgba(139,124,246,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--accent); font-weight:700; text-transform:uppercase;">AM</div><div id="my-orders-am" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
         <div style="padding:8px 4px; background:var(--err-soft); border:1px solid rgba(248,113,113,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--err); font-weight:700; text-transform:uppercase;">NFLX</div><div id="my-orders-netflix" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
-        <div style="padding:8px 4px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--info); font-weight:700; text-transform:uppercase;">Mail</div><div id="my-orders-mail" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
+        <div style="padding:8px 4px; background:var(--hd-soft); border:1px solid rgba(244,114,182,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--hd); font-weight:700; text-transform:uppercase;">HD</div><div id="my-orders-hd" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
       </div>
       <div style="display:flex; gap:7px;">
         <input type="text" id="order-search-input" oninput="renderMyOrders()" placeholder="Cari Order ID..." class="inp mono" style="flex:1;">
@@ -1244,6 +1367,7 @@ const htmlTemplate = `<!DOCTYPE html>
           <div>✦ Generate Netflix tanpa batas</div>
           <div>✦ Request APK MOD tanpa batas</div>
           <div>✦ Generate Temp Mail tanpa batas</div>
+          <div>✦ Upscale HD Photo tanpa batas</div>
           <div>✦ Kuota unlimited</div>
           <div>✦ Badge VIP eksklusif</div>
         </div>
@@ -1487,6 +1611,7 @@ const htmlTemplate = `<!DOCTYPE html>
           <button onclick="setAdminOrderFilter('netflix')" data-afilter="netflix" class="admin-order-filter btn btn-ghost btn-xs">NFLX</button>
           <button onclick="setAdminOrderFilter('apk')" data-afilter="apk" class="admin-order-filter btn btn-ghost btn-xs">APK</button>
           <button onclick="setAdminOrderFilter('mail')" data-afilter="mail" class="admin-order-filter btn btn-ghost btn-xs">Mail</button>
+          <button onclick="setAdminOrderFilter('hd')" data-afilter="hd" class="admin-order-filter btn btn-ghost btn-xs">HD</button>
         </div>
         <input type="text" id="admin-order-search" oninput="renderAdminOrders()" placeholder="Cari..." class="inp mono" style="margin-bottom:7px;">
         <div id="admin-orders-list" style="display:flex; flex-direction:column; gap:6px; max-height:250px; overflow-y:auto; font-size:11px;">
@@ -1596,9 +1721,10 @@ const htmlTemplate = `<!DOCTYPE html>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--netflix); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">3</div><div style="font-size:12px; color:var(--text-1);"><strong>Netflix:</strong> Pilih plan, klik Generate, tunggu proses</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--ok); color:#032a17; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">4</div><div style="font-size:12px; color:var(--text-1);"><strong>APK MOD:</strong> Pilih APK, klik Dapatkan Link</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">5</div><div style="font-size:12px; color:var(--text-1);"><strong>Temp Mail:</strong> Generate email, copy, cek inbox (Otomatis Terbuka)</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>Perangkat Login:</strong> Cek perangkat aktif & keluarkan perangkat lain</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">7</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">8</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai.</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--hd); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>HD Photo:</strong> Upload foto, pilih upscale, klik Upscale Sekarang</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">7</div><div style="font-size:12px; color:var(--text-1);"><strong>Perangkat Login:</strong> Cek perangkat aktif & keluarkan perangkat lain</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">8</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">9</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai.</div></div>
       </div>
     </div>
 
@@ -1690,17 +1816,23 @@ let lastMailHistoryFetch = 0;
 let lastMyOrdersFetch = 0;
 let lastAdminOrdersFetch = 0;
 let lastDeviceSessionsFetch = 0;
+let lastHdHistoryFetch = 0;
 
 // Device session state
 let currentDeviceId = null;
 let currentDeviceToken = null;
 let deviceSessions = [];
 
+// HD Photo state
+let selectedHdFile = null;
+let selectedHdUpscale = '2';
+let hdResults = [];
+
 // Variabel untuk Auto Refresh Temp Mail
 let mailAutoRefreshInterval = null;
 let lastMailMessageCount = 0;
 
-const CACHE_DURATION = { status:30000, video:60000, chat:15000, emails:30000, redeems:60000, announcements:60000, netflixHistory:30000, apkHistory:30000, mailHistory:30000, myOrders:15000, adminOrders:15000, onlineUsers:15000, deviceSessions:20000 };
+const CACHE_DURATION = { status:30000, video:60000, chat:15000, emails:30000, redeems:60000, announcements:60000, netflixHistory:30000, apkHistory:30000, mailHistory:30000, myOrders:15000, adminOrders:15000, onlineUsers:15000, deviceSessions:20000, hdHistory:30000 };
 const memoryCache = {};
 
 function getCached(key) {
@@ -1711,7 +1843,7 @@ function getCached(key) {
 }
 function setCache(key, data, duration) { memoryCache[key] = { data, time: Date.now(), duration }; }
 
-// ====== DEVICE FINGERPRINT (BARU) ======
+// ====== DEVICE FINGERPRINT ======
 function getDeviceFingerprint() {
   try {
     const nav = window.navigator;
@@ -1728,7 +1860,6 @@ function getDeviceFingerprint() {
       nav.deviceMemory || '',
       nav.maxTouchPoints || ''
     ];
-    // Simple hash
     let hash = 0;
     const str = parts.join('|');
     for (let i = 0; i < str.length; i++) {
@@ -1761,6 +1892,7 @@ document.addEventListener('visibilitychange', () => {
     if (currentView === 'vipshop') loadUserTransactions();
     if (currentView === 'netflix') loadNetflixHistory(true);
     if (currentView === 'apkmod') loadApkHistory(true);
+    if (currentView === 'hdphoto') loadHdHistory(true);
     if (currentView === 'tempmail') { loadTempMailHistory(true); if(tempMailSession) startMailAutoRefresh(); }
     if (currentView === 'orders') loadMyOrders(true);
     if (currentView === 'devices') loadDeviceSessions(true);
@@ -1842,11 +1974,12 @@ function switchView(viewName) {
   currentView = viewName;
   document.querySelectorAll('[data-nav]').forEach(el => { el.classList.toggle('active', el.dataset.nav === viewName); });
   toggleMenu();
-  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-apkmod','section-tempmail','section-orders','section-devices'].forEach(id => { document.getElementById(id).classList.add('hide'); });
+  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-apkmod','section-tempmail','section-orders','section-devices','section-hdphoto'].forEach(id => { document.getElementById(id).classList.add('hide'); });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hide');
   else if (viewName === 'orders') { document.getElementById('section-orders').classList.remove('hide'); loadMyOrders(); }
   else if (viewName === 'netflix') { document.getElementById('section-netflix').classList.remove('hide'); loadNetflixHistory(); updateNetflixQuotaDisplay(); }
   else if (viewName === 'apkmod') { document.getElementById('section-apkmod').classList.remove('hide'); loadApkMods(); loadApkHistory(); updateApkQuotaDisplay(); }
+  else if (viewName === 'hdphoto') { document.getElementById('section-hdphoto').classList.remove('hide'); loadHdHistory(); updateHdQuotaDisplay(); }
   else if (viewName === 'tempmail') { 
     document.getElementById('section-tempmail').classList.remove('hide'); 
     loadTempMailHistory(); 
@@ -1889,7 +2022,158 @@ function guardServerOnline(featureName) {
   return false;
 }
 
-// ====== DEVICE SESSION FUNCTIONS (BARU) ======
+// ====== HD PHOTO FUNCTIONS ======
+function selectHdUpscale(level) {
+  selectedHdUpscale = level;
+  document.querySelectorAll('.hd-upscale-btn').forEach(btn => {
+    const isActive = btn.dataset.upscale === level;
+    btn.style.background = isActive ? 'var(--hd)' : '';
+    btn.style.color = isActive ? 'white' : '';
+    btn.style.borderColor = isActive ? 'var(--hd)' : '';
+  });
+}
+
+function handleHdPhotoSelect(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) return showToast('Harus file gambar!', 'error');
+  if (file.size > 10 * 1024 * 1024) return showToast('Max 10MB', 'error');
+  selectedHdFile = file;
+  const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+  document.getElementById('hd-file-info').innerText = '📎 ' + file.name + ' (' + sizeMB + ' MB)';
+  const preview = document.getElementById('hd-preview-image');
+  const container = document.getElementById('hd-preview-container');
+  const reader = new FileReader();
+  reader.onload = (e) => { preview.src = e.target.result; container.classList.remove('hide'); };
+  reader.readAsDataURL(file);
+  showToast('Foto siap di-upscale', 'hd');
+}
+
+function updateHdQuotaDisplay() {
+  const el = document.getElementById('hd-quota-display');
+  if (el) {
+    if (isAdminUser || isVipUser) { el.innerText = '∞'; el.style.color = 'var(--hd)'; }
+    else { const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota); el.innerText = remain; el.style.color = remain > 0 ? 'white' : 'var(--err)'; }
+  }
+  const resetEl = document.getElementById('hd-reset-display');
+  if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
+}
+
+async function handleGenerateHdPhoto() {
+  if (!loggedInUsername) return showToast('Harus login!', 'error');
+  if (!selectedHdFile) return showToast('Pilih foto dulu!', 'error');
+  if (!guardServerOnline('HD Photo')) return;
+  const btn = document.getElementById('btn-generate-hd');
+  const btnText = document.getElementById('hd-btn-text');
+  const loadingEl = document.getElementById('hd-loading');
+  const statusText = document.getElementById('hd-status-text');
+  const logText = document.getElementById('hd-log-text');
+  const progressFill = document.getElementById('hd-progress-fill');
+  btn.disabled = true; btnText.innerText = 'Memproses...';
+  loadingEl.classList.remove('hide'); progressFill.style.width = '0%';
+  statusText.innerText = 'Cek kuota...'; logText.innerText = 'Checking...';
+  try {
+    const quotaRes = await fetch('/api/hd/check-quota?username=' + encodeURIComponent(loggedInUsername));
+    const quotaData = await quotaRes.json();
+    if (!quotaData.success) throw new Error(quotaData.message || 'Gagal cek kuota');
+    if (!quotaData.allowed) throw new Error(quotaData.message || 'Quota habis!');
+    
+    statusText.innerText = 'Upload & upscale...'; logText.innerText = 'Uploading...'; progressFill.style.width = '20%';
+    
+    const formData = new FormData();
+    formData.append('image', selectedHdFile);
+    formData.append('upscale', selectedHdUpscale);
+    
+    const genRes = await fetch('/api/hd/upscale', {
+      method: 'POST',
+      headers: { 'X-Username': loggedInUsername },
+      body: formData
+    });
+    
+    progressFill.style.width = '80%';
+    const genData = await genRes.json();
+    progressFill.style.width = '100%';
+    
+    if (genData.success && genData.result) {
+      statusText.innerText = '✅ Berhasil!'; logText.innerText = 'Success';
+      addHdResult(genData.result);
+      if (genData.quotaInfo) { userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(genData.quotaInfo); updateHdQuotaDisplay(); }
+      if (genData.orderId) showToast('✅ Order ID: ' + genData.orderId, 'order', 5000);
+      else showToast('Foto berhasil di-upscale!', 'hd');
+      loadHdHistory(true);
+      setTimeout(() => loadingEl.classList.add('hide'), 2000);
+    } else {
+      if (genData.refilled) showToast(genData.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
+      else showToast(genData.message || 'Gagal', 'error');
+      if (genData.quotaInfo) { updateQuotaDisplay(genData.quotaInfo); updateHdQuotaDisplay(); }
+      else loadVerifiedEmails(true);
+      throw new Error(genData.message || 'Gagal');
+    }
+  } catch (err) {
+    statusText.innerText = '❌ Gagal'; logText.innerText = err.message;
+    if (!err.message.includes('dikembalikan')) showToast(err.message, 'error');
+    setTimeout(() => loadingEl.classList.add('hide'), 3000);
+  } finally { btn.disabled = false; btnText.innerText = 'Upscale Sekarang'; }
+}
+
+function addHdResult(result) {
+  hdResults.unshift(result);
+  renderHdResults();
+  document.getElementById('hd-results-container').classList.remove('hide');
+}
+
+function renderHdResults() {
+  const container = document.getElementById('hd-results-list');
+  if (!container) return;
+  if (hdResults.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Belum ada</p>'; return; }
+  container.innerHTML = hdResults.map((r, i) => {
+    const imgUrl = r.url || r.imageUrl || r.data?.url || '';
+    return '<div class="hist-item" style="border-color:rgba(244,114,182,0.25);">' +
+      '<div style="display:flex; justify-content:space-between; margin-bottom:7px;">' +
+        '<span style="font-size:11.5px; font-weight:700; color:var(--hd);">#' + (hdResults.length - i) + ' • ' + escapeHtml(r.filename || 'HD Photo') + '</span>' +
+        '<span class="badge badge-hd" style="font-size:9px;">' + (r.upscale || selectedHdUpscale) + 'x</span>' +
+      '</div>' +
+      (imgUrl ? '<img src="' + escapeHtml(imgUrl) + '" class="hd-preview-sm" style="margin-bottom:7px;" alt="HD Result" onclick="window.open(this.src)">' : '') +
+      '<div class="link-line" style="margin-bottom:6px;" onclick="copyHdLink(\'' + escapeHtml(imgUrl).replace(/'/g, "\\\\'") + '\')">' + escapeHtml(imgUrl || 'No URL') + '</div>' +
+      '<button onclick="copyHdLink(\'' + escapeHtml(imgUrl).replace(/'/g, "\\\\'") + '\')" class="btn btn-hd btn-sm" style="width:100%;">Copy Link</button>' +
+    '</div>';
+  }).join('');
+}
+
+function copyHdLink(url) {
+  if (!url) return showToast('Tidak ada link', 'error');
+  navigator.clipboard.writeText(url).then(() => showToast('Tersalin!', 'hd')).catch(() => showToast('Gagal', 'error'));
+}
+
+function clearHdResults() {
+  hdResults = [];
+  renderHdResults();
+  document.getElementById('hd-results-container').classList.add('hide');
+}
+
+async function loadHdHistory(force = false) {
+  if (!loggedInUsername) return;
+  const now = Date.now();
+  if (!force && now - lastHdHistoryFetch < CACHE_DURATION.hdHistory) { const cached = getCached('hdHistory'); if (cached) { renderHdHistory(cached); return; } }
+  const container = document.getElementById('hd-history-list');
+  if (!container) return;
+  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Memuat...</p>';
+  try {
+    const res = await fetch('/api/hd/history?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+    lastHdHistoryFetch = now; setCache('hdHistory', data, CACHE_DURATION.hdHistory); renderHdHistory(data);
+  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
+}
+
+function renderHdHistory(data) {
+  const container = document.getElementById('hd-history-list');
+  if (!container) return;
+  if (data.success && data.results && data.results.length > 0) {
+    container.innerHTML = data.results.map(r => '<div class="hist-item" style="border-color:rgba(244,114,182,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--hd);">' + escapeHtml(r.filename || 'HD Photo') + '</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div style="font-size:10px; color:var(--text-2);">Upscale: ' + (r.upscale || '2') + 'x</div><div class="link-line" style="margin-top:5px; font-size:10px;" onclick="copyHdLink(\'' + escapeHtml(r.url || r.imageUrl || '').replace(/'/g, "\\\\'") + '\')">' + escapeHtml(r.url || r.imageUrl || '-') + '</div></div>').join('');
+  } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
+}
+
+// ====== DEVICE SESSION FUNCTIONS ======
 async function loadDeviceSessions(force = false) {
   if (!loggedInUsername) return;
   const container = document.getElementById('device-sessions-list');
@@ -1942,7 +2226,7 @@ function renderDeviceSessions() {
         '<div style="padding:6px 8px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;"><div style="font-size:8.5px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Login</div><div class="mono" style="font-size:10px; color:var(--text-1);">' + loginAtStr + '</div></div>' +
         '<div style="padding:6px 8px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;"><div style="font-size:8.5px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Aktif Terakhir</div><div class="mono" style="font-size:10px; color:var(--text-1);">' + lastActiveStr + '</div></div>' +
       '</div>' +
-      (!isCurrent ? '<button onclick="handleKickDevice(\\'' + safeDeviceId.replace(/'/g, "\\\\'") + '\\')" class="btn btn-err btn-xs" style="width:100%;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="display:inline; vertical-align:middle; margin-right:4px;"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>Keluarkan Perangkat Ini</button>' : '<div style="padding:7px; background:var(--ok-soft); border:1px solid rgba(74,222,128,0.25); border-radius:6px; text-align:center; font-size:10.5px; color:var(--ok); font-weight:600;">✓ Perangkat yang sedang Anda gunakan</div>') +
+      (!isCurrent ? '<button onclick="handleKickDevice(\'' + safeDeviceId.replace(/'/g, "\\\\'") + '\')" class="btn btn-err btn-xs" style="width:100%;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="display:inline; vertical-align:middle; margin-right:4px;"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>Keluarkan Perangkat Ini</button>' : '<div style="padding:7px; background:var(--ok-soft); border:1px solid rgba(74,222,128,0.25); border-radius:6px; text-align:center; font-size:10.5px; color:var(--ok); font-weight:600;">✓ Perangkat yang sedang Anda gunakan</div>') +
     '</div>';
   }).join('');
 }
@@ -2030,12 +2314,12 @@ function renderMyOrders() {
   document.getElementById('my-orders-total').innerText = myOrders.length;
   document.getElementById('my-orders-am').innerText = myOrders.filter(o => o.type === 'am').length;
   document.getElementById('my-orders-netflix').innerText = myOrders.filter(o => o.type === 'netflix').length;
-  document.getElementById('my-orders-mail').innerText = myOrders.filter(o => o.type === 'mail').length;
+  document.getElementById('my-orders-hd').innerText = myOrders.filter(o => o.type === 'hd').length;
   if (filtered.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">' + (search ? 'Tidak cocok' : 'Belum ada') + '</p>'; return; }
   container.innerHTML = filtered.map(o => {
-    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'mail' ? '📧' : '📱';
-    const typeLabel = o.type === 'am' ? 'Alight Motion' : o.type === 'netflix' ? 'Netflix' : o.type === 'mail' ? 'Temp Mail' : 'APK MOD';
-    const typeBadge = o.type === 'am' ? 'badge-accent' : o.type === 'netflix' ? 'badge-err' : o.type === 'mail' ? 'badge-info' : 'badge-ok';
+    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'mail' ? '📧' : o.type === 'hd' ? '🖼️' : '📱';
+    const typeLabel = o.type === 'am' ? 'Alight Motion' : o.type === 'netflix' ? 'Netflix' : o.type === 'mail' ? 'Temp Mail' : o.type === 'hd' ? 'HD Photo' : 'APK MOD';
+    const typeBadge = o.type === 'am' ? 'badge-accent' : o.type === 'netflix' ? 'badge-err' : o.type === 'mail' ? 'badge-info' : o.type === 'hd' ? 'badge-hd' : 'badge-ok';
     const timeStr = new Date(o.timestamp).toLocaleString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
     return '<div class="hist-item">' +
       '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">' +
@@ -2087,7 +2371,7 @@ function renderAdminOrders() {
   if (search) filtered = filtered.filter(o => (o.orderId||'').toLowerCase().includes(search) || (o.username||'').toLowerCase().includes(search) || (o.detail||'').toLowerCase().includes(search));
   if (filtered.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Tidak ada</p>'; return; }
   container.innerHTML = filtered.slice(0, 100).map(o => {
-    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'mail' ? '📧' : '📱';
+    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'mail' ? '📧' : o.type === 'hd' ? '🖼️' : '📱';
     const timeStr = new Date(o.timestamp).toLocaleString('id-ID', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
     return '<div style="padding:8px 10px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:7px;">' +
       '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:4px;">' +
@@ -2138,7 +2422,7 @@ function startMailAutoRefresh() {
               const animClass = isNew ? 'mail-new' : '';
               
               const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
-                ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
+                ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
               
               return '<div class="hist-item ' + animClass + '" style="border-color:rgba(96,165,250,0.25);"><div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div><div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' + linksHtml + '</div>';
             }).join('');
@@ -2243,7 +2527,7 @@ function renderTempMailInbox(messages) {
     const isNew = idx === 0; 
     const animClass = isNew ? 'mail-new' : '';
     const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
-      ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
+      ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
     return '<div class="hist-item ' + animClass + '" style="border-color:rgba(96,165,250,0.25);"><div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div><div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' + linksHtml + '</div>';
   }).join('');
 }
@@ -2269,7 +2553,7 @@ function renderTempMailHistory(data) {
   const container = document.getElementById('mail-history-list');
   if (!container) return;
   if (data.success && data.results && data.results.length > 0) {
-    container.innerHTML = data.results.map(r => '<div class="hist-item" style="border-color:rgba(96,165,250,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--info);">📧 Temp Mail</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div class="mono" style="font-size:10px; color:var(--info); word-break:break-all;">' + escapeHtml(r.email) + '</div><div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px;"><span style="font-size:9px; color:var(--text-2);">' + escapeHtml(r.orderId || '-') + '</span><button onclick="copyHistoryEmail(\\'' + escapeHtml(r.email).replace(/'/g, "\\\\'") + '\\')" class="btn btn-ghost btn-xs">Copy</button></div></div>').join('');
+    container.innerHTML = data.results.map(r => '<div class="hist-item" style="border-color:rgba(96,165,250,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--info);">📧 Temp Mail</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div class="mono" style="font-size:10px; color:var(--info); word-break:break-all;">' + escapeHtml(r.email) + '</div><div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px;"><span style="font-size:9px; color:var(--text-2);">' + escapeHtml(r.orderId || '-') + '</span><button onclick="copyHistoryEmail(\'' + escapeHtml(r.email).replace(/'/g, "\\\\'") + '\')" class="btn btn-ghost btn-xs">Copy</button></div></div>').join('');
   } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
 }
 
@@ -2343,7 +2627,7 @@ function renderNetflixResults() {
   const NC = {US:'UNITED STATES',GB:'UNITED KINGDOM',DE:'GERMANY',FR:'FRANCE',JP:'JAPAN',KR:'SOUTH KOREA',IN:'INDIA',BR:'BRAZIL',CA:'CANADA',AU:'AUSTRALIA',ID:'INDONESIA',MY:'MALAYSIA',PH:'PHILIPPINES',SG:'SINGAPORE',TH:'THAILAND'};
   container.innerHTML = netflixResults.map((r, i) => {
     const countryName = NC[r.country] || r.country || 'Unknown';
-    return '<div class="hist-item" style="border-color:rgba(229,9,20,0.25);"><div style="display:flex; justify-content:space-between; margin-bottom:7px;"><span style="font-size:11.5px; font-weight:700; color:var(--err);">#' + (netflixResults.length - i) + ' • ' + escapeHtml((r.plan || selectedNetflixPlan).toUpperCase()) + '</span><span class="badge badge-err" style="font-size:9px;">' + escapeHtml(countryName) + '</span></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:7px;"><div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Quality</div><div style="font-size:11px; font-weight:600;">' + escapeHtml(r.quality || 'HD') + '</div></div><div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Expires</div><div style="font-size:11px; font-weight:600;">' + (r.expires ? new Date(r.expires).toLocaleDateString('id-ID') : '—') + '</div></div></div><div class="link-line" style="margin-bottom:6px;" onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.url) + '</div><button onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')" class="btn btn-netflix btn-sm" style="width:100%;">Copy Link</button></div>';
+    return '<div class="hist-item" style="border-color:rgba(229,9,20,0.25);"><div style="display:flex; justify-content:space-between; margin-bottom:7px;"><span style="font-size:11.5px; font-weight:700; color:var(--err);">#' + (netflixResults.length - i) + ' • ' + escapeHtml((r.plan || selectedNetflixPlan).toUpperCase()) + '</span><span class="badge badge-err" style="font-size:9px;">' + escapeHtml(countryName) + '</span></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:7px;"><div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Quality</div><div style="font-size:11px; font-weight:600;">' + escapeHtml(r.quality || 'HD') + '</div></div><div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Expires</div><div style="font-size:11px; font-weight:600;">' + (r.expires ? new Date(r.expires).toLocaleDateString('id-ID') : '—') + '</div></div></div><div class="link-line" style="margin-bottom:6px;" onclick="copyNetflixLink(\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\')">' + escapeHtml(r.url) + '</div><button onclick="copyNetflixLink(\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\')" class="btn btn-netflix btn-sm" style="width:100%;">Copy Link</button></div>';
   }).join('');
 }
 
@@ -2371,7 +2655,7 @@ function renderNetflixHistory(data) {
     const NC = {US:'UNITED STATES',GB:'UNITED KINGDOM',DE:'GERMANY',FR:'FRANCE',JP:'JAPAN',KR:'SOUTH KOREA',IN:'INDIA',BR:'BRAZIL',CA:'CANADA',AU:'AUSTRALIA',ID:'INDONESIA',MY:'MALAYSIA',PH:'PHILIPPINES',SG:'SINGAPORE',TH:'THAILAND'};
     container.innerHTML = data.results.map(r => {
       const countryName = NC[r.country] || r.country || 'Unknown';
-      return '<div class="hist-item" style="border-color:rgba(229,9,20,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--err);">' + escapeHtml(r.plan || 'premium').toUpperCase() + '</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div style="font-size:10px; color:var(--text-2);">' + escapeHtml(countryName) + ' • ' + escapeHtml(r.quality || 'HD') + '</div><div class="link-line" style="margin-top:6px; font-size:10px;" onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.url) + '</div></div>';
+      return '<div class="hist-item" style="border-color:rgba(229,9,20,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--err);">' + escapeHtml(r.plan || 'premium').toUpperCase() + '</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div style="font-size:10px; color:var(--text-2);">' + escapeHtml(countryName) + ' • ' + escapeHtml(r.quality || 'HD') + '</div><div class="link-line" style="margin-top:6px; font-size:10px;" onclick="copyNetflixLink(\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\')">' + escapeHtml(r.url) + '</div></div>';
     }).join('');
   } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
 }
@@ -2398,7 +2682,7 @@ async function loadApkMods() {
       cachedApkMods = items;
       container.innerHTML = items.map(([id, item]) => {
         const isSelected = selectedApkId === id;
-        return '<div class="opt-row apk ' + (isSelected ? 'selected' : '') + '" data-apk-id="' + id + '" onclick="selectApkMod(\\'' + id + '\\')"><div><div style="font-weight:700; font-size:12.5px;">📱 ' + escapeHtml(item.name) + '</div><div style="font-size:10px; color:var(--text-2);">' + escapeHtml(item.description || 'APK MOD') + '</div></div><span style="font-size:11px; color:var(--ok); font-weight:700;">1 Q</span></div>';
+        return '<div class="opt-row apk ' + (isSelected ? 'selected' : '') + '" data-apk-id="' + id + '" onclick="selectApkMod(\'' + id + '\')"><div><div style="font-weight:700; font-size:12.5px;">📱 ' + escapeHtml(item.name) + '</div><div style="font-size:10px; color:var(--text-2);">' + escapeHtml(item.description || 'APK MOD') + '</div></div><span style="font-size:11px; color:var(--ok); font-weight:700;">1 Q</span></div>';
       }).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
@@ -2461,7 +2745,7 @@ function renderApkResults() {
   const container = document.getElementById('apk-results-list');
   if (!container) return;
   if (apkResults.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Belum ada</p>'; return; }
-  container.innerHTML = apkResults.map((r, i) => '<div class="hist-item" style="border-color:rgba(74,222,128,0.25);"><div style="display:flex; justify-content:space-between; margin-bottom:7px;"><span style="font-size:11.5px; font-weight:700; color:var(--ok);">#' + (apkResults.length - i) + ' • ' + escapeHtml(r.name) + '</span><span class="badge badge-ok" style="font-size:9px;">APK</span></div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700; margin-bottom:4px;">Link</div><div class="link-line" style="margin-bottom:6px;" onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.link) + '</div><button onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')" class="btn btn-apk btn-sm" style="width:100%;">Copy Link</button></div>').join('');
+  container.innerHTML = apkResults.map((r, i) => '<div class="hist-item" style="border-color:rgba(74,222,128,0.25);"><div style="display:flex; justify-content:space-between; margin-bottom:7px;"><span style="font-size:11.5px; font-weight:700; color:var(--ok);">#' + (apkResults.length - i) + ' • ' + escapeHtml(r.name) + '</span><span class="badge badge-ok" style="font-size:9px;">APK</span></div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700; margin-bottom:4px;">Link</div><div class="link-line" style="margin-bottom:6px;" onclick="copyApkLink(\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\')">' + escapeHtml(r.link) + '</div><button onclick="copyApkLink(\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\')" class="btn btn-apk btn-sm" style="width:100%;">Copy Link</button></div>').join('');
 }
 
 function copyApkLink(link) { navigator.clipboard.writeText(link).then(() => showToast('Tersalin!', 'apk')).catch(() => showToast('Gagal', 'error')); }
@@ -2485,7 +2769,7 @@ function renderApkHistory(data) {
   const container = document.getElementById('apk-history-list');
   if (!container) return;
   if (data.success && data.results && data.results.length > 0) {
-    container.innerHTML = data.results.map(r => '<div class="hist-item" style="border-color:rgba(74,222,128,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--ok);">' + escapeHtml(r.name) + '</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div class="link-line" style="margin-top:5px; font-size:10px;" onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.link) + '</div></div>').join('');
+    container.innerHTML = data.results.map(r => '<div class="hist-item" style="border-color:rgba(74,222,128,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--ok);">' + escapeHtml(r.name) + '</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div class="link-line" style="margin-top:5px; font-size:10px;" onclick="copyApkLink(\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\')">' + escapeHtml(r.link) + '</div></div>').join('');
   } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
 }
 
@@ -2499,7 +2783,7 @@ async function loadAdminApkList() {
     const data = await res.json();
     if (data.success && data.items && Object.keys(data.items).length > 0) {
       const items = Object.entries(data.items).sort((a,b) => (a[1].order||0) - (b[1].order||0));
-      container.innerHTML = items.map(([id, item]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700; color:var(--ok);">' + escapeHtml(item.name) + '</div><div style="font-size:9px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(item.link) + '</div></div><div style="display:flex; gap:3px; flex-shrink:0;"><button onclick="editApkMod(\\'' + id + '\\', \\'' + encodeURIComponent(item.name) + '\\', \\'' + encodeURIComponent(item.link) + '\\', \\'' + encodeURIComponent(item.description || '') + '\\')" class="btn btn-ghost btn-xs">E</button><button onclick="toggleApkMod(\\'' + id + '\\', ' + (item.active !== false) + ')" class="btn btn-ghost btn-xs">' + (item.active !== false ? 'O' : 'X') + '</button><button onclick="deleteApkMod(\\'' + id + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
+      container.innerHTML = items.map(([id, item]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700; color:var(--ok);">' + escapeHtml(item.name) + '</div><div style="font-size:9px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(item.link) + '</div></div><div style="display:flex; gap:3px; flex-shrink:0;"><button onclick="editApkMod(\'' + id + '\', \'' + encodeURIComponent(item.name) + '\', \'' + encodeURIComponent(item.link) + '\', \'' + encodeURIComponent(item.description || '') + '\')" class="btn btn-ghost btn-xs">E</button><button onclick="toggleApkMod(\'' + id + '\', ' + (item.active !== false) + ')" class="btn btn-ghost btn-xs">' + (item.active !== false ? 'O' : 'X') + '</button><button onclick="deleteApkMod(\'' + id + '\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:6px;">Gagal</p>'; }
 }
@@ -2725,6 +3009,7 @@ function applySession(data) {
   updateNetflixQuotaDisplay();
   updateApkQuotaDisplay();
   updateMailQuotaDisplay();
+  updateHdQuotaDisplay();
   startOnlineTracking();
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   loadGlobalChat();
@@ -2771,7 +3056,7 @@ async function handleRedeemCodeMain() {
     if (data.success) {
       showToast(data.message, 'success');
       document.getElementById('redeem-code-input-main').value = '';
-      updateQuotaDisplay(data); updateNetflixQuotaDisplay(); updateApkQuotaDisplay(); updateMailQuotaDisplay();
+      updateQuotaDisplay(data); updateNetflixQuotaDisplay(); updateApkQuotaDisplay(); updateMailQuotaDisplay(); updateHdQuotaDisplay();
       loadVerifiedEmails(true); loadActiveRedeems(true);
     } else showToast(data.message, 'error');
   } catch(e) { showToast('Gagal', 'error'); }
@@ -2803,7 +3088,7 @@ function renderActiveRedeems(payload) {
       const quotaPerUser = val.quotaPerUser || 1;
       const hasClaimed = claimedRedeemCodes[code] === true;
       if (remainingClaims <= 0) return '';
-      const buttonHtml = hasClaimed ? '<span class="badge badge-ok">✓ Sudah</span>' : '<button onclick="quickClaimRedeem(\\'' + escapeHtml(code) + '\\')" class="btn btn-info btn-xs">Klaim</button>';
+      const buttonHtml = hasClaimed ? '<span class="badge badge-ok">✓ Sudah</span>' : '<button onclick="quickClaimRedeem(\'' + escapeHtml(code) + '\')" class="btn btn-info btn-xs">Klaim</button>';
       return '<div style="padding:9px 11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div class="mono" style="font-size:11.5px; font-weight:700; color:var(--info);">' + escapeHtml(code) + '</div><div style="font-size:9.5px; color:var(--text-2);">' + quotaPerUser + ' kuota • ' + remainingClaims + '/' + val.maxClaims + ' sisa</div></div>' + buttonHtml + '</div><div class="prog" style="height:4px;"><div class="prog-fill" style="width:' + Math.round((val.claimedCount / val.maxClaims) * 100) + '%; background:var(--info);"></div></div></div>';
     }).filter(Boolean).join('') || '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Tidak ada</p>';
   } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Tidak ada kode aktif</p>';
@@ -2827,7 +3112,7 @@ async function loadVipShopItems() {
       cachedVipShopItems = items;
       container.innerHTML = items.map(([id, item]) => {
         const priceFormatted = 'Rp ' + Number(item.price).toLocaleString('id-ID');
-        return '<div class="shop-item" onclick="selectVipItem(\\'' + escapeHtml(id) + '\\')"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:7px;"><div style="display:flex; align-items:center; gap:10px;"><div style="width:34px; height:34px; border-radius:9px; background:var(--warn-soft); display:flex; align-items:center; justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div><div><div style="font-weight:700; font-size:13px;">' + escapeHtml(item.name) + '</div><div style="font-size:10.5px; color:var(--warn);">⭐ ' + item.days + ' hari</div></div></div><div class="mono" style="font-size:14px; font-weight:800; color:var(--warn);">' + priceFormatted + '</div></div><button class="btn btn-warn btn-sm" style="width:100%;">Pilih & Bayar</button></div>';
+        return '<div class="shop-item" onclick="selectVipItem(\'' + escapeHtml(id) + '\')"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:7px;"><div style="display:flex; align-items:center; gap:10px;"><div style="width:34px; height:34px; border-radius:9px; background:var(--warn-soft); display:flex; align-items:center; justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div><div><div style="font-weight:700; font-size:13px;">' + escapeHtml(item.name) + '</div><div style="font-size:10.5px; color:var(--warn);">⭐ ' + item.days + ' hari</div></div></div><div class="mono" style="font-size:14px; font-weight:800; color:var(--warn);">' + priceFormatted + '</div></div><button class="btn btn-warn btn-sm" style="width:100%;">Pilih & Bayar</button></div>';
       }).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
@@ -2985,7 +3270,7 @@ async function loadAdminFeatureRequests() {
       container.innerHTML = sorted.map(req => {
         const statusBadge = req.status === 'approved' ? 'badge-ok' : req.status === 'rejected' ? 'badge-err' : 'badge-warn';
         const statusText = req.status === 'approved' ? 'Disetujui' : req.status === 'rejected' ? 'Ditolak' : 'Menunggu';
-        return '<div class="hist-item" style="border-color:rgba(74,222,128,0.2);"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11.5px; font-weight:700; color:var(--ok);">' + escapeHtml(req.title) + '</div><div style="font-size:9px; color:var(--text-2);">Dari: ' + escapeHtml(req.username) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="font-size:10.5px; color:var(--text-1); margin-bottom:5px;">' + escapeHtml(req.description) + '</div>' + (req.adminNote ? '<div style="font-size:9px; color:var(--warn); margin-bottom:5px;">Catatan: ' + escapeHtml(req.adminNote) + '</div>' : '') + '<div style="display:flex; gap:4px; margin-top:5px; padding-top:5px; border-top:1px solid var(--line);"><input type="text" id="admin-note-' + req.id + '" placeholder="Catatan..." class="inp" style="flex:1; padding:5px 8px; font-size:10.5px;"><button onclick="updateFeatureRequestStatus(\\'' + req.id + '\\', \\'approved\\')" class="btn btn-ok btn-xs">✓</button><button onclick="updateFeatureRequestStatus(\\'' + req.id + '\\', \\'rejected\\')" class="btn btn-err btn-xs">✗</button><button onclick="deleteFeatureRequest(\\'' + req.id + '\\')" class="btn btn-ghost btn-xs">🗑</button></div></div>';
+        return '<div class="hist-item" style="border-color:rgba(74,222,128,0.2);"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11.5px; font-weight:700; color:var(--ok);">' + escapeHtml(req.title) + '</div><div style="font-size:9px; color:var(--text-2);">Dari: ' + escapeHtml(req.username) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="font-size:10.5px; color:var(--text-1); margin-bottom:5px;">' + escapeHtml(req.description) + '</div>' + (req.adminNote ? '<div style="font-size:9px; color:var(--warn); margin-bottom:5px;">Catatan: ' + escapeHtml(req.adminNote) + '</div>' : '') + '<div style="display:flex; gap:4px; margin-top:5px; padding-top:5px; border-top:1px solid var(--line);"><input type="text" id="admin-note-' + req.id + '" placeholder="Catatan..." class="inp" style="flex:1; padding:5px 8px; font-size:10.5px;"><button onclick="updateFeatureRequestStatus(\'' + req.id + '\', \'approved\')" class="btn btn-ok btn-xs">✓</button><button onclick="updateFeatureRequestStatus(\'' + req.id + '\', \'rejected\')" class="btn btn-err btn-xs">✗</button><button onclick="deleteFeatureRequest(\'' + req.id + '\')" class="btn btn-ghost btn-xs">🗑</button></div></div>';
       }).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
@@ -3021,7 +3306,7 @@ async function loadAdminVipShop() {
     const data = await res.json();
     if (data.success && data.items && Object.keys(data.items).length > 0) {
       const items = Object.entries(data.items).sort((a,b) => (a[1].order||0) - (b[1].order||0));
-      container.innerHTML = items.map(([id, item]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700; color:var(--warn);">' + escapeHtml(item.name) + '</div><div style="font-size:9px; color:var(--text-2);">' + item.days + 'd • Rp ' + Number(item.price).toLocaleString('id-ID') + ' • ' + (item.active !== false ? '✅' : '❌') + '</div></div><div style="display:flex; gap:3px; flex-shrink:0;"><button onclick="editVipShopItem(\\'' + id + '\\', \\'' + encodeURIComponent(item.name) + '\\', ' + item.price + ', ' + item.days + ')" class="btn btn-ghost btn-xs">E</button><button onclick="toggleVipShopItem(\\'' + id + '\\', ' + (item.active !== false) + ')" class="btn btn-ghost btn-xs">' + (item.active !== false ? 'O' : 'X') + '</button><button onclick="deleteVipShopItem(\\'' + id + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
+      container.innerHTML = items.map(([id, item]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700; color:var(--warn);">' + escapeHtml(item.name) + '</div><div style="font-size:9px; color:var(--text-2);">' + item.days + 'd • Rp ' + Number(item.price).toLocaleString('id-ID') + ' • ' + (item.active !== false ? '✅' : '❌') + '</div></div><div style="display:flex; gap:3px; flex-shrink:0;"><button onclick="editVipShopItem(\'' + id + '\', \'' + encodeURIComponent(item.name) + '\', ' + item.price + ', ' + item.days + ')" class="btn btn-ghost btn-xs">E</button><button onclick="toggleVipShopItem(\'' + id + '\', ' + (item.active !== false) + ')" class="btn btn-ghost btn-xs">' + (item.active !== false ? 'O' : 'X') + '</button><button onclick="deleteVipShopItem(\'' + id + '\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:6px;">Gagal</p>'; }
 }
@@ -3094,7 +3379,7 @@ async function loadAdminTransactions() {
         const statusBadge = t.status === 'success' ? 'badge-ok' : t.status === 'failed' ? 'badge-err' : t.status === 'process' ? 'badge-info' : 'badge-warn';
         const statusText = t.status === 'success' ? '✓ Sukses' : t.status === 'failed' ? '✗ Gagal' : t.status === 'process' ? '⚙ Diproses' : '⏳ Menunggu';
         const priceFormatted = 'Rp ' + Number(t.vipPrice).toLocaleString('id-ID');
-        return '<div class="hist-item"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700;">' + escapeHtml(t.vipName) + ' <span style="font-size:9px; color:var(--text-2);">oleh ' + escapeHtml(t.username) + '</span></div><div class="mono" style="font-size:9px; color:var(--text-2);">' + escapeHtml(t.transactionId) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; margin-top:4px;"><span style="color:var(--warn); font-weight:700;">' + priceFormatted + '</span><span style="color:var(--text-2);">' + new Date(t.createdAt).toLocaleDateString('id-ID') + '</span></div>' + (t.proofImage ? '<img src="' + t.proofImage + '" alt="Bukti" style="max-width:100%; max-height:100px; border-radius:6px; margin-top:6px; cursor:pointer;" onclick="window.open(this.src)">' : '<div style="font-size:9px; color:var(--err); margin-top:4px;">Belum upload bukti</div>') + '<div style="display:flex; gap:4px; margin-top:6px; padding-top:6px; border-top:1px solid var(--line);">' + ((t.status === 'pending' || t.status === 'process') ? '<button onclick="confirmTransaction(\\'' + t.transactionId + '\\', \\'success\\')" class="btn btn-ok btn-xs" style="flex:1;">✓ Konfirmasi</button><button onclick="confirmTransaction(\\'' + t.transactionId + '\\', \\'failed\\')" class="btn btn-err btn-xs" style="flex:1;">✗ Tolak</button>' : '') + '<button onclick="deleteTransaction(\\'' + t.transactionId + '\\')" class="btn btn-ghost btn-xs">🗑</button></div></div>';
+        return '<div class="hist-item"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700;">' + escapeHtml(t.vipName) + ' <span style="font-size:9px; color:var(--text-2);">oleh ' + escapeHtml(t.username) + '</span></div><div class="mono" style="font-size:9px; color:var(--text-2);">' + escapeHtml(t.transactionId) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; margin-top:4px;"><span style="color:var(--warn); font-weight:700;">' + priceFormatted + '</span><span style="color:var(--text-2);">' + new Date(t.createdAt).toLocaleDateString('id-ID') + '</span></div>' + (t.proofImage ? '<img src="' + t.proofImage + '" alt="Bukti" style="max-width:100%; max-height:100px; border-radius:6px; margin-top:6px; cursor:pointer;" onclick="window.open(this.src)">' : '<div style="font-size:9px; color:var(--err); margin-top:4px;">Belum upload bukti</div>') + '<div style="display:flex; gap:4px; margin-top:6px; padding-top:6px; border-top:1px solid var(--line);">' + ((t.status === 'pending' || t.status === 'process') ? '<button onclick="confirmTransaction(\'' + t.transactionId + '\', \'success\')" class="btn btn-ok btn-xs" style="flex:1;">✓ Konfirmasi</button><button onclick="confirmTransaction(\'' + t.transactionId + '\', \'failed\')" class="btn btn-err btn-xs" style="flex:1;">✗ Tolak</button>' : '') + '<button onclick="deleteTransaction(\'' + t.transactionId + '\')" class="btn btn-ghost btn-xs">🗑</button></div></div>';
       }).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
@@ -3176,7 +3461,7 @@ function renderVerifiedEmails(data) {
   if (!container) return;
   updateQuotaStatusCard(data);
   handleCountdown(data);
-  updateNetflixQuotaDisplay(); updateApkQuotaDisplay(); updateMailQuotaDisplay();
+  updateNetflixQuotaDisplay(); updateApkQuotaDisplay(); updateMailQuotaDisplay(); updateHdQuotaDisplay();
   const emails = data.activatedEmails || [];
   if (emails.length === 0) {
     container.innerHTML = '<div style="padding:11px; text-align:center; background:var(--bg-2); border:1px dashed var(--line-2); border-radius:9px;"><div style="font-size:11.5px; color:var(--text-1); font-weight:600;">Belum ada Gmail</div><div style="font-size:10px; color:var(--text-2); margin-top:2px;">Gmail yang terverifikasi akan muncul di sini</div></div>';
@@ -3185,7 +3470,7 @@ function renderVerifiedEmails(data) {
   container.innerHTML = emails.map((email, idx) => {
     const isLatest = idx === emails.length - 1;
     const safeEmail = email.replace(/'/g, "\\\\'");
-    return '<div style="padding:8px 11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px; display:flex; align-items:center; justify-content:space-between; gap:8px;"><div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;"><div style="width:28px; height:28px; border-radius:7px; background:rgba(96,165,250,0.15); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div><div style="min-width:0; flex:1;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(email) + '</div><div style="display:flex; align-items:center; gap:4px; margin-top:2px;"><span style="font-size:9px; color:var(--ok); font-weight:700;">●</span><span style="font-size:9px; color:var(--ok); font-weight:700;">Terverifikasi</span>' + (isLatest ? '<span style="font-size:9px; color:var(--warn); font-weight:700;">• Terbaru</span>' : '') + '</div></div></div><button onclick="copyEmail(\\'' + safeEmail + '\\')" class="btn btn-ghost btn-xs" style="flex-shrink:0;">Copy</button></div>';
+    return '<div style="padding:8px 11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px; display:flex; align-items:center; justify-content:space-between; gap:8px;"><div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;"><div style="width:28px; height:28px; border-radius:7px; background:rgba(96,165,250,0.15); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div><div style="min-width:0; flex:1;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(email) + '</div><div style="display:flex; align-items:center; gap:4px; margin-top:2px;"><span style="font-size:9px; color:var(--ok); font-weight:700;">●</span><span style="font-size:9px; color:var(--ok); font-weight:700;">Terverifikasi</span>' + (isLatest ? '<span style="font-size:9px; color:var(--warn); font-weight:700;">• Terbaru</span>' : '') + '</div></div></div><button onclick="copyEmail(\'' + safeEmail + '\')" class="btn btn-ghost btn-xs" style="flex-shrink:0;">Copy</button></div>';
   }).join('');
 }
 
@@ -3283,6 +3568,23 @@ function initFileDrop() {
   dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
   dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); if (e.dataTransfer.files.length) { fileInput.files = e.dataTransfer.files; handleFileSelect(e.dataTransfer.files[0]); } });
   fileInput.addEventListener('change', (e) => { if (e.target.files.length) handleFileSelect(e.target.files[0]); });
+}
+
+// HD Dropzone
+function initHdDropzone() {
+  const dropzone = document.getElementById('hd-dropzone');
+  const fileInput = document.getElementById('hd-photo-file');
+  if (!dropzone || !fileInput) return;
+  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) {
+      fileInput.files = e.dataTransfer.files;
+      handleHdPhotoSelect({ target: { files: e.dataTransfer.files } });
+    }
+  });
 }
 
 function handleFileSelect(file) {
@@ -3402,7 +3704,7 @@ async function loadAdminVipList() {
     const data = await res.json();
     const container = document.getElementById('admin-vip-list');
     if (data.success && Object.keys(data.vipUsers).length > 0) {
-      container.innerHTML = Object.entries(data.vipUsers).map(([uname, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div><span style="color:var(--warn); font-weight:700;">' + uname + '</span><span style="color:var(--text-2); display:block; font-size:9px;">Exp: ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span></div><button onclick="handleRemoveVip(\\'' + uname + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">Hapus</button></div>').join('');
+      container.innerHTML = Object.entries(data.vipUsers).map(([uname, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div><span style="color:var(--warn); font-weight:700;">' + uname + '</span><span style="color:var(--text-2); display:block; font-size:9px;">Exp: ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span></div><button onclick="handleRemoveVip(\'' + uname + '\')" class="btn btn-ghost btn-xs" style="color:var(--err);">Hapus</button></div>').join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Tidak ada</p>';
   } catch(e) {}
 }
@@ -3447,7 +3749,7 @@ async function loadVipAccounts() {
       const now = Date.now();
       container.innerHTML = Object.entries(data.vipAccounts).map(([uname, val]) => {
         const isActive = val.vipUntil > now;
-        return '<div style="padding:9px 11px; background:linear-gradient(135deg,var(--warn-soft),var(--accent-soft)); border:1px solid rgba(251,191,36,0.3); border-radius:8px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(uname) + '</div><div class="mono" style="font-size:10px; color:var(--text-2);">Pwd: ' + escapeHtml(val.password) + '</div></div><span class="badge ' + (isActive ? 'badge-ok' : 'badge-err') + '">' + (isActive ? 'AKTIF' : 'EXPIRED') + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px;"><span style="color:var(--warn);">⭐ s/d ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span><div style="display:flex; gap:3px;"><button onclick="copyVipCredentials(\\'' + escapeHtml(uname) + '\\', \\'' + escapeHtml(val.password) + '\\')" class="btn btn-ghost btn-xs">📋</button><button onclick="deleteVipAccount(\\'' + escapeHtml(uname) + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">🗑</button></div></div></div>';
+        return '<div style="padding:9px 11px; background:linear-gradient(135deg,var(--warn-soft),var(--accent-soft)); border:1px solid rgba(251,191,36,0.3); border-radius:8px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(uname) + '</div><div class="mono" style="font-size:10px; color:var(--text-2);">Pwd: ' + escapeHtml(val.password) + '</div></div><span class="badge ' + (isActive ? 'badge-ok' : 'badge-err') + '">' + (isActive ? 'AKTIF' : 'EXPIRED') + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px;"><span style="color:var(--warn);">⭐ s/d ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span><div style="display:flex; gap:3px;"><button onclick="copyVipCredentials(\'' + escapeHtml(uname) + '\', \'' + escapeHtml(val.password) + '\')" class="btn btn-ghost btn-xs">📋</button><button onclick="deleteVipAccount(\'' + escapeHtml(uname) + '\')" class="btn btn-ghost btn-xs" style="color:var(--err);">🗑</button></div></div></div>';
       }).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Belum ada</p>';
   } catch(e) {}
@@ -3526,7 +3828,7 @@ function renderUserList() {
     let vipText = '';
     if (u.isVip && u.vipUntil) vipText = '⭐ VIP s/d ' + new Date(u.vipUntil).toLocaleDateString('id-ID');
     const safeUser = u.username.replace(/'/g, "\\\\'");
-    return '<div style="padding:8px 10px; background:var(--bg-0); border:1px solid ' + borderColor + '; border-radius:7px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;"><span class="mono" style="font-weight:700; color:var(--text-0); font-size:11.5px;">' + escapeHtml(u.username) + '</span><span class="badge ' + badgeClass + '" style="font-size:9px;">' + badgeText + '</span></div><div style="font-size:9.5px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:1px;">📧 ' + escapeHtml(u.email) + '</div></div></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:5px; font-size:9.5px;"><div style="padding:5px; background:var(--info-soft); border-radius:5px;"><div style="color:var(--text-2); font-size:8px; text-transform:uppercase; font-weight:700;">Kuota</div><div class="mono" style="color:' + quotaColor + '; font-weight:700;">' + quotaText + '</div></div><div style="padding:5px; background:var(--accent-soft); border-radius:5px;"><div style="color:var(--text-2); font-size:8px; text-transform:uppercase; font-weight:700;">Reset</div><div class="mono" style="color:var(--accent); font-weight:700;">' + resetText + '</div></div></div>' + (vipText ? '<div style="font-size:9.5px; color:var(--warn); margin-top:5px; font-weight:600;">' + vipText + '</div>' : '') + (u.activatedEmails && u.activatedEmails.length > 0 ? '<details style="margin-top:5px;"><summary style="font-size:9.5px; color:var(--info); cursor:pointer;">📨 ' + u.activatedEmails.length + ' email</summary><div style="margin-top:3px; padding-left:6px;">' + u.activatedEmails.slice(0, 10).map(e => '<div class="mono" style="font-size:9px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">• ' + escapeHtml(e) + '</div>').join('') + (u.activatedEmails.length > 10 ? '<div style="font-size:9px; color:var(--text-2); font-style:italic;">... +' + (u.activatedEmails.length - 10) + '</div>' : '') + '</div></details>' : '') + '<div style="display:flex; gap:4px; margin-top:6px; padding-top:6px; border-top:1px solid var(--line);"><button onclick="quickSetVip(\\'' + safeUser + '\\')" class="btn btn-ghost btn-xs" style="flex:1;">⭐ VIP</button><button onclick="copyUsername(\\'' + safeUser + '\\')" class="btn btn-ghost btn-xs" style="flex:1;">📋 Copy</button>' + (u.isAdmin && u.username === loggedInUsername ? '' : '<button onclick="deleteUserAccount(\\'' + safeUser + '\\', ' + (u.isAdmin ? 'true' : 'false') + ')" class="btn btn-ghost btn-xs" style="flex:1; color:var(--err);">🗑 Hapus</button>') + '</div></div>';
+    return '<div style="padding:8px 10px; background:var(--bg-0); border:1px solid ' + borderColor + '; border-radius:7px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;"><span class="mono" style="font-weight:700; color:var(--text-0); font-size:11.5px;">' + escapeHtml(u.username) + '</span><span class="badge ' + badgeClass + '" style="font-size:9px;">' + badgeText + '</span></div><div style="font-size:9.5px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:1px;">📧 ' + escapeHtml(u.email) + '</div></div></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:5px; font-size:9.5px;"><div style="padding:5px; background:var(--info-soft); border-radius:5px;"><div style="color:var(--text-2); font-size:8px; text-transform:uppercase; font-weight:700;">Kuota</div><div class="mono" style="color:' + quotaColor + '; font-weight:700;">' + quotaText + '</div></div><div style="padding:5px; background:var(--accent-soft); border-radius:5px;"><div style="color:var(--text-2); font-size:8px; text-transform:uppercase; font-weight:700;">Reset</div><div class="mono" style="color:var(--accent); font-weight:700;">' + resetText + '</div></div></div>' + (vipText ? '<div style="font-size:9.5px; color:var(--warn); margin-top:5px; font-weight:600;">' + vipText + '</div>' : '') + (u.activatedEmails && u.activatedEmails.length > 0 ? '<details style="margin-top:5px;"><summary style="font-size:9.5px; color:var(--info); cursor:pointer;">📨 ' + u.activatedEmails.length + ' email</summary><div style="margin-top:3px; padding-left:6px;">' + u.activatedEmails.slice(0, 10).map(e => '<div class="mono" style="font-size:9px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">• ' + escapeHtml(e) + '</div>').join('') + (u.activatedEmails.length > 10 ? '<div style="font-size:9px; color:var(--text-2); font-style:italic;">... +' + (u.activatedEmails.length - 10) + '</div>' : '') + '</div></details>' : '') + '<div style="display:flex; gap:4px; margin-top:6px; padding-top:6px; border-top:1px solid var(--line);"><button onclick="quickSetVip(\'' + safeUser + '\')" class="btn btn-ghost btn-xs" style="flex:1;">⭐ VIP</button><button onclick="copyUsername(\'' + safeUser + '\')" class="btn btn-ghost btn-xs" style="flex:1;">📋 Copy</button>' + (u.isAdmin && u.username === loggedInUsername ? '' : '<button onclick="deleteUserAccount(\'' + safeUser + '\', ' + (u.isAdmin ? 'true' : 'false') + ')" class="btn btn-ghost btn-xs" style="flex:1; color:var(--err);">🗑 Hapus</button>') + '</div></div>';
   }).join('');
 }
 
@@ -3605,7 +3907,7 @@ function renderGlobalChat(data) {
     const date = new Date(msg.timestamp).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
     const isToday = new Date(msg.timestamp).toDateString() === new Date().toDateString();
     const timeStr = isToday ? time : date + ' ' + time;
-    const deleteBtn = isAdminUser ? ' <button onclick="deleteChatMessage(\\'' + id + '\\')" style="background:none; border:none; font-size:9px; opacity:0.5; cursor:pointer; margin-left:2px;">🗑</button>' : '';
+    const deleteBtn = isAdminUser ? ' <button onclick="deleteChatMessage(\'' + id + '\')" style="background:none; border:none; font-size:9px; opacity:0.5; cursor:pointer; margin-left:2px;">🗑</button>' : '';
     return '<div class="chat-msg ' + bubbleClass + '"><div class="chat-msg-header">' + roleIcon + '<span>' + escapeHtml(msg.username) + '</span>' + (isAdmin ? ' · ADMIN' : '') + (isVip && !isAdmin ? ' · VIP' : '') + deleteBtn + '</div><div>' + escapeHtml(msg.message) + '</div><div class="chat-time">' + timeStr + '</div></div>';
   }).join('');
   if (wasAtBottom || container.scrollTop === 0) container.scrollTop = container.scrollHeight;
@@ -3663,7 +3965,7 @@ async function loadAdminAnnouncements() {
     const container = document.getElementById('admin-info-list');
     if (data.success && Object.keys(data.announcements).length > 0) {
       const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
-      container.innerHTML = entries.map(([id, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div style="flex:1; min-width:0;"><span style="color:var(--warn); font-weight:700; font-size:10.5px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(val.title) + '</span></div><div style="display:flex; gap:2px; flex-shrink:0;"><button onclick="editAnnouncement(\\'' + id + '\\', \\'' + encodeURIComponent(val.title) + '\\', \\'' + encodeURIComponent(val.content) + '\\')" class="btn btn-ghost btn-xs">E</button><button onclick="deleteAnnouncement(\\'' + id + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
+      container.innerHTML = entries.map(([id, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div style="flex:1; min-width:0;"><span style="color:var(--warn); font-weight:700; font-size:10.5px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(val.title) + '</span></div><div style="display:flex; gap:2px; flex-shrink:0;"><button onclick="editAnnouncement(\'' + id + '\', \'' + encodeURIComponent(val.title) + '\', \'' + encodeURIComponent(val.content) + '\')" class="btn btn-ghost btn-xs">E</button><button onclick="deleteAnnouncement(\'' + id + '\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Belum ada</p>';
   } catch(e) {}
 }
@@ -3739,7 +4041,7 @@ async function loadAdminRedeems() {
     const data = await res.json();
     const container = document.getElementById('admin-redeem-list');
     if (data.success && Object.keys(data.redeems).length > 0) {
-      container.innerHTML = Object.entries(data.redeems).map(([code, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div><span class="mono" style="color:var(--warn); font-weight:700; font-size:10.5px;">' + code + '</span><span style="color:var(--text-2); display:block; font-size:9px;">' + (val.quotaPerUser || 1) + '/user • ' + val.claimedCount + '/' + val.maxClaims + '</span></div><button onclick="handleDeleteRedeem(\\'' + code + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div>').join('');
+      container.innerHTML = Object.entries(data.redeems).map(([code, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div><span class="mono" style="color:var(--warn); font-weight:700; font-size:10.5px;">' + code + '</span><span style="color:var(--text-2); display:block; font-size:9px;">' + (val.quotaPerUser || 1) + '/user • ' + val.claimedCount + '/' + val.maxClaims + '</span></div><button onclick="handleDeleteRedeem(\'' + code + '\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div>').join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Belum ada</p>';
   } catch(e) {}
 }
@@ -3840,6 +4142,7 @@ async function handleLogout() {
 }
 
 initFileDrop();
+initHdDropzone();
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
@@ -3893,7 +4196,7 @@ const server = http.createServer(async (req, res) => {
       });
       res.end(htmlTemplate);
 
-    // ====== DEVICE SESSION ENDPOINTS (BARU) ======
+    // ====== DEVICE SESSION ENDPOINTS ======
     } else if (parsedUrl.pathname === '/api/devices/list' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       const currentDeviceId = parsedUrl.searchParams.get('deviceId');
@@ -3996,6 +4299,133 @@ const server = http.createServer(async (req, res) => {
         else await removeOnlineUserFromDb(u);
       }
       jsonResponse(res, 200, { success: true, count: active.length, users: active });
+
+    // ====== HD PHOTO ENDPOINTS ======
+    } else if (parsedUrl.pathname === '/api/hd/check-quota' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+      const cleanUser = username.toLowerCase();
+      await checkAndExpireBonusQuota(cleanUser);
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) { userObj.activatedEmails = []; userObj.lastResetTime = now; await saveUserToDb(cleanUser, userObj); }
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
+      const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
+      if (userObj.isAdmin || isVipActive) return jsonResponse(res, 200, { success: true, allowed: true, message: 'Unlimited', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+      if (usedQuota >= totalQuota) return jsonResponse(res, 200, { success: true, allowed: false, message: 'Quota habis!', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+      jsonResponse(res, 200, { success: true, allowed: true, message: 'Quota tersedia', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+
+    } else if (parsedUrl.pathname === '/api/hd/upscale' && req.method === 'POST') {
+      const username = req.headers['x-username'];
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+      const cleanUser = username.toLowerCase();
+      await checkAndExpireBonusQuota(cleanUser);
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
+      if (currentServerStatus !== 'online' && !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Server offline!' });
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) { userObj.activatedEmails = []; userObj.lastResetTime = now; }
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
+      const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
+      if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) return jsonResponse(res, 403, { success: false, message: 'Quota habis!' });
+      
+      // Parse multipart form data
+      const contentType = req.headers['content-type'] || '';
+      if (!contentType.includes('multipart/form-data')) {
+        return jsonResponse(res, 400, { success: false, message: 'Content-Type harus multipart/form-data' });
+      }
+      
+      const boundary = contentType.split('boundary=')[1];
+      if (!boundary) return jsonResponse(res, 400, { success: false, message: 'Boundary tidak ditemukan' });
+      
+      const chunks = [];
+      for await (const chunk of req) {
+        chunks.push(chunk);
+      }
+      const fullBuffer = Buffer.concat(chunks);
+      
+      // Simple multipart parser
+      const boundaryBuffer = Buffer.from('--' + boundary);
+      const parts = [];
+      let start = fullBuffer.indexOf(boundaryBuffer) + boundaryBuffer.length + 2;
+      while (start < fullBuffer.length) {
+        const nextBoundary = fullBuffer.indexOf(boundaryBuffer, start);
+        if (nextBoundary === -1) break;
+        const partData = fullBuffer.slice(start, nextBoundary - 2);
+        parts.push(partData);
+        start = nextBoundary + boundaryBuffer.length + 2;
+      }
+      
+      let imageBuffer = null;
+      let filename = 'image.jpg';
+      let mimeType = 'image/jpeg';
+      let upscaleLevel = '2';
+      
+      for (const part of parts) {
+        const headerEnd = part.indexOf('\r\n\r\n');
+        if (headerEnd === -1) continue;
+        const headerStr = part.slice(0, headerEnd).toString();
+        const bodyData = part.slice(headerEnd + 4);
+        
+        if (headerStr.includes('name="image"') || headerStr.includes('name="file"')) {
+          const fnMatch = headerStr.match(/filename="([^"]+)"/);
+          if (fnMatch) filename = fnMatch[1];
+          const ctMatch = headerStr.match(/Content-Type:\s*([^\r\n]+)/i);
+          if (ctMatch) mimeType = ctMatch[1].trim();
+          imageBuffer = bodyData;
+        } else if (headerStr.includes('name="upscale"')) {
+          upscaleLevel = bodyData.toString().trim();
+        }
+      }
+      
+      if (!imageBuffer || imageBuffer.length === 0) {
+        return jsonResponse(res, 400, { success: false, message: 'File gambar tidak ditemukan' });
+      }
+      
+      const quotaEntry = 'hd_' + now + '_' + Math.random().toString(36).substring(2, 6);
+      if (!userObj.isAdmin && !isVipActive) {
+        if (!userObj.activatedEmails) userObj.activatedEmails = [];
+        userObj.activatedEmails.push(quotaEntry);
+        if (userObj.bonusQuota > 0) { userObj.lastBonusActivity = now; userObj.bonusGrantedAt = userObj.bonusGrantedAt || now; }
+        await saveUserToDb(cleanUser, userObj);
+      }
+      
+      try {
+        const apiResult = await upscaleHdPhoto(imageBuffer, filename, mimeType, upscaleLevel);
+        
+        const orderId = generateOrderId('HD');
+        const resultUrl = apiResult?.data?.url || apiResult?.url || apiResult?.imageUrl || apiResult?.data?.display_url || JSON.stringify(apiResult);
+        
+        await saveOrderToDb(orderId, { orderId, username: cleanUser, type: 'hd', detail: filename + ' • ' + upscaleLevel + 'x upscale', result: resultUrl, timestamp: now, quotaEntry });
+        
+        const historyId = 'hd_' + now + '_' + Math.random().toString(36).substring(2, 8);
+        await saveHdPhotoResultToDb(historyId, { id: historyId, orderId, username: cleanUser, filename, upscale: upscaleLevel, url: resultUrl, rawResponse: apiResult, timestamp: now });
+        
+        jsonResponse(res, 200, { 
+          success: true, 
+          orderId, 
+          result: { filename, upscale: upscaleLevel, url: resultUrl, raw: apiResult }, 
+          quotaInfo: { usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } 
+        });
+      } catch (apiErr) {
+        const refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
+        const refreshedUser = await getUserFromDb(cleanUser);
+        const refreshedUsed = refreshedUser.activatedEmails ? refreshedUser.activatedEmails.length : 0;
+        jsonResponse(res, 500, { success: false, refilled, message: refilled ? 'Upscale gagal: ' + apiErr.message + '. Kuota dikembalikan.' : 'Upscale gagal: ' + apiErr.message, quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+      }
+
+    } else if (parsedUrl.pathname === '/api/hd/history' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+      const cleanUser = username.toLowerCase();
+      const allResults = await getHdPhotoResultsFromDb();
+      const myResults = Object.values(allResults).filter(r => r.username === cleanUser).sort((a, b) => b.timestamp - a.timestamp).slice(0, 20);
+      jsonResponse(res, 200, { success: true, results: myResults });
 
     // ====== TEMP MAIL ======
     } else if (parsedUrl.pathname === '/api/tempmail/check-quota' && req.method === 'GET') {
@@ -4748,17 +5178,14 @@ const server = http.createServer(async (req, res) => {
       const existingUser = await getUserFromDb(cleanUser);
       if (!existingUser) return jsonResponse(res, 404, { success: false });
       
-      // Device session validation
       const incomingDeviceId = deviceId || getDefaultDeviceId(req);
       const sessions = await getDeviceSessionsFromDb(cleanUser);
       const existingSession = sessions[incomingDeviceId];
       
       if (!existingSession) {
-        // Check if this device was previously kicked
         return jsonResponse(res, 401, { success: false, message: 'Sesi perangkat tidak valid. Silakan login ulang.', kicked: true });
       }
       
-      // Update last active
       existingSession.lastActive = Date.now();
       await saveDeviceSessionToDb(cleanUser, incomingDeviceId, existingSession);
       
@@ -4785,7 +5212,6 @@ const server = http.createServer(async (req, res) => {
         const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
         await saveUserToDb(cleanUser, { password, email, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
         
-        // Register device session
         const sessionId = incomingDeviceId;
         await saveDeviceSessionToDb(cleanUser, sessionId, {
           deviceId: sessionId,
@@ -4804,16 +5230,13 @@ const server = http.createServer(async (req, res) => {
           await checkAndExpireBonusQuota(cleanUser);
           existingUser = await getUserFromDb(cleanUser);
           
-          // Manage device sessions
           const sessions = await getDeviceSessionsFromDb(cleanUser);
           const sessionKeys = Object.keys(sessions);
           
-          // If max devices reached and this is new device, reject
           if (!sessions[incomingDeviceId] && sessionKeys.length >= MAX_DEVICES_PER_USER) {
             return jsonResponse(res, 403, { success: false, message: 'Batas maksimal ' + MAX_DEVICES_PER_USER + ' perangkat tercapai. Keluarkan perangkat lain terlebih dahulu.', maxDevices: true });
           }
           
-          // Save/update device session
           await saveDeviceSessionToDb(cleanUser, incomingDeviceId, {
             deviceId: incomingDeviceId,
             deviceInfo,
@@ -4900,14 +5323,16 @@ function getDefaultDeviceId(req) {
 
 server.listen(PORT, () => {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v7.2                                  ║');
+  console.log('║  🚀 AM Premium Banggus v8.0                                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
   console.log('║  💳 DANA Admin: ' + DANA_ADMIN_NUMBER + '                     ║');
   console.log('║  ──────────────────────────────────────────────────────────  ║');
-  console.log('║  ✨ UPDATE v7.2:                                             ║');
-  console.log('║  📱 FITUR CEK PERANGKAT LOGIN (BARU)                        ║');
+  console.log('║  ✨ UPDATE v8.0:                                             ║');
+  console.log('║  🖼️  FITUR HD PHOTO UPSCALER (BARU)                         ║');
+  console.log('║  📱 FITUR CEK PERANGKAT LOGIN                               ║');
   console.log('║  🔒 KELUARKAN PERANGKAT LAIN (FORCE LOGOUT)                 ║');
   console.log('║  📧 TEMP MAIL AUTO-REFRESH                                  ║');
   console.log('║  🎨 UI AUTH REDESIGN                                        ║');
+  console.log('║  ⚡ SEMUA FITUR GUNAKAN QUOTA YANG SAMA                     ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
