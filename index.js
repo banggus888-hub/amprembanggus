@@ -40,10 +40,6 @@ const ONLINE_CLEANUP_INTERVAL = 60 * 1000;
 const BONUS_EXPIRY_MS = 2 * 24 * 60 * 60 * 1000;
 const BASE_QUOTA = 2;
 
-// ====== KONFIGURASI SESI PERANGKAT ======
-const DEVICE_SESSION_TIMEOUT = 30 * 24 * 60 * 60 * 1000; // 30 hari
-const MAX_DEVICES_PER_USER = 5;
-
 // ====== NETFLIX CONFIG ======
 const NETFLIX_BASE = 'https://nftools.aroshi.my.id';
 const NETFLIX_COUNTRY = {
@@ -227,65 +223,6 @@ async function getOnlineUsersFromDb() {
 }
 async function saveOnlineUserToDb(username, data) { await set(ref(db, `onlineUsers/${username}`), data); }
 async function removeOnlineUserFromDb(username) { await set(ref(db, `onlineUsers/${username}`), null); }
-
-// ====== DEVICE SESSION HELPERS (BARU) ======
-async function getDeviceSessionsFromDb(username) {
-  if (!username) return {};
-  const snapshot = await get(child(ref(db), `deviceSessions/${username}`));
-  return snapshot.exists() ? snapshot.val() : {};
-}
-async function saveDeviceSessionToDb(username, deviceId, data) {
-  await set(ref(db, `deviceSessions/${username}/${deviceId}`), data);
-}
-async function removeDeviceSessionFromDb(username, deviceId) {
-  await set(ref(db, `deviceSessions/${username}/${deviceId}`), null);
-}
-async function removeAllDeviceSessionsFromDb(username) {
-  await set(ref(db, `deviceSessions/${username}`), null);
-}
-async function cleanExpiredDeviceSessions(username) {
-  try {
-    const sessions = await getDeviceSessionsFromDb(username);
-    const now = Date.now();
-    let changed = false;
-    for (const [deviceId, sess] of Object.entries(sessions)) {
-      if (now - (sess.lastActive || 0) > DEVICE_SESSION_TIMEOUT) {
-        await removeDeviceSessionFromDb(username, deviceId);
-        changed = true;
-      }
-    }
-    return changed;
-  } catch (e) {
-    console.error('[DEVICE CLEANUP]', e.message);
-    return false;
-  }
-}
-async function generateDeviceToken() {
-  return 'dt_' + crypto.randomBytes(24).toString('hex');
-}
-function parseUserAgent(ua) {
-  if (!ua) return { device: 'Unknown Device', browser: 'Unknown Browser', os: 'Unknown OS' };
-  ua = ua.toLowerCase();
-  let os = 'Unknown OS';
-  if (ua.includes('android')) os = 'Android';
-  else if (ua.includes('iphone') || ua.includes('ipad') || ua.includes('ipod')) os = 'iOS';
-  else if (ua.includes('windows')) os = 'Windows';
-  else if (ua.includes('mac os') || ua.includes('macintosh')) os = 'macOS';
-  else if (ua.includes('linux')) os = 'Linux';
-  
-  let browser = 'Unknown Browser';
-  if (ua.includes('edg/')) browser = 'Edge';
-  else if (ua.includes('chrome') && !ua.includes('edg')) browser = 'Chrome';
-  else if (ua.includes('firefox')) browser = 'Firefox';
-  else if (ua.includes('safari') && !ua.includes('chrome')) browser = 'Safari';
-  else if (ua.includes('opera') || ua.includes('opr/')) browser = 'Opera';
-  
-  let device = 'Desktop';
-  if (ua.includes('mobile') || ua.includes('android') || ua.includes('iphone')) device = 'Mobile';
-  else if (ua.includes('tablet') || ua.includes('ipad')) device = 'Tablet';
-  
-  return { device, browser, os };
-}
 
 // ====== BONUS QUOTA EXPIRY ======
 async function checkAndExpireBonusQuota(username) {
@@ -692,7 +629,6 @@ const htmlTemplate = `<!DOCTYPE html>
   .toast-apk { background:#1a3a26; color:#a7f3c8; border:1px solid #2d5f3f; }
   .toast-mail { background:#0a1f3a; color:#bfdbfe; border:1px solid #0a3d5f; }
   .toast-order { background:#0a2a3a; color:#bae6fd; border:1px solid #0a4a5f; }
-  .toast-device { background:#1a1a3a; color:#c7d2fe; border:1px solid #2f2f5f; }
   .prog { height:6px; background:var(--bg-0); border-radius:999px; overflow:hidden; }
   .prog-fill { height:100%; background:var(--accent); border-radius:999px; transition:width 0.25s; width:0%; }
   .dropzone { border:1.5px dashed var(--line-2); border-radius:10px; padding:20px 12px; text-align:center; cursor:pointer; transition:border-color 0.15s, background 0.15s; }
@@ -741,6 +677,7 @@ const htmlTemplate = `<!DOCTYPE html>
   ::-webkit-scrollbar-thumb:hover { background:var(--text-2); }
   .hide { display:none !important; }
 
+  /* ====== ANIMASI LOGIN & REGISTER ====== */
   @keyframes shake {
     0%, 100% { transform: translateX(0); }
     25% { transform: translateX(-5px); }
@@ -776,6 +713,7 @@ const htmlTemplate = `<!DOCTYPE html>
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ====== ANIMASI INBOX TEMP MAIL ====== */
   @keyframes slideInRight {
     from { opacity: 0; transform: translateX(20px); }
     to { opacity: 1; transform: translateX(0); }
@@ -792,35 +730,6 @@ const htmlTemplate = `<!DOCTYPE html>
     70% { box-shadow: 0 0 0 10px rgba(96,165,250,0); }
     100% { box-shadow: 0 0 0 0 rgba(96,165,250,0); }
   }
-
-  /* Device session styles */
-  .device-card {
-    background: var(--bg-2);
-    border: 1px solid var(--line-2);
-    border-radius: 10px;
-    padding: 12px;
-    margin-bottom: 8px;
-    transition: border-color 0.15s;
-  }
-  .device-card.current {
-    border-color: var(--ok);
-    background: var(--ok-soft);
-  }
-  .device-card.other {
-    border-color: var(--warn);
-  }
-  .device-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 9px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-  .device-icon.mobile { background: var(--accent-soft); color: var(--accent); }
-  .device-icon.desktop { background: var(--info-soft); color: var(--info); }
-  .device-icon.tablet { background: var(--warn-soft); color: var(--warn); }
 </style>
 </head>
 <body>
@@ -828,6 +737,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <div class="app-shell">
   <div class="topbar">
     <div style="display:flex; align-items:center; gap:10px;">
+      <!-- Mengganti simbol petir dengan logo SVG rapi -->
       <div class="brand-mark">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
@@ -871,7 +781,6 @@ const htmlTemplate = `<!DOCTYPE html>
     <button onclick="switchView('vipshop')" data-nav="vipshop" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>Beli VIP<span class="badge badge-warn" style="margin-left:auto; font-size:9px; padding:1px 6px;">HOT</span></button>
     <button onclick="switchView('chat')" data-nav="chat" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat Global<span id="chat-unread-badge" class="badge badge-err hide" style="margin-left:auto; font-size:9px; padding:1px 6px;">0</span></button>
     <button onclick="switchView('profile')" data-nav="profile" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Profil Akun</button>
-    <button onclick="switchView('devices')" data-nav="devices" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>Perangkat Login</button>
     <div class="nav-section-label">Lainnya</div>
     <button onclick="switchView('guide')" data-nav="guide" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Panduan</button>
     <button onclick="switchView('announcement')" data-nav="announcement" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>Pengumuman</button>
@@ -892,8 +801,10 @@ const htmlTemplate = `<!DOCTYPE html>
   <div style="flex:1; display:flex; flex-direction:column; justify-content:center; padding:8px 0; gap:12px;">
     <div id="offline-banner" class="card hide" style="background:var(--err-soft); border-color:rgba(248,113,113,0.3); padding:10px 13px; font-size:12px; color:var(--err); text-align:center;">⚠ Server offline — fitur generator dinonaktifkan</div>
 
+    <!-- AUTH VIEW DENGAN ANIMASI BARU -->
     <div id="auth-view" class="card-elevated" style="display:flex; flex-direction:column; gap:16px;">
       <div style="text-align:center; padding:8px 0 4px;">
+        <!-- Logo diganti menjadi SVG bersih, tanpa huruf A -->
         <div style="width:54px; height:54px; border-radius:14px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:inline-flex; align-items:center; justify-content:center; box-shadow:0 8px 24px rgba(109,92,230,0.4); margin-bottom:10px;">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
@@ -902,13 +813,15 @@ const htmlTemplate = `<!DOCTYPE html>
         <h1 class="display-font" style="font-size:22px; font-weight:800; margin:0 0 4px; color:var(--text-0);">Selamat datang</h1>
         <p style="font-size:12.5px; color:var(--text-2); margin:0;">Login atau daftar untuk mulai menggunakan layanan</p>
       </div>
-
+      
+      <!-- Tab Switch dengan indikator geser -->
       <div style="display:flex; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; padding:3px; position:relative;">
         <div id="tab-indicator" style="position:absolute; top:3px; bottom:3px; left:3px; width:calc(50% - 3px); background:var(--accent); border-radius:7px; transition:transform 0.25s cubic-bezier(0.32,0.72,0,1);"></div>
         <button onclick="switchAuthTab('login')" id="tab-login-btn" style="position:relative; z-index:1; flex:1; padding:8px; background:transparent; border:none; font-weight:600; font-size:12.5px; cursor:pointer; color:white; font-family:inherit; border-radius:7px;">Login</button>
         <button onclick="switchAuthTab('register')" id="tab-reg-btn" style="position:relative; z-index:1; flex:1; padding:8px; background:transparent; border:none; font-weight:600; font-size:12.5px; cursor:pointer; color:var(--text-1); font-family:inherit; border-radius:7px;">Daftar</button>
       </div>
-
+      
+      <!-- Form container dengan efek transisi -->
       <div id="auth-form-container" class="auth-tab-content" style="display:flex; flex-direction:column; gap:12px;">
         <div><label class="field-label">Username</label><input type="text" id="auth-username" placeholder="username_kamu" class="inp mono"></div>
         <div><label class="field-label">Password</label><input type="password" id="auth-password" placeholder="••••••••" class="inp"></div>
@@ -927,6 +840,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
       <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between;">
         <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+          <!-- Avatar inisial, bukan huruf A hardcode -->
           <div class="brand-mark" style="width:34px; height:34px; font-size:14px; background:var(--bg-2); border:1px solid var(--line-2); box-shadow:none;"><span id="user-avatar" style="color:var(--accent);">U</span></div>
           <div style="min-width:0;">
             <div id="logged-username" style="font-weight:700; font-size:13px; overflow:hidden; text-overflow:ellipsis;">-</div>
@@ -1010,38 +924,6 @@ const htmlTemplate = `<!DOCTYPE html>
           </div>
           <pre id="result-text" class="mono" style="font-size:10.5px; color:var(--accent); white-space:pre-wrap; word-break:break-all; max-height:180px; overflow-y:auto; margin:0;"></pre>
         </div>
-      </div>
-    </div>
-
-    <!-- SECTION PERANGKAT LOGIN (BARU) -->
-    <div id="section-devices" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
-      <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
-        <div class="section-head" style="margin:0; color:var(--info);">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-          Perangkat Login
-        </div>
-        <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
-      </div>
-      <div style="padding:11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:9px; font-size:11px; color:var(--info); display:flex; gap:8px; align-items:flex-start;">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-top:1px; flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-        <span>Kelola perangkat yang login ke akunmu. <strong>Keluarkan perangkat lain</strong> agar tidak bisa mengakses akun lagi.</span>
-      </div>
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em;">Perangkat Aktif</div>
-        <button onclick="loadDeviceSessions(true)" class="btn btn-ghost btn-xs">Refresh</button>
-      </div>
-      <div id="device-sessions-list" style="display:flex; flex-direction:column; gap:8px; max-height:420px; overflow-y:auto;">
-        <p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Memuat...</p>
-      </div>
-      <div id="device-action-result" class="hide" style="padding:11px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:9px;">
-        <div id="device-action-content" style="font-size:12px;"></div>
-      </div>
-      <div style="padding-top:12px; border-top:1px solid var(--line);">
-        <button onclick="handleLogoutAllDevices()" id="btn-logout-all" class="btn btn-err" style="width:100%;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
-          Logout Semua Perangkat
-        </button>
-        <p style="font-size:10.5px; color:var(--text-2); margin-top:7px; text-align:center;">Anda akan tetap login di perangkat ini</p>
       </div>
     </div>
 
@@ -1596,9 +1478,8 @@ const htmlTemplate = `<!DOCTYPE html>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--netflix); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">3</div><div style="font-size:12px; color:var(--text-1);"><strong>Netflix:</strong> Pilih plan, klik Generate, tunggu proses</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--ok); color:#032a17; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">4</div><div style="font-size:12px; color:var(--text-1);"><strong>APK MOD:</strong> Pilih APK, klik Dapatkan Link</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">5</div><div style="font-size:12px; color:var(--text-1);"><strong>Temp Mail:</strong> Generate email, copy, cek inbox (Otomatis Terbuka)</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>Perangkat Login:</strong> Cek perangkat aktif & keluarkan perangkat lain</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">7</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">8</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai.</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">7</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai.</div></div>
       </div>
     </div>
 
@@ -1689,18 +1570,12 @@ let lastApkHistoryFetch = 0;
 let lastMailHistoryFetch = 0;
 let lastMyOrdersFetch = 0;
 let lastAdminOrdersFetch = 0;
-let lastDeviceSessionsFetch = 0;
-
-// Device session state
-let currentDeviceId = null;
-let currentDeviceToken = null;
-let deviceSessions = [];
 
 // Variabel untuk Auto Refresh Temp Mail
 let mailAutoRefreshInterval = null;
 let lastMailMessageCount = 0;
 
-const CACHE_DURATION = { status:30000, video:60000, chat:15000, emails:30000, redeems:60000, announcements:60000, netflixHistory:30000, apkHistory:30000, mailHistory:30000, myOrders:15000, adminOrders:15000, onlineUsers:15000, deviceSessions:20000 };
+const CACHE_DURATION = { status:30000, video:60000, chat:15000, emails:30000, redeems:60000, announcements:60000, netflixHistory:30000, apkHistory:30000, mailHistory:30000, myOrders:15000, adminOrders:15000, onlineUsers:15000 };
 const memoryCache = {};
 
 function getCached(key) {
@@ -1710,47 +1585,6 @@ function getCached(key) {
   return entry.data;
 }
 function setCache(key, data, duration) { memoryCache[key] = { data, time: Date.now(), duration }; }
-
-// ====== DEVICE FINGERPRINT (BARU) ======
-function getDeviceFingerprint() {
-  try {
-    const nav = window.navigator;
-    const screen = window.screen;
-    const parts = [
-      nav.userAgent || '',
-      nav.language || '',
-      (nav.languages && nav.languages.join(',')) || '',
-      screen.width + 'x' + screen.height,
-      screen.colorDepth || '',
-      (new Date()).getTimezoneOffset(),
-      nav.platform || '',
-      nav.hardwareConcurrency || '',
-      nav.deviceMemory || '',
-      nav.maxTouchPoints || ''
-    ];
-    // Simple hash
-    let hash = 0;
-    const str = parts.join('|');
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    return 'dev_' + Math.abs(hash).toString(36) + '_' + str.length.toString(36);
-  } catch (e) {
-    return 'dev_fallback_' + Date.now();
-  }
-}
-
-function initDeviceIdentity() {
-  currentDeviceId = localStorage.getItem('device_id');
-  currentDeviceToken = localStorage.getItem('device_token');
-  if (!currentDeviceId) {
-    currentDeviceId = getDeviceFingerprint();
-    localStorage.setItem('device_id', currentDeviceId);
-  }
-}
-initDeviceIdentity();
 
 document.addEventListener('visibilitychange', () => {
   isPageVisible = !document.hidden;
@@ -1763,7 +1597,6 @@ document.addEventListener('visibilitychange', () => {
     if (currentView === 'apkmod') loadApkHistory(true);
     if (currentView === 'tempmail') { loadTempMailHistory(true); if(tempMailSession) startMailAutoRefresh(); }
     if (currentView === 'orders') loadMyOrders(true);
-    if (currentView === 'devices') loadDeviceSessions(true);
   } else {
     stopMailAutoRefresh();
   }
@@ -1842,7 +1675,7 @@ function switchView(viewName) {
   currentView = viewName;
   document.querySelectorAll('[data-nav]').forEach(el => { el.classList.toggle('active', el.dataset.nav === viewName); });
   toggleMenu();
-  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-apkmod','section-tempmail','section-orders','section-devices'].forEach(id => { document.getElementById(id).classList.add('hide'); });
+  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-apkmod','section-tempmail','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hide');
   else if (viewName === 'orders') { document.getElementById('section-orders').classList.remove('hide'); loadMyOrders(); }
   else if (viewName === 'netflix') { document.getElementById('section-netflix').classList.remove('hide'); loadNetflixHistory(); updateNetflixQuotaDisplay(); }
@@ -1859,10 +1692,6 @@ function switchView(viewName) {
     document.getElementById('dana-number-display').innerText = DANA_ADMIN_NUMBER;
     document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
   }
-  else if (viewName === 'devices') {
-    document.getElementById('section-devices').classList.remove('hide');
-    loadDeviceSessions(true);
-  }
   else if (viewName === 'profile') { document.getElementById('section-profile').classList.remove('hide'); loadVerifiedEmails(); }
   else if (viewName === 'guide') document.getElementById('section-guide').classList.remove('hide');
   else if (viewName === 'announcement') { document.getElementById('section-announcement').classList.remove('hide'); loadUserAnnouncements(); }
@@ -1874,6 +1703,7 @@ function switchView(viewName) {
     loadAdminRedeems(); loadAdminAnnouncements(); loadAdminVipList(); loadAllUsers(); loadVipAccounts(); loadAdminFeatureRequests(); loadAdminVipShop(); loadAdminTransactions(); loadAdminApkList(); loadAdminOrders();
   }
   
+  // Matikan auto refresh jika pindah dari view tempmail
   if (viewName !== 'tempmail') {
     stopMailAutoRefresh();
   }
@@ -1887,119 +1717,6 @@ function guardServerOnline(featureName) {
   if (serverOnline || isAdminUser) return true;
   showToast('Server offline — ' + featureName + ' tidak tersedia.', 'error', 4000);
   return false;
-}
-
-// ====== DEVICE SESSION FUNCTIONS (BARU) ======
-async function loadDeviceSessions(force = false) {
-  if (!loggedInUsername) return;
-  const container = document.getElementById('device-sessions-list');
-  if (!container) return;
-  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px;">⏳ Memuat...</p>';
-  try {
-    const res = await fetch('/api/devices/list?username=' + encodeURIComponent(loggedInUsername) + '&deviceId=' + encodeURIComponent(currentDeviceId || ''));
-    const data = await res.json();
-    if (data.success && data.sessions) {
-      deviceSessions = data.sessions;
-      lastDeviceSessionsFetch = Date.now();
-      renderDeviceSessions();
-    } else {
-      container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal memuat: ' + escapeHtml(data.message || 'Unknown error') + '</p>';
-    }
-  } catch(e) {
-    container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Kesalahan koneksi</p>';
-  }
-}
-
-function renderDeviceSessions() {
-  const container = document.getElementById('device-sessions-list');
-  if (!container) return;
-  if (!deviceSessions || deviceSessions.length === 0) {
-    container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Tidak ada perangkat aktif</p>';
-    return;
-  }
-  container.innerHTML = deviceSessions.map(sess => {
-    const isCurrent = sess.deviceId === currentDeviceId;
-    const dev = sess.deviceInfo || {};
-    let iconClass = 'desktop', iconSvg = '';
-    if (dev.device === 'Mobile') { iconClass = 'mobile'; iconSvg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>'; }
-    else if (dev.device === 'Tablet') { iconClass = 'tablet'; iconSvg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>'; }
-    else { iconSvg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>'; }
-    const lastActiveStr = sess.lastActive ? new Date(sess.lastActive).toLocaleString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '-';
-    const loginAtStr = sess.loginAt ? new Date(sess.loginAt).toLocaleString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '-';
-    const safeDeviceId = escapeHtml(sess.deviceId);
-    return '<div class="device-card ' + (isCurrent ? 'current' : 'other') + '">' +
-      '<div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">' +
-        '<div class="device-icon ' + iconClass + '">' + iconSvg + '</div>' +
-        '<div style="flex:1; min-width:0;">' +
-          '<div style="font-size:12.5px; font-weight:700; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">' +
-            escapeHtml(dev.browser || 'Unknown') + ' · ' + escapeHtml(dev.os || 'Unknown') +
-            (isCurrent ? '<span class="badge badge-ok" style="font-size:9px;">Perangkat Ini</span>' : '<span class="badge badge-warn" style="font-size:9px;">Perangkat Lain</span>') +
-          '</div>' +
-          '<div style="font-size:10px; color:var(--text-2);">' + escapeHtml(dev.device || 'Unknown') + ' · IP: ' + escapeHtml(sess.ipAddress || 'Unknown') + '</div>' +
-        '</div>' +
-      '</div>' +
-      '<div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px;">' +
-        '<div style="padding:6px 8px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;"><div style="font-size:8.5px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Login</div><div class="mono" style="font-size:10px; color:var(--text-1);">' + loginAtStr + '</div></div>' +
-        '<div style="padding:6px 8px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;"><div style="font-size:8.5px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Aktif Terakhir</div><div class="mono" style="font-size:10px; color:var(--text-1);">' + lastActiveStr + '</div></div>' +
-      '</div>' +
-      (!isCurrent ? '<button onclick="handleKickDevice(\\'' + safeDeviceId.replace(/'/g, "\\\\'") + '\\')" class="btn btn-err btn-xs" style="width:100%;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="display:inline; vertical-align:middle; margin-right:4px;"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>Keluarkan Perangkat Ini</button>' : '<div style="padding:7px; background:var(--ok-soft); border:1px solid rgba(74,222,128,0.25); border-radius:6px; text-align:center; font-size:10.5px; color:var(--ok); font-weight:600;">✓ Perangkat yang sedang Anda gunakan</div>') +
-    '</div>';
-  }).join('');
-}
-
-async function handleKickDevice(targetDeviceId) {
-  if (!loggedInUsername) return showToast('Harus login!', 'error');
-  if (!confirm('Keluarkan perangkat ini? Perangkat tersebut harus login ulang untuk mengakses akun.')) return;
-  const btn = event && event.target ? event.target.closest('button') : null;
-  if (btn) { btn.disabled = true; btn.innerText = 'Memproses...'; }
-  try {
-    const res = await fetch('/api/devices/kick', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, deviceId: currentDeviceId, targetDeviceId })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('✓ Perangkat dikeluarkan!', 'device', 4000);
-      document.getElementById('device-action-result').classList.remove('hide');
-      document.getElementById('device-action-content').innerHTML = '<div style="display:flex; align-items:center; gap:8px;"><span class="badge badge-ok">Berhasil</span><span style="color:var(--text-1);">Perangkat target telah dikeluarkan.</span></div>';
-      await loadDeviceSessions(true);
-    } else {
-      showToast(data.message || 'Gagal mengeluarkan perangkat', 'error', 4000);
-    }
-  } catch(e) {
-    showToast('Kesalahan koneksi', 'error');
-  } finally {
-    if (btn) { btn.disabled = false; }
-  }
-}
-
-async function handleLogoutAllDevices() {
-  if (!loggedInUsername) return showToast('Harus login!', 'error');
-  if (!confirm('Logout dari SEMUA perangkat lain?\\n\\nAnda akan tetap login di perangkat ini. Perangkat lain harus login ulang.')) return;
-  const btn = document.getElementById('btn-logout-all');
-  btn.disabled = true; btn.innerText = 'Memproses...';
-  try {
-    const res = await fetch('/api/devices/logout-all', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: loggedInUsername, deviceId: currentDeviceId })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('✓ Semua perangkat lain telah dikeluarkan!', 'device', 5000);
-      document.getElementById('device-action-result').classList.remove('hide');
-      document.getElementById('device-action-content').innerHTML = '<div style="display:flex; align-items:center; gap:8px;"><span class="badge badge-ok">Berhasil</span><span style="color:var(--text-1);">' + (data.kickedCount || 0) + ' perangkat lain telah dikeluarkan.</span></div>';
-      await loadDeviceSessions(true);
-    } else {
-      showToast(data.message || 'Gagal', 'error');
-    }
-  } catch(e) {
-    showToast('Kesalahan koneksi', 'error');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg> Logout Semua Perangkat';
-  }
 }
 
 async function loadMyOrders(force = false) {
@@ -2110,13 +1827,14 @@ function updateMailQuotaDisplay() {
   if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
 }
 
-// FUNGSI AUTO REFRESH TEMP MAIL
+// FUNGSI BARU: Auto Refresh Temp Mail
 function startMailAutoRefresh() {
   if (mailAutoRefreshInterval) clearInterval(mailAutoRefreshInterval);
   mailAutoRefreshInterval = setInterval(async () => {
     if (!isPageVisible || !tempMailSession || currentView !== 'tempmail') return;
     
     try {
+      // Menggunakan endpoint check yang sudah ada
       const res = await fetch('/api/tempmail/check', { 
         method:'POST', 
         headers:{'Content-Type':'application/json'}, 
@@ -2125,16 +1843,19 @@ function startMailAutoRefresh() {
       const data = await res.json();
       
       if (data.success && data.messages) {
+        // Cek apakah ada pesan baru berdasarkan jumlah
         if (data.messages.length > lastMailMessageCount) {
           showToast('📧 Pesan baru masuk!', 'mail');
           lastMailMessageCount = data.messages.length;
           
+          // Update list inbox
           document.getElementById('mail-message-count').innerText = data.messages.length + ' pesan';
           
+          // Render ulang dengan animasi
           const inboxList = document.getElementById('mail-inbox-list');
           if (data.messages.length > 0) {
             inboxList.innerHTML = data.messages.map((msg, idx) => {
-              const isNew = idx === 0;
+              const isNew = idx === 0; // Asumsi pesan terbaru ada di index 0
               const animClass = isNew ? 'mail-new' : '';
               
               const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
@@ -2148,8 +1869,9 @@ function startMailAutoRefresh() {
         }
       }
     } catch (e) {
+      // Abaikan error silent agar tidak spam
     }
-  }, 5000);
+  }, 5000); // Cek setiap 5 detik
 }
 
 function stopMailAutoRefresh() {
@@ -2170,6 +1892,7 @@ async function handleGenerateTempMail() {
   const progressFill = document.getElementById('mail-progress-fill');
   const resultContainer = document.getElementById('mail-result-container');
   
+  // Reset state auto refresh
   stopMailAutoRefresh();
   lastMailMessageCount = 0;
   
@@ -2193,6 +1916,7 @@ async function handleGenerateTempMail() {
       document.getElementById('mail-inbox-list').innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Menunggu email (Auto-Refresh Aktif)...</p>';
       document.getElementById('mail-message-count').innerText = '0 pesan';
       
+      // Memulai Auto refresh
       startMailAutoRefresh();
       
       if (genData.quotaInfo) { userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(genData.quotaInfo); updateMailQuotaDisplay(); }
@@ -2609,8 +2333,9 @@ function switchAuthTab(mode) {
   const btnText = document.getElementById('auth-btn-text');
   const formContainer = document.getElementById('auth-form-container');
   
+  // Animasi form fade
   formContainer.style.animation = 'none';
-  formContainer.offsetHeight;
+  formContainer.offsetHeight; // trigger reflow
   formContainer.style.animation = 'fadeInScale 0.3s ease-out forwards';
 
   if (mode === 'login') {
@@ -2644,32 +2369,20 @@ async function handleAuthAction() {
   const btn = document.getElementById('auth-submit-btn');
   const originalText = document.getElementById('auth-btn-text').innerText;
   
+  // Efek loading pada tombol
   btn.classList.add('btn-loading');
   btn.disabled = true;
   document.getElementById('auth-btn-text').innerText = '';
   
   try {
-    const res = await fetch('/api/auth', { 
-      method:'POST', 
-      headers:{'Content-Type':'application/json'}, 
-      body: JSON.stringify({ 
-        mode: currentAuthMode, 
-        username, 
-        password, 
-        email, 
-        deviceToken,
-        deviceId: currentDeviceId
-      }) 
-    });
+    const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, email, deviceToken }) });
     const data = await res.json();
     if (data.success) {
       if (currentAuthMode === 'register' && data.deviceToken) localStorage.setItem('am_device_token', data.deviceToken);
       if (data.token) { localStorage.setItem('authToken', data.token); localStorage.setItem('savedUsername', data.username); }
-      if (data.deviceId) { currentDeviceId = data.deviceId; localStorage.setItem('device_id', currentDeviceId); }
-      if (data.deviceToken) { currentDeviceToken = data.deviceToken; localStorage.setItem('device_token', currentDeviceToken); }
-      
       showToast(data.message, 'success');
       
+      // Animasi fade out sebelum masuk
       document.getElementById('auth-view').style.transition = 'opacity 0.3s';
       document.getElementById('auth-view').style.opacity = '0';
       setTimeout(() => {
@@ -2698,14 +2411,12 @@ function applySession(data) {
   loggedInUsername = data.username;
   isAdminUser = data.isAdmin;
   isVipUser = data.isVip || false;
-  if (data.deviceId) currentDeviceId = data.deviceId;
-  if (data.deviceToken) currentDeviceToken = data.deviceToken;
-  
   document.getElementById('auth-view').classList.add('hide');
   document.getElementById('terminal-view').classList.remove('hide');
   document.getElementById('menu-btn').classList.remove('hide');
   document.getElementById('logged-username').innerText = data.username;
   
+  // Set avatar huruf depan, bukan hardcode 'A'
   document.getElementById('user-avatar').innerText = data.username.charAt(0).toUpperCase();
   document.getElementById('drawer-avatar').innerText = data.username.charAt(0).toUpperCase();
   
@@ -2740,24 +2451,9 @@ async function checkSavedSession() {
   const savedUname = localStorage.getItem('savedUsername');
   if (!token || !savedUname) return;
   try {
-    const res = await fetch('/api/auth/session', { 
-      method:'POST', 
-      headers:{'Content-Type':'application/json'}, 
-      body: JSON.stringify({ 
-        username: savedUname, 
-        token,
-        deviceId: currentDeviceId,
-        deviceToken: currentDeviceToken
-      }) 
-    });
+    const res = await fetch('/api/auth/session', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: savedUname, token }) });
     const data = await res.json();
-    if (data.success) {
-      if (data.deviceId) currentDeviceId = data.deviceId;
-      applySession(data);
-    } else {
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('savedUsername');
-    }
+    if (data.success) applySession(data);
   } catch (e) {}
 }
 checkSavedSession();
@@ -3893,54 +3589,6 @@ const server = http.createServer(async (req, res) => {
       });
       res.end(htmlTemplate);
 
-    // ====== DEVICE SESSION ENDPOINTS (BARU) ======
-    } else if (parsedUrl.pathname === '/api/devices/list' && req.method === 'GET') {
-      const username = parsedUrl.searchParams.get('username');
-      const currentDeviceId = parsedUrl.searchParams.get('deviceId');
-      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-      const cleanUser = username.toLowerCase();
-      await cleanExpiredDeviceSessions(cleanUser);
-      const sessions = await getDeviceSessionsFromDb(cleanUser);
-      const list = Object.entries(sessions).map(([deviceId, sess]) => ({
-        deviceId,
-        deviceInfo: sess.deviceInfo || { device: 'Unknown', browser: 'Unknown', os: 'Unknown' },
-        ipAddress: sess.ipAddress || 'Unknown',
-        loginAt: sess.loginAt || 0,
-        lastActive: sess.lastActive || 0,
-        isCurrent: deviceId === currentDeviceId
-      })).sort((a, b) => (b.lastActive || 0) - (a.lastActive || 0));
-      jsonResponse(res, 200, { success: true, sessions: list });
-
-    } else if (parsedUrl.pathname === '/api/devices/kick' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { username, deviceId, targetDeviceId } = JSON.parse(body);
-      if (!username || !targetDeviceId) return jsonResponse(res, 400, { success: false, message: 'Parameter tidak lengkap' });
-      const cleanUser = username.toLowerCase();
-      const userObj = await getUserFromDb(cleanUser);
-      if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-      const sessions = await getDeviceSessionsFromDb(cleanUser);
-      if (!sessions[targetDeviceId]) return jsonResponse(res, 404, { success: false, message: 'Perangkat tidak ditemukan' });
-      if (targetDeviceId === deviceId) return jsonResponse(res, 400, { success: false, message: 'Tidak dapat mengeluarkan perangkat sendiri. Gunakan logout.' });
-      await removeDeviceSessionFromDb(cleanUser, targetDeviceId);
-      jsonResponse(res, 200, { success: true, message: 'Perangkat berhasil dikeluarkan' });
-
-    } else if (parsedUrl.pathname === '/api/devices/logout-all' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { username, deviceId } = JSON.parse(body);
-      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-      const cleanUser = username.toLowerCase();
-      const userObj = await getUserFromDb(cleanUser);
-      if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-      const sessions = await getDeviceSessionsFromDb(cleanUser);
-      let kickedCount = 0;
-      for (const sessDeviceId of Object.keys(sessions)) {
-        if (sessDeviceId !== deviceId) {
-          await removeDeviceSessionFromDb(cleanUser, sessDeviceId);
-          kickedCount++;
-        }
-      }
-      jsonResponse(res, 200, { success: true, message: 'Semua perangkat lain dikeluarkan', kickedCount });
-
     } else if (parsedUrl.pathname === '/api/status') {
       jsonResponse(res, 200, { status: currentServerStatus });
 
@@ -4741,89 +4389,35 @@ const server = http.createServer(async (req, res) => {
 
     } else if (parsedUrl.pathname === '/api/auth/session' && req.method === 'POST') {
       const body = await readBody(req);
-      const { username, token, deviceId, deviceToken } = JSON.parse(body);
+      const { username, token } = JSON.parse(body);
       if (!username || !token) return jsonResponse(res, 400, { success: false });
       const cleanUser = username.toLowerCase();
       await checkAndExpireBonusQuota(cleanUser);
       const existingUser = await getUserFromDb(cleanUser);
       if (!existingUser) return jsonResponse(res, 404, { success: false });
-      
-      // Device session validation
-      const incomingDeviceId = deviceId || getDefaultDeviceId(req);
-      const sessions = await getDeviceSessionsFromDb(cleanUser);
-      const existingSession = sessions[incomingDeviceId];
-      
-      if (!existingSession) {
-        // Check if this device was previously kicked
-        return jsonResponse(res, 401, { success: false, message: 'Sesi perangkat tidak valid. Silakan login ulang.', kicked: true });
-      }
-      
-      // Update last active
-      existingSession.lastActive = Date.now();
-      await saveDeviceSessionToDb(cleanUser, incomingDeviceId, existingSession);
-      
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
       if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
       if (now - existingUser.lastResetTime >= twentyFourHours) { existingUser.activatedEmails = []; existingUser.lastResetTime = now; await saveUserToDb(cleanUser, existingUser); }
       const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
       const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
-      jsonResponse(res, 200, { success: true, username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus, deviceId: incomingDeviceId });
+      jsonResponse(res, 200, { success: true, username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus });
 
     } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
       const body = await readBody(req);
-      const { mode, username, password, email, deviceToken, deviceId } = JSON.parse(body);
+      const { mode, username, password, email, deviceToken } = JSON.parse(body);
       const cleanUser = username.trim().toLowerCase();
       let existingUser = await getUserFromDb(cleanUser);
-      const incomingDeviceId = deviceId || getDefaultDeviceId(req);
-      const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-      const userAgent = req.headers['user-agent'] || '';
-      const deviceInfo = parseUserAgent(userAgent);
-      
       if (mode === 'register') {
         if (cleanUser === 'adminbaguss' || existingUser) return jsonResponse(res, 400, { success: false, message: 'Username tidak tersedia!' });
         const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
         await saveUserToDb(cleanUser, { password, email, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
-        
-        // Register device session
-        const sessionId = incomingDeviceId;
-        await saveDeviceSessionToDb(cleanUser, sessionId, {
-          deviceId: sessionId,
-          deviceInfo,
-          ipAddress: clientIp,
-          userAgent,
-          loginAt: Date.now(),
-          lastActive: Date.now(),
-          deviceToken: newDeviceToken
-        });
-        
         const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
-        return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: fakeAuthToken, deviceId: sessionId });
+        return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: fakeAuthToken });
       } else {
         if (existingUser && existingUser.password === password) {
           await checkAndExpireBonusQuota(cleanUser);
           existingUser = await getUserFromDb(cleanUser);
-          
-          // Manage device sessions
-          const sessions = await getDeviceSessionsFromDb(cleanUser);
-          const sessionKeys = Object.keys(sessions);
-          
-          // If max devices reached and this is new device, reject
-          if (!sessions[incomingDeviceId] && sessionKeys.length >= MAX_DEVICES_PER_USER) {
-            return jsonResponse(res, 403, { success: false, message: 'Batas maksimal ' + MAX_DEVICES_PER_USER + ' perangkat tercapai. Keluarkan perangkat lain terlebih dahulu.', maxDevices: true });
-          }
-          
-          // Save/update device session
-          await saveDeviceSessionToDb(cleanUser, incomingDeviceId, {
-            deviceId: incomingDeviceId,
-            deviceInfo,
-            ipAddress: clientIp,
-            userAgent,
-            loginAt: sessions[incomingDeviceId]?.loginAt || Date.now(),
-            lastActive: Date.now(),
-            deviceToken: deviceToken || existingUser.deviceToken || null
-          });
-          
           const now = Date.now();
           const twentyFourHours = 24 * 60 * 60 * 1000;
           if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
@@ -4831,7 +4425,7 @@ const server = http.createServer(async (req, res) => {
           const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
           const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
           const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
-          return jsonResponse(res, 200, { success: true, message: 'Login berhasil!', username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus, token: fakeAuthToken, deviceId: incomingDeviceId, deviceToken: existingUser.deviceToken || null });
+          return jsonResponse(res, 200, { success: true, message: 'Login berhasil!', username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus, token: fakeAuthToken });
         }
         return jsonResponse(res, 401, { success: false, message: 'Username atau password salah!' });
       }
@@ -4891,23 +4485,15 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-function getDefaultDeviceId(req) {
-  const userAgent = req.headers['user-agent'] || '';
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-  const hash = crypto.createHash('md5').update(userAgent + ip).digest('hex').substring(0, 16);
-  return 'srv_' + hash;
-}
-
 server.listen(PORT, () => {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v7.2                                  ║');
+  console.log('║  🚀 AM Premium Banggus v7.1                                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
   console.log('║  💳 DANA Admin: ' + DANA_ADMIN_NUMBER + '                     ║');
   console.log('║  ──────────────────────────────────────────────────────────  ║');
-  console.log('║  ✨ UPDATE v7.2:                                             ║');
-  console.log('║  📱 FITUR CEK PERANGKAT LOGIN (BARU)                        ║');
-  console.log('║  🔒 KELUARKAN PERANGKAT LAIN (FORCE LOGOUT)                 ║');
-  console.log('║  📧 TEMP MAIL AUTO-REFRESH                                  ║');
-  console.log('║  🎨 UI AUTH REDESIGN                                        ║');
+  console.log('║  ✨ UPDATE v7.1:                                             ║');
+  console.log('║  📧 TEMP MAIL AUTO-REFRESH (Pesan otomatis terbuka)         ║');
+  console.log('║  🎨 UI AUTH REDESIGN (Animasi login/register baru)          ║');
+  console.log('║  🗑️ HAPUS IKON PETIR & HURUF "A" HARDCODE                   ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
