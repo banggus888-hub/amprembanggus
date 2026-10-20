@@ -179,13 +179,6 @@ async function getNetflixResultsFromDb() {
 }
 async function saveNetflixResultToDb(id, data) { await set(ref(db, `netflixResults/${id}`), data); }
 
-// ====== NETFLIX ACTIVATIONS HELPERS (FITUR BARU: aktivasi Gmail) ======
-async function getNetflixActivationsFromDb() {
-  const snapshot = await get(child(ref(db), `netflixActivations`));
-  return snapshot.exists() ? snapshot.val() : {};
-}
-async function saveNetflixActivationToDb(id, data) { await set(ref(db, `netflixActivations/${id}`), data); }
-
 // ====== APK MOD HELPERS ======
 async function getApkModsFromDb() {
   const snapshot = await get(child(ref(db), `apkMods`));
@@ -231,7 +224,7 @@ async function getOnlineUsersFromDb() {
 async function saveOnlineUserToDb(username, data) { await set(ref(db, `onlineUsers/${username}`), data); }
 async function removeOnlineUserFromDb(username) { await set(ref(db, `onlineUsers/${username}`), null); }
 
-// ====== BONUS QUOTA EXPIRY (DIPERBAIKI) ======
+// ====== BONUS QUOTA EXPIRY ======
 async function checkAndExpireBonusQuota(username) {
   try {
     const userObj = await getUserFromDb(username);
@@ -249,16 +242,14 @@ async function checkAndExpireBonusQuota(username) {
       const lastBonusActivity = userObj.lastBonusActivity || bonusGrantedAt;
 
       if (lastBonusActivity > 0 && (now - lastBonusActivity) >= BONUS_EXPIRY_MS) {
-        // Bonus expired: reset ke kuota awal (2) — hapus bonus dan pangkas activatedEmails
         userObj.bonusQuota = 0;
         userObj.bonusGrantedAt = 0;
         userObj.lastBonusActivity = 0;
-        userObj.baseQuota = BASE_QUOTA;
         if (userObj.activatedEmails && userObj.activatedEmails.length > userObj.baseQuota) {
           userObj.activatedEmails = userObj.activatedEmails.slice(0, userObj.baseQuota);
         }
         changed = true;
-        console.log(`[BONUS EXPIRED] User ${username} - bonus expired (2 hari), reset ke ${BASE_QUOTA} kuota`);
+        console.log(`[BONUS EXPIRED] User ${username} - bonus expired (2 hari)`);
       }
     }
 
@@ -545,28 +536,6 @@ async function generateNetflixToken(plan, proxy) {
   }
 }
 
-// ====== FITUR BARU: NETFLIX AKTIVASI KE GMAIL ======
-// Flow: terima gmail + plan -> generate token -> simpan aktivasi -> berikan link langsung
-async function activateNetflixForGmail(gmail, plan) {
-  if (!gmail || !gmail.includes('@')) throw new Error('Gmail tidak valid');
-  // Generate token premium
-  const tokenResult = await generateNetflixToken(plan || 'premium', true);
-  if (!tokenResult.success) throw new Error(tokenResult.error || 'Gagal generate token');
-  // Buat link aktivasi yang bisa langsung dibuka user di browser
-  const activationLink = tokenResult.url;
-  return {
-    success: true,
-    gmail,
-    plan: tokenResult.plan || plan,
-    quality: tokenResult.quality,
-    country: tokenResult.country,
-    activationLink,
-    expires: tokenResult.expires,
-    pool: tokenResult.pool,
-    instructions: 'Buka link di browser, login dengan Gmail ' + gmail + ', lalu nikmati Netflix Premium. Link akan otomatis terhubung ke Gmail tersebut saat login.'
-  };
-}
-
 // ==========================================
 // HTML TEMPLATE
 // ==========================================
@@ -716,16 +685,31 @@ const htmlTemplate = `<!DOCTYPE html>
     75% { transform: translateX(-5px); }
   }
   .shake-error { animation: shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; border-color: var(--err) !important; }
-  .auth-tab-content { animation: fadeInScale 0.3s ease-out forwards; }
+  .auth-tab-content {
+    animation: fadeInScale 0.3s ease-out forwards;
+  }
   @keyframes fadeInScale {
     from { opacity: 0; transform: scale(0.95) translateY(5px); }
     to { opacity: 1; transform: scale(1) translateY(0); }
   }
-  .btn-loading { position: relative; color: transparent !important; pointer-events: none; }
+  .btn-loading {
+    position: relative;
+    color: transparent !important;
+    pointer-events: none;
+  }
   .btn-loading::after {
-    content: ''; position: absolute; width: 18px; height: 18px; top: 50%; left: 50%;
-    margin-top: -9px; margin-left: -9px; border: 2px solid rgba(255,255,255,0.3);
-    border-radius: 50%; border-top-color: white; animation: spin 0.8s linear infinite;
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    top: 50%;
+    left: 50%;
+    margin-top: -9px;
+    margin-left: -9px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -734,8 +718,13 @@ const htmlTemplate = `<!DOCTYPE html>
     from { opacity: 0; transform: translateX(20px); }
     to { opacity: 1; transform: translateX(0); }
   }
-  .mail-new { animation: slideInRight 0.4s cubic-bezier(0.32, 0.72, 0, 1) forwards; border-left: 3px solid var(--info) !important; }
-  .pulse-border { animation: borderPulse 1.5s infinite; }
+  .mail-new {
+    animation: slideInRight 0.4s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+    border-left: 3px solid var(--info) !important;
+  }
+  .pulse-border {
+    animation: borderPulse 1.5s infinite;
+  }
   @keyframes borderPulse {
     0% { box-shadow: 0 0 0 0 rgba(96,165,250,0.4); }
     70% { box-shadow: 0 0 0 10px rgba(96,165,250,0); }
@@ -748,6 +737,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <div class="app-shell">
   <div class="topbar">
     <div style="display:flex; align-items:center; gap:10px;">
+      <!-- Mengganti simbol petir dengan logo SVG rapi -->
       <div class="brand-mark">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
@@ -811,9 +801,10 @@ const htmlTemplate = `<!DOCTYPE html>
   <div style="flex:1; display:flex; flex-direction:column; justify-content:center; padding:8px 0; gap:12px;">
     <div id="offline-banner" class="card hide" style="background:var(--err-soft); border-color:rgba(248,113,113,0.3); padding:10px 13px; font-size:12px; color:var(--err); text-align:center;">⚠ Server offline — fitur generator dinonaktifkan</div>
 
-    <!-- AUTH VIEW -->
+    <!-- AUTH VIEW DENGAN ANIMASI BARU -->
     <div id="auth-view" class="card-elevated" style="display:flex; flex-direction:column; gap:16px;">
       <div style="text-align:center; padding:8px 0 4px;">
+        <!-- Logo diganti menjadi SVG bersih, tanpa huruf A -->
         <div style="width:54px; height:54px; border-radius:14px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:inline-flex; align-items:center; justify-content:center; box-shadow:0 8px 24px rgba(109,92,230,0.4); margin-bottom:10px;">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
@@ -822,11 +813,15 @@ const htmlTemplate = `<!DOCTYPE html>
         <h1 class="display-font" style="font-size:22px; font-weight:800; margin:0 0 4px; color:var(--text-0);">Selamat datang</h1>
         <p style="font-size:12.5px; color:var(--text-2); margin:0;">Login atau daftar untuk mulai menggunakan layanan</p>
       </div>
+      
+      <!-- Tab Switch dengan indikator geser -->
       <div style="display:flex; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; padding:3px; position:relative;">
         <div id="tab-indicator" style="position:absolute; top:3px; bottom:3px; left:3px; width:calc(50% - 3px); background:var(--accent); border-radius:7px; transition:transform 0.25s cubic-bezier(0.32,0.72,0,1);"></div>
         <button onclick="switchAuthTab('login')" id="tab-login-btn" style="position:relative; z-index:1; flex:1; padding:8px; background:transparent; border:none; font-weight:600; font-size:12.5px; cursor:pointer; color:white; font-family:inherit; border-radius:7px;">Login</button>
         <button onclick="switchAuthTab('register')" id="tab-reg-btn" style="position:relative; z-index:1; flex:1; padding:8px; background:transparent; border:none; font-weight:600; font-size:12.5px; cursor:pointer; color:var(--text-1); font-family:inherit; border-radius:7px;">Daftar</button>
       </div>
+      
+      <!-- Form container dengan efek transisi -->
       <div id="auth-form-container" class="auth-tab-content" style="display:flex; flex-direction:column; gap:12px;">
         <div><label class="field-label">Username</label><input type="text" id="auth-username" placeholder="username_kamu" class="inp mono"></div>
         <div><label class="field-label">Password</label><input type="password" id="auth-password" placeholder="••••••••" class="inp"></div>
@@ -845,6 +840,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
       <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between;">
         <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+          <!-- Avatar inisial, bukan huruf A hardcode -->
           <div class="brand-mark" style="width:34px; height:34px; font-size:14px; background:var(--bg-2); border:1px solid var(--line-2); box-shadow:none;"><span id="user-avatar" style="color:var(--accent);">U</span></div>
           <div style="min-width:0;">
             <div id="logged-username" style="font-weight:700; font-size:13px; overflow:hidden; text-overflow:ellipsis;">-</div>
@@ -913,7 +909,7 @@ const htmlTemplate = `<!DOCTYPE html>
         <div style="border-top:1px solid var(--line); padding-top:10px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
             <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em;">Kode Aktif</div>
-            <button onclick="loadActiveRedeems(true)" class="btn btn-ghost btn-xs">Refresh</button>
+            <button onclick="loadActiveRedeems()" class="btn btn-ghost btn-xs">Refresh</button>
           </div>
           <div id="active-redeem-list" style="display:flex; flex-direction:column; gap:7px; max-height:180px; overflow-y:auto;">
             <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
@@ -984,7 +980,7 @@ const htmlTemplate = `<!DOCTYPE html>
       <div class="card" style="border-color:rgba(96,165,250,0.2);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em;">Riwayat</div>
-          <button onclick="loadTempMailHistory(true)" class="btn btn-ghost btn-xs">Refresh</button>
+          <button onclick="loadTempMailHistory()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
         <div id="mail-history-list" style="display:flex; flex-direction:column; gap:7px; max-height:220px; overflow-y:auto;">
           <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
@@ -1039,11 +1035,6 @@ const htmlTemplate = `<!DOCTYPE html>
           <input type="checkbox" id="netflix-use-proxy" checked style="accent-color:var(--netflix);">
           <span style="font-size:11.5px; color:var(--text-1);">Gunakan Proxy</span>
         </label>
-        <div style="padding:11px; background:var(--bg-0); border:1px solid rgba(229,9,20,0.3); border-radius:9px;">
-          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--err); letter-spacing:0.06em; margin-bottom:6px;">✨ Aktivasi ke Gmail (Opsional)</div>
-          <input type="email" id="netflix-target-gmail" placeholder="gmail@gmail.com" class="inp" style="margin-bottom:6px;">
-          <p style="font-size:10px; color:var(--text-2); margin:0;">Isi Gmail untuk aktivasi langsung. Kosongkan untuk generate token biasa.</p>
-        </div>
         <button id="btn-generate-netflix" onclick="handleGenerateNetflix()" class="btn btn-netflix"><span id="netflix-btn-text">Generate Token</span></button>
       </div>
       <div id="netflix-loading" class="hide card" style="border-color:rgba(229,9,20,0.3);">
@@ -1066,7 +1057,7 @@ const htmlTemplate = `<!DOCTYPE html>
       <div class="card" style="border-color:rgba(229,9,20,0.2);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--err); letter-spacing:0.06em;">Riwayat</div>
-          <button onclick="loadNetflixHistory(true)" class="btn btn-ghost btn-xs">Refresh</button>
+          <button onclick="loadNetflixHistory()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
         <div id="netflix-history-list" style="display:flex; flex-direction:column; gap:7px; max-height:220px; overflow-y:auto;">
           <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
@@ -1115,7 +1106,7 @@ const htmlTemplate = `<!DOCTYPE html>
       <div class="card" style="border-color:rgba(74,222,128,0.2);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--ok); letter-spacing:0.06em;">Riwayat</div>
-          <button onclick="loadApkHistory(true)" class="btn btn-ghost btn-xs">Refresh</button>
+          <button onclick="loadApkHistory()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
         <div id="apk-history-list" style="display:flex; flex-direction:column; gap:7px; max-height:220px; overflow-y:auto;">
           <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
@@ -1214,7 +1205,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center; font-size:10.5px; color:var(--text-2);">
         <span id="chat-online-count">👥 0 user online</span>
-        <button onclick="loadGlobalChat(true)" class="btn btn-ghost btn-xs">Refresh</button>
+        <button onclick="loadGlobalChat()" class="btn btn-ghost btn-xs">Refresh</button>
       </div>
     </div>
 
@@ -1250,7 +1241,7 @@ const htmlTemplate = `<!DOCTYPE html>
       <div style="padding-top:12px; border-top:1px solid var(--line);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:9px;">
           <div class="section-head" style="margin:0; color:var(--info);">Gmail Terverifikasi</div>
-          <button onclick="loadVerifiedEmails(true)" class="btn btn-ghost btn-xs">Refresh</button>
+          <button onclick="loadVerifiedEmails()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
         <div id="quota-status-card" style="padding:11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:9px; margin-bottom:9px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:7px;">
@@ -1370,7 +1361,7 @@ const htmlTemplate = `<!DOCTYPE html>
       <div style="padding:11px; background:linear-gradient(135deg,var(--info-soft),var(--accent-soft)); border:1px solid rgba(96,165,250,0.3); border-radius:9px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:9px;">
           <div class="section-head" style="color:var(--info); margin:0;">Semua Orderan</div>
-          <button onclick="loadAdminOrders(true)" class="btn btn-ghost btn-xs">Refresh</button>
+          <button onclick="loadAdminOrders()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:7px;">
           <button onclick="setAdminOrderFilter('all')" data-afilter="all" class="admin-order-filter btn btn-xs" style="background:var(--info); color:white;">Semua</button>
@@ -1484,11 +1475,11 @@ const htmlTemplate = `<!DOCTYPE html>
       <div style="display:flex; flex-direction:column; gap:8px;">
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">1</div><div style="font-size:12px; color:var(--text-1);">Login/daftar dulu dengan akunmu</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">2</div><div style="font-size:12px; color:var(--text-1);"><strong>Alight Motion:</strong> Masukkan email target, kirim magic link, copy URL, verifikasi</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--netflix); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">3</div><div style="font-size:12px; color:var(--text-1);"><strong>Netflix:</strong> Pilih plan, isi Gmail untuk aktivasi langsung (opsional), klik Generate</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--netflix); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">3</div><div style="font-size:12px; color:var(--text-1);"><strong>Netflix:</strong> Pilih plan, klik Generate, tunggu proses</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--ok); color:#032a17; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">4</div><div style="font-size:12px; color:var(--text-1);"><strong>APK MOD:</strong> Pilih APK, klik Dapatkan Link</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">5</div><div style="font-size:12px; color:var(--text-1);"><strong>Temp Mail:</strong> Generate email, copy, cek inbox (Otomatis Terbuka)</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">7</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari → reset ke 2 kuota awal.</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">7</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai.</div></div>
       </div>
     </div>
 
@@ -1579,6 +1570,8 @@ let lastApkHistoryFetch = 0;
 let lastMailHistoryFetch = 0;
 let lastMyOrdersFetch = 0;
 let lastAdminOrdersFetch = 0;
+
+// Variabel untuk Auto Refresh Temp Mail
 let mailAutoRefreshInterval = null;
 let lastMailMessageCount = 0;
 
@@ -1611,42 +1604,12 @@ document.addEventListener('visibilitychange', () => {
 
 function showToast(message, type = 'info', duration = 3000) {
   const container = document.getElementById('toast-container');
-  if (!container) return;
   const toast = document.createElement('div');
   toast.className = 'toast toast-' + type;
   toast.innerHTML = '<span>' + message + '</span>';
   container.appendChild(toast);
   requestAnimationFrame(() => toast.classList.add('show'));
   setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 350); }, duration);
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text == null ? '' : String(text);
-  return div.innerHTML;
-}
-
-// SAFE copy helper: simpan data di dataset, bukan di inline onclick
-function safeCopy(text) {
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(String(text)).then(() => showToast('Tersalin!', 'success')).catch(() => fallbackCopy(String(text)));
-    } else fallbackCopy(String(text));
-  } catch(e) { fallbackCopy(String(text)); }
-}
-function fallbackCopy(text) {
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-    showToast('Tersalin!', 'success');
-  } catch(e) { showToast('Gagal menyalin', 'error'); }
-}
-
-// Tombol Copy di inbox temp mail pakai data-attribute untuk menghindari quote rusak
-function copyMailLink(el) {
-  const link = el && el.getAttribute ? el.getAttribute('data-link') : '';
-  if (link) safeCopy(link);
 }
 
 async function sendOnlineHeartbeat() {
@@ -1704,7 +1667,6 @@ window.addEventListener('beforeunload', () => {
 function toggleMenu() {
   const drawer = document.getElementById('nav-drawer');
   const overlay = document.getElementById('drawer-overlay');
-  if (!drawer || !overlay) return;
   drawer.classList.toggle('open');
   overlay.classList.toggle('hide');
 }
@@ -1713,53 +1675,43 @@ function switchView(viewName) {
   currentView = viewName;
   document.querySelectorAll('[data-nav]').forEach(el => { el.classList.toggle('active', el.dataset.nav === viewName); });
   toggleMenu();
-  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-apkmod','section-tempmail','section-orders'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.classList.add('hide');
-  });
-  if (viewName === 'generator') {
-    const tv = document.getElementById('terminal-view'); if (tv) tv.classList.remove('hide');
-  } else if (viewName === 'orders') {
-    const el = document.getElementById('section-orders'); if (el) el.classList.remove('hide');
-    loadMyOrders(true);
-  } else if (viewName === 'netflix') {
-    const el = document.getElementById('section-netflix'); if (el) el.classList.remove('hide');
-    loadNetflixHistory(true); updateNetflixQuotaDisplay();
-  } else if (viewName === 'apkmod') {
-    const el = document.getElementById('section-apkmod'); if (el) el.classList.remove('hide');
-    loadApkMods(); loadApkHistory(true); updateApkQuotaDisplay();
-  } else if (viewName === 'tempmail') {
-    const el = document.getElementById('section-tempmail'); if (el) el.classList.remove('hide');
-    loadTempMailHistory(true); updateMailQuotaDisplay();
-    if (tempMailSession) startMailAutoRefresh();
-  } else if (viewName === 'vipshop') {
-    const el = document.getElementById('section-vipshop'); if (el) el.classList.remove('hide');
+  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-apkmod','section-tempmail','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
+  if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hide');
+  else if (viewName === 'orders') { document.getElementById('section-orders').classList.remove('hide'); loadMyOrders(); }
+  else if (viewName === 'netflix') { document.getElementById('section-netflix').classList.remove('hide'); loadNetflixHistory(); updateNetflixQuotaDisplay(); }
+  else if (viewName === 'apkmod') { document.getElementById('section-apkmod').classList.remove('hide'); loadApkMods(); loadApkHistory(); updateApkQuotaDisplay(); }
+  else if (viewName === 'tempmail') { 
+    document.getElementById('section-tempmail').classList.remove('hide'); 
+    loadTempMailHistory(); 
+    updateMailQuotaDisplay(); 
+    if (tempMailSession) startMailAutoRefresh(); 
+  }
+  else if (viewName === 'vipshop') {
+    document.getElementById('section-vipshop').classList.remove('hide');
     loadVipShopItems(); loadUserTransactions();
     document.getElementById('dana-number-display').innerText = DANA_ADMIN_NUMBER;
     document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
-  } else if (viewName === 'profile') {
-    const el = document.getElementById('section-profile'); if (el) el.classList.remove('hide');
-    loadVerifiedEmails(true);
-  } else if (viewName === 'guide') {
-    const el = document.getElementById('section-guide'); if (el) el.classList.remove('hide');
-  } else if (viewName === 'announcement') {
-    const el = document.getElementById('section-announcement'); if (el) el.classList.remove('hide');
-    loadUserAnnouncements(true);
-  } else if (viewName === 'request') {
-    const el = document.getElementById('section-request'); if (el) el.classList.remove('hide');
-    loadUserFeatureRequests();
-  } else if (viewName === 'chat') {
-    const el = document.getElementById('section-chat'); if (el) el.classList.remove('hide');
-    loadGlobalChat(true); unreadChatCount = 0; updateChatBadge();
-  } else if (viewName === 'admin') {
-    if (!isAdminUser) return showToast('Akses ditolak!', 'error');
-    const el = document.getElementById('section-admin'); if (el) el.classList.remove('hide');
-    loadAdminRedeems(); loadAdminAnnouncements(); loadAdminVipList(); loadAllUsers(); loadVipAccounts(); loadAdminFeatureRequests(); loadAdminVipShop(); loadAdminTransactions(); loadAdminApkList(); loadAdminOrders(true);
   }
-  if (viewName !== 'tempmail') stopMailAutoRefresh();
+  else if (viewName === 'profile') { document.getElementById('section-profile').classList.remove('hide'); loadVerifiedEmails(); }
+  else if (viewName === 'guide') document.getElementById('section-guide').classList.remove('hide');
+  else if (viewName === 'announcement') { document.getElementById('section-announcement').classList.remove('hide'); loadUserAnnouncements(); }
+  else if (viewName === 'request') { document.getElementById('section-request').classList.remove('hide'); loadUserFeatureRequests(); }
+  else if (viewName === 'chat') { document.getElementById('section-chat').classList.remove('hide'); loadGlobalChat(true); unreadChatCount = 0; updateChatBadge(); }
+  else if (viewName === 'admin') {
+    if (!isAdminUser) return showToast('Akses ditolak!', 'error');
+    document.getElementById('section-admin').classList.remove('hide');
+    loadAdminRedeems(); loadAdminAnnouncements(); loadAdminVipList(); loadAllUsers(); loadVipAccounts(); loadAdminFeatureRequests(); loadAdminVipShop(); loadAdminTransactions(); loadAdminApkList(); loadAdminOrders();
+  }
+  
+  // Matikan auto refresh jika pindah dari view tempmail
+  if (viewName !== 'tempmail') {
+    stopMailAutoRefresh();
+  }
 }
 
-function copyDanaNumber() { safeCopy(DANA_ADMIN_NUMBER); }
+function copyDanaNumber() {
+  navigator.clipboard.writeText(DANA_ADMIN_NUMBER).then(() => showToast('Nomor tersalin!', 'success')).catch(() => showToast('Gagal', 'error'));
+}
 
 function guardServerOnline(featureName) {
   if (serverOnline || isAdminUser) return true;
@@ -1875,27 +1827,51 @@ function updateMailQuotaDisplay() {
   if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
 }
 
+// FUNGSI BARU: Auto Refresh Temp Mail
 function startMailAutoRefresh() {
   if (mailAutoRefreshInterval) clearInterval(mailAutoRefreshInterval);
   mailAutoRefreshInterval = setInterval(async () => {
     if (!isPageVisible || !tempMailSession || currentView !== 'tempmail') return;
+    
     try {
-      const res = await fetch('/api/tempmail/check', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession })
+      // Menggunakan endpoint check yang sudah ada
+      const res = await fetch('/api/tempmail/check', { 
+        method:'POST', 
+        headers:{'Content-Type':'application/json'}, 
+        body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession }) 
       });
       const data = await res.json();
+      
       if (data.success && data.messages) {
+        // Cek apakah ada pesan baru berdasarkan jumlah
         if (data.messages.length > lastMailMessageCount) {
           showToast('📧 Pesan baru masuk!', 'mail');
           lastMailMessageCount = data.messages.length;
+          
+          // Update list inbox
           document.getElementById('mail-message-count').innerText = data.messages.length + ' pesan';
-          renderTempMailInbox(data.messages);
+          
+          // Render ulang dengan animasi
+          const inboxList = document.getElementById('mail-inbox-list');
+          if (data.messages.length > 0) {
+            inboxList.innerHTML = data.messages.map((msg, idx) => {
+              const isNew = idx === 0; // Asumsi pesan terbaru ada di index 0
+              const animClass = isNew ? 'mail-new' : '';
+              
+              const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
+                ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
+              
+              return '<div class="hist-item ' + animClass + '" style="border-color:rgba(96,165,250,0.25);"><div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div><div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' + linksHtml + '</div>';
+            }).join('');
+          } else {
+            inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada email</p>';
+          }
         }
       }
-    } catch (e) {}
-  }, 5000);
+    } catch (e) {
+      // Abaikan error silent agar tidak spam
+    }
+  }, 5000); // Cek setiap 5 detik
 }
 
 function stopMailAutoRefresh() {
@@ -1915,8 +1891,11 @@ async function handleGenerateTempMail() {
   const logText = document.getElementById('mail-log-text');
   const progressFill = document.getElementById('mail-progress-fill');
   const resultContainer = document.getElementById('mail-result-container');
+  
+  // Reset state auto refresh
   stopMailAutoRefresh();
   lastMailMessageCount = 0;
+  
   btn.disabled = true; btnText.innerText = 'Memproses...';
   loadingEl.classList.remove('hide'); progressFill.style.width = '0%';
   statusText.innerText = 'Menyiapkan'; logText.innerText = 'Initializing...';
@@ -1936,7 +1915,10 @@ async function handleGenerateTempMail() {
       resultContainer.classList.remove('hide');
       document.getElementById('mail-inbox-list').innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Menunggu email (Auto-Refresh Aktif)...</p>';
       document.getElementById('mail-message-count').innerText = '0 pesan';
+      
+      // Memulai Auto refresh
       startMailAutoRefresh();
+      
       if (genData.quotaInfo) { userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(genData.quotaInfo); updateMailQuotaDisplay(); }
       if (genData.orderId) showToast('✅ Order ID: ' + genData.orderId, 'order', 5000);
       else showToast('Email berhasil!', 'mail');
@@ -1966,40 +1948,32 @@ async function checkTempMailInbox() {
     const res = await fetch('/api/tempmail/check', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession }) });
     const data = await res.json();
     if (data.success) {
-      if (data.messages && data.messages.length > 0) {
-        messageCount.innerText = data.messages.length + ' pesan';
-        renderTempMailInbox(data.messages);
-        showToast('📧 ' + data.messages.length + ' pesan!', 'mail');
+      if (data.messages && data.messages.length > 0) { 
+        messageCount.innerText = data.messages.length + ' pesan'; 
+        renderTempMailInbox(data.messages); 
+        showToast('📧 ' + data.messages.length + ' pesan!', 'mail'); 
         lastMailMessageCount = data.messages.length;
       }
       else { inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada email</p>'; messageCount.innerText = '0 pesan'; }
-    } else inboxList.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">' + escapeHtml(data.message || 'Gagal') + '</p>';
+    } else inboxList.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">' + (data.message || 'Gagal') + '</p>';
   } catch(e) { inboxList.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
 }
 
-// Render inbox pakai data-link attribute (menghindari quote rusak)
 function renderTempMailInbox(messages) {
   const container = document.getElementById('mail-inbox-list');
   if (!container) return;
   if (!messages || messages.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px;">Tidak ada</p>'; return; }
   container.innerHTML = messages.map((msg, idx) => {
-    const isNew = idx === 0;
+    const isNew = idx === 0; 
     const animClass = isNew ? 'mail-new' : '';
-    let linksHtml = '';
-    if (msg.extracted_links && msg.extracted_links.length > 0) {
-      linksHtml = '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' +
-        msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" data-link="' + escapeHtml(link) + '" onclick="copyMailLink(this)">' + escapeHtml(link) + '</div>').join('') +
-        '</div>';
-    }
-    return '<div class="hist-item ' + animClass + '" style="border-color:rgba(96,165,250,0.25);">' +
-      '<div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div>' +
-      '<div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div>' +
-      '<div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' +
-      linksHtml + '</div>';
+    const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
+      ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
+    return '<div class="hist-item ' + animClass + '" style="border-color:rgba(96,165,250,0.25);"><div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div><div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' + linksHtml + '</div>';
   }).join('');
 }
 
-function copyTempMailEmail() { const email = document.getElementById('mail-email-display').innerText; if (email && email !== '-') safeCopy(email); }
+function copyTempMailEmail() { const email = document.getElementById('mail-email-display').innerText; if (email && email !== '-') navigator.clipboard.writeText(email).then(() => showToast('Tersalin!', 'mail')); }
+function copyMailLink(link) { navigator.clipboard.writeText(link).then(() => showToast('Tersalin!', 'mail')); }
 
 async function loadTempMailHistory(force = false) {
   if (!loggedInUsername) return;
@@ -2019,17 +1993,11 @@ function renderTempMailHistory(data) {
   const container = document.getElementById('mail-history-list');
   if (!container) return;
   if (data.success && data.results && data.results.length > 0) {
-    container.innerHTML = data.results.map(r =>
-      '<div class="hist-item" style="border-color:rgba(96,165,250,0.2);">' +
-      '<div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--info);">📧 Temp Mail</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div>' +
-      '<div class="mono" style="font-size:10px; color:var(--info); word-break:break-all;">' + escapeHtml(r.email) + '</div>' +
-      '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px;">' +
-      '<span style="font-size:9px; color:var(--text-2);">' + escapeHtml(r.orderId || '-') + '</span>' +
-      '<button data-email="' + escapeHtml(r.email) + '" onclick="safeCopy(this.getAttribute(\\'data-email\\'))" class="btn btn-ghost btn-xs">Copy</button>' +
-      '</div></div>'
-    ).join('');
+    container.innerHTML = data.results.map(r => '<div class="hist-item" style="border-color:rgba(96,165,250,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--info);">📧 Temp Mail</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div class="mono" style="font-size:10px; color:var(--info); word-break:break-all;">' + escapeHtml(r.email) + '</div><div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px;"><span style="font-size:9px; color:var(--text-2);">' + escapeHtml(r.orderId || '-') + '</span><button onclick="copyHistoryEmail(\\'' + escapeHtml(r.email).replace(/'/g, "\\\\'") + '\\')" class="btn btn-ghost btn-xs">Copy</button></div></div>').join('');
   } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
 }
+
+function copyHistoryEmail(email) { navigator.clipboard.writeText(email).then(() => showToast('Tersalin!', 'mail')); }
 
 function selectNetflixPlan(plan) {
   selectedNetflixPlan = plan;
@@ -2046,12 +2014,10 @@ function updateNetflixQuotaDisplay() {
   if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
 }
 
-// === FITUR BARU: NETFLIX AKTIVASI GMAIL ===
 async function handleGenerateNetflix() {
   if (!loggedInUsername) return showToast('Harus login!', 'error');
   if (!guardServerOnline('Netflix')) return;
   const useProxy = document.getElementById('netflix-use-proxy').checked;
-  const targetGmail = (document.getElementById('netflix-target-gmail').value || '').trim();
   const btn = document.getElementById('btn-generate-netflix');
   const btnText = document.getElementById('netflix-btn-text');
   const loadingEl = document.getElementById('netflix-loading');
@@ -2061,39 +2027,22 @@ async function handleGenerateNetflix() {
   btn.disabled = true; btnText.innerText = 'Memproses...';
   loadingEl.classList.remove('hide'); progressFill.style.width = '0%';
   statusText.innerText = 'Menyiapkan'; logText.innerText = 'Initializing...';
-
-  const isActivation = !!targetGmail;
-  if (isActivation && (!targetGmail.includes('@') || !targetGmail.includes('.'))) {
-    showToast('Gmail tidak valid!', 'error');
-    btn.disabled = false; btnText.innerText = 'Generate Token'; loadingEl.classList.add('hide');
-    return;
-  }
-
   try {
     const quotaRes = await fetch('/api/netflix/check-quota?username=' + encodeURIComponent(loggedInUsername));
     const quotaData = await quotaRes.json();
     if (!quotaData.success) throw new Error(quotaData.message || 'Gagal cek');
     if (!quotaData.allowed) throw new Error(quotaData.message || 'Quota habis!');
-    statusText.innerText = isActivation ? 'Aktivasi Gmail...' : 'Menggenerate...';
-    logText.innerText = 'Connecting...'; progressFill.style.width = '30%';
-
-    const endpoint = isActivation ? '/api/netflix/activate-gmail' : '/api/netflix/generate';
-    const bodyObj = isActivation
-      ? { username: loggedInUsername, plan: selectedNetflixPlan, gmail: targetGmail, useProxy }
-      : { username: loggedInUsername, plan: selectedNetflixPlan, useProxy };
-
-    const genRes = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(bodyObj) });
+    statusText.innerText = 'Menggenerate...'; logText.innerText = 'Connecting...'; progressFill.style.width = '30%';
+    const genRes = await fetch('/api/netflix/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, plan: selectedNetflixPlan, useProxy }) });
     const genData = await genRes.json();
     progressFill.style.width = '80%';
-
     if (genData.success && genData.result) {
       progressFill.style.width = '100%'; statusText.innerText = '✅ Berhasil!'; logText.innerText = 'Success';
       addNetflixResult(genData.result);
       if (genData.quotaInfo) { userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(genData.quotaInfo); updateNetflixQuotaDisplay(); }
       if (genData.orderId) showToast('✅ Order ID: ' + genData.orderId, 'order', 5000);
-      else showToast(isActivation ? 'Aktivasi Gmail berhasil!' : 'Token berhasil!', 'netflix');
+      else showToast('Token berhasil!', 'netflix');
       loadNetflixHistory(true);
-      document.getElementById('netflix-target-gmail').value = '';
       setTimeout(() => loadingEl.classList.add('hide'), 2000);
     } else {
       if (genData.refilled) showToast(genData.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
@@ -2118,18 +2067,11 @@ function renderNetflixResults() {
   const NC = {US:'UNITED STATES',GB:'UNITED KINGDOM',DE:'GERMANY',FR:'FRANCE',JP:'JAPAN',KR:'SOUTH KOREA',IN:'INDIA',BR:'BRAZIL',CA:'CANADA',AU:'AUSTRALIA',ID:'INDONESIA',MY:'MALAYSIA',PH:'PHILIPPINES',SG:'SINGAPORE',TH:'THAILAND'};
   container.innerHTML = netflixResults.map((r, i) => {
     const countryName = NC[r.country] || r.country || 'Unknown';
-    const activationLine = r.gmail ? '<div style="padding:7px 10px; background:var(--ok-soft); border:1px solid rgba(74,222,128,0.25); border-radius:7px; margin-bottom:7px;"><div style="font-size:9px; color:var(--ok); text-transform:uppercase; font-weight:700;">✅ Teraktivasi ke</div><div class="mono" style="font-size:11px; color:var(--ok); font-weight:700; word-break:break-all;">' + escapeHtml(r.gmail) + '</div></div>' : '';
-    return '<div class="hist-item" style="border-color:rgba(229,9,20,0.25);">' +
-      '<div style="display:flex; justify-content:space-between; margin-bottom:7px;"><span style="font-size:11.5px; font-weight:700; color:var(--err);">#' + (netflixResults.length - i) + ' • ' + escapeHtml((r.plan || selectedNetflixPlan).toUpperCase()) + '</span><span class="badge badge-err" style="font-size:9px;">' + escapeHtml(countryName) + '</span></div>' +
-      activationLine +
-      '<div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:7px;">' +
-      '<div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Quality</div><div style="font-size:11px; font-weight:600;">' + escapeHtml(r.quality || 'HD') + '</div></div>' +
-      '<div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Expires</div><div style="font-size:11px; font-weight:600;">' + (r.expires ? new Date(r.expires).toLocaleDateString('id-ID') : '—') + '</div></div></div>' +
-      '<div class="link-line" style="margin-bottom:6px;" data-link="' + escapeHtml(r.url) + '" onclick="safeCopy(this.getAttribute(\\'data-link\\'))">' + escapeHtml(r.url) + '</div>' +
-      '<button data-link="' + escapeHtml(r.url) + '" onclick="safeCopy(this.getAttribute(\\'data-link\\'))" class="btn btn-netflix btn-sm" style="width:100%;">Copy Link</button></div>';
+    return '<div class="hist-item" style="border-color:rgba(229,9,20,0.25);"><div style="display:flex; justify-content:space-between; margin-bottom:7px;"><span style="font-size:11.5px; font-weight:700; color:var(--err);">#' + (netflixResults.length - i) + ' • ' + escapeHtml((r.plan || selectedNetflixPlan).toUpperCase()) + '</span><span class="badge badge-err" style="font-size:9px;">' + escapeHtml(countryName) + '</span></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:7px;"><div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Quality</div><div style="font-size:11px; font-weight:600;">' + escapeHtml(r.quality || 'HD') + '</div></div><div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Expires</div><div style="font-size:11px; font-weight:600;">' + (r.expires ? new Date(r.expires).toLocaleDateString('id-ID') : '—') + '</div></div></div><div class="link-line" style="margin-bottom:6px;" onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.url) + '</div><button onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')" class="btn btn-netflix btn-sm" style="width:100%;">Copy Link</button></div>';
   }).join('');
 }
 
+function copyNetflixLink(url) { navigator.clipboard.writeText(url).then(() => showToast('Tersalin!', 'netflix')).catch(() => showToast('Gagal', 'error')); }
 function clearNetflixResults() { netflixResults = []; renderNetflixResults(); document.getElementById('netflix-results-container').classList.add('hide'); }
 
 async function loadNetflixHistory(force = false) {
@@ -2153,11 +2095,7 @@ function renderNetflixHistory(data) {
     const NC = {US:'UNITED STATES',GB:'UNITED KINGDOM',DE:'GERMANY',FR:'FRANCE',JP:'JAPAN',KR:'SOUTH KOREA',IN:'INDIA',BR:'BRAZIL',CA:'CANADA',AU:'AUSTRALIA',ID:'INDONESIA',MY:'MALAYSIA',PH:'PHILIPPINES',SG:'SINGAPORE',TH:'THAILAND'};
     container.innerHTML = data.results.map(r => {
       const countryName = NC[r.country] || r.country || 'Unknown';
-      return '<div class="hist-item" style="border-color:rgba(229,9,20,0.2);">' +
-        '<div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--err);">' + escapeHtml(r.plan || 'premium').toUpperCase() + '</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div>' +
-        (r.gmail ? '<div style="font-size:10px; color:var(--ok); margin-bottom:2px;">✅ ' + escapeHtml(r.gmail) + '</div>' : '') +
-        '<div style="font-size:10px; color:var(--text-2);">' + escapeHtml(countryName) + ' • ' + escapeHtml(r.quality || 'HD') + '</div>' +
-        '<div class="link-line" style="margin-top:6px; font-size:10px;" data-link="' + escapeHtml(r.url) + '" onclick="safeCopy(this.getAttribute(\\'data-link\\'))">' + escapeHtml(r.url) + '</div></div>';
+      return '<div class="hist-item" style="border-color:rgba(229,9,20,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--err);">' + escapeHtml(r.plan || 'premium').toUpperCase() + '</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div style="font-size:10px; color:var(--text-2);">' + escapeHtml(countryName) + ' • ' + escapeHtml(r.quality || 'HD') + '</div><div class="link-line" style="margin-top:6px; font-size:10px;" onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.url) + '</div></div>';
     }).join('');
   } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
 }
@@ -2184,7 +2122,7 @@ async function loadApkMods() {
       cachedApkMods = items;
       container.innerHTML = items.map(([id, item]) => {
         const isSelected = selectedApkId === id;
-        return '<div class="opt-row apk ' + (isSelected ? 'selected' : '') + '" data-apk-id="' + escapeHtml(id) + '" onclick="selectApkMod(this.getAttribute(\\'data-apk-id\\'))"><div><div style="font-weight:700; font-size:12.5px;">📱 ' + escapeHtml(item.name) + '</div><div style="font-size:10px; color:var(--text-2);">' + escapeHtml(item.description || 'APK MOD') + '</div></div><span style="font-size:11px; color:var(--ok); font-weight:700;">1 Q</span></div>';
+        return '<div class="opt-row apk ' + (isSelected ? 'selected' : '') + '" data-apk-id="' + id + '" onclick="selectApkMod(\\'' + id + '\\')"><div><div style="font-weight:700; font-size:12.5px;">📱 ' + escapeHtml(item.name) + '</div><div style="font-size:10px; color:var(--text-2);">' + escapeHtml(item.description || 'APK MOD') + '</div></div><span style="font-size:11px; color:var(--ok); font-weight:700;">1 Q</span></div>';
       }).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
@@ -2192,7 +2130,7 @@ async function loadApkMods() {
 
 function selectApkMod(apkId) {
   selectedApkId = apkId;
-  document.querySelectorAll('.opt-row[data-apk-id]').forEach(el => { el.classList.toggle('selected', el.getAttribute('data-apk-id') === apkId); });
+  document.querySelectorAll('.opt-row[data-apk-id]').forEach(el => { el.classList.toggle('selected', el.dataset.apkId === apkId); });
   const item = cachedApkMods.find(([id]) => id === apkId);
   if (item) showToast('Dipilih: ' + item[1].name, 'apk');
 }
@@ -2247,15 +2185,10 @@ function renderApkResults() {
   const container = document.getElementById('apk-results-list');
   if (!container) return;
   if (apkResults.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Belum ada</p>'; return; }
-  container.innerHTML = apkResults.map((r, i) =>
-    '<div class="hist-item" style="border-color:rgba(74,222,128,0.25);">' +
-    '<div style="display:flex; justify-content:space-between; margin-bottom:7px;"><span style="font-size:11.5px; font-weight:700; color:var(--ok);">#' + (apkResults.length - i) + ' • ' + escapeHtml(r.name) + '</span><span class="badge badge-ok" style="font-size:9px;">APK</span></div>' +
-    '<div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700; margin-bottom:4px;">Link</div>' +
-    '<div class="link-line" style="margin-bottom:6px;" data-link="' + escapeHtml(r.link) + '" onclick="safeCopy(this.getAttribute(\\'data-link\\'))">' + escapeHtml(r.link) + '</div>' +
-    '<button data-link="' + escapeHtml(r.link) + '" onclick="safeCopy(this.getAttribute(\\'data-link\\'))" class="btn btn-apk btn-sm" style="width:100%;">Copy Link</button></div>'
-  ).join('');
+  container.innerHTML = apkResults.map((r, i) => '<div class="hist-item" style="border-color:rgba(74,222,128,0.25);"><div style="display:flex; justify-content:space-between; margin-bottom:7px;"><span style="font-size:11.5px; font-weight:700; color:var(--ok);">#' + (apkResults.length - i) + ' • ' + escapeHtml(r.name) + '</span><span class="badge badge-ok" style="font-size:9px;">APK</span></div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700; margin-bottom:4px;">Link</div><div class="link-line" style="margin-bottom:6px;" onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.link) + '</div><button onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')" class="btn btn-apk btn-sm" style="width:100%;">Copy Link</button></div>').join('');
 }
 
+function copyApkLink(link) { navigator.clipboard.writeText(link).then(() => showToast('Tersalin!', 'apk')).catch(() => showToast('Gagal', 'error')); }
 function clearApkResults() { apkResults = []; renderApkResults(); document.getElementById('apk-results-container').classList.add('hide'); }
 
 async function loadApkHistory(force = false) {
@@ -2276,11 +2209,7 @@ function renderApkHistory(data) {
   const container = document.getElementById('apk-history-list');
   if (!container) return;
   if (data.success && data.results && data.results.length > 0) {
-    container.innerHTML = data.results.map(r =>
-      '<div class="hist-item" style="border-color:rgba(74,222,128,0.2);">' +
-      '<div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--ok);">' + escapeHtml(r.name) + '</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div>' +
-      '<div class="link-line" style="margin-top:5px; font-size:10px;" data-link="' + escapeHtml(r.link) + '" onclick="safeCopy(this.getAttribute(\\'data-link\\'))">' + escapeHtml(r.link) + '</div></div>'
-    ).join('');
+    container.innerHTML = data.results.map(r => '<div class="hist-item" style="border-color:rgba(74,222,128,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--ok);">' + escapeHtml(r.name) + '</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div class="link-line" style="margin-top:5px; font-size:10px;" onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.link) + '</div></div>').join('');
   } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
 }
 
@@ -2294,37 +2223,10 @@ async function loadAdminApkList() {
     const data = await res.json();
     if (data.success && data.items && Object.keys(data.items).length > 0) {
       const items = Object.entries(data.items).sort((a,b) => (a[1].order||0) - (b[1].order||0));
-      container.innerHTML = items.map(([id, item]) =>
-        '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;">' +
-        '<div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700; color:var(--ok);">' + escapeHtml(item.name) + '</div><div style="font-size:9px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(item.link) + '</div></div>' +
-        '<div style="display:flex; gap:3px; flex-shrink:0;">' +
-        '<button data-id="' + escapeHtml(id) + '" data-name="' + escapeHtml(item.name) + '" data-link="' + escapeHtml(item.link) + '" data-desc="' + escapeHtml(item.description||'') + '" onclick="editApkModFromBtn(this)" class="btn btn-ghost btn-xs">E</button>' +
-        '<button data-id="' + escapeHtml(id) + '" data-active="' + (item.active !== false ? '1' : '0') + '" onclick="toggleApkModFromBtn(this)" class="btn btn-ghost btn-xs">' + (item.active !== false ? 'O' : 'X') + '</button>' +
-        '<button data-id="' + escapeHtml(id) + '" onclick="deleteApkModFromBtn(this)" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button>' +
-        '</div></div>'
-      ).join('');
+      container.innerHTML = items.map(([id, item]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700; color:var(--ok);">' + escapeHtml(item.name) + '</div><div style="font-size:9px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(item.link) + '</div></div><div style="display:flex; gap:3px; flex-shrink:0;"><button onclick="editApkMod(\\'' + id + '\\', \\'' + encodeURIComponent(item.name) + '\\', \\'' + encodeURIComponent(item.link) + '\\', \\'' + encodeURIComponent(item.description || '') + '\\')" class="btn btn-ghost btn-xs">E</button><button onclick="toggleApkMod(\\'' + id + '\\', ' + (item.active !== false) + ')" class="btn btn-ghost btn-xs">' + (item.active !== false ? 'O' : 'X') + '</button><button onclick="deleteApkMod(\\'' + id + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:6px;">Gagal</p>'; }
 }
-
-function editApkModFromBtn(btn) {
-  const id = btn.getAttribute('data-id');
-  const name = btn.getAttribute('data-name');
-  const link = btn.getAttribute('data-link');
-  const desc = btn.getAttribute('data-desc');
-  document.getElementById('apk-edit-id').value = id;
-  document.getElementById('apk-name-input').value = name;
-  document.getElementById('apk-link-input').value = link;
-  document.getElementById('apk-desc-input').value = desc;
-  document.getElementById('apk-submit-btn').innerText = 'Perbarui';
-  document.getElementById('apk-cancel-btn').classList.remove('hide');
-}
-function toggleApkModFromBtn(btn) {
-  const id = btn.getAttribute('data-id');
-  const active = btn.getAttribute('data-active') === '1';
-  toggleApkMod(id, active);
-}
-function deleteApkModFromBtn(btn) { deleteApkMod(btn.getAttribute('data-id')); }
 
 async function handleSaveApkMod() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
@@ -2340,6 +2242,15 @@ async function handleSaveApkMod() {
     if (data.success) { showToast(data.message, 'success'); resetApkForm(); loadAdminApkList(); loadApkMods(); }
     else showToast(data.message, 'error');
   } catch(e) { showToast('Gagal', 'error'); }
+}
+
+function editApkMod(id, encName, encLink, encDesc) {
+  document.getElementById('apk-edit-id').value = id;
+  document.getElementById('apk-name-input').value = decodeURIComponent(encName);
+  document.getElementById('apk-link-input').value = decodeURIComponent(encLink);
+  document.getElementById('apk-desc-input').value = decodeURIComponent(encDesc || '');
+  document.getElementById('apk-submit-btn').innerText = 'Perbarui';
+  document.getElementById('apk-cancel-btn').classList.remove('hide');
 }
 
 function resetApkForm() {
@@ -2397,8 +2308,8 @@ function updateStatusUI(status) {
   const txt = document.getElementById('server-status-text');
   const banner = document.getElementById('offline-banner');
   if (!ind) return;
-  if (status === 'online') { ind.className = 'badge badge-ok'; dot.className = 'online-dot'; dot.style.background=''; dot.style.boxShadow=''; dot.style.animation=''; txt.innerText = 'Online'; if (banner) banner.classList.add('hide'); }
-  else { ind.className = 'badge badge-err'; dot.style.background = 'var(--err)'; dot.style.boxShadow = 'none'; dot.style.animation = 'none'; txt.innerText = 'Offline'; if (banner && !isAdminUser) banner.classList.remove('hide'); }
+  if (status === 'online') { ind.className = 'badge badge-ok'; dot.className = 'online-dot'; txt.innerText = 'Online'; banner.classList.add('hide'); }
+  else { ind.className = 'badge badge-err'; dot.style.background = 'var(--err)'; dot.style.boxShadow = 'none'; dot.style.animation = 'none'; txt.innerText = 'Offline'; if (!isAdminUser) banner.classList.remove('hide'); }
 }
 
 function startPolling() {
@@ -2421,9 +2332,12 @@ function switchAuthTab(mode) {
   const emailField = document.getElementById('email-field-container');
   const btnText = document.getElementById('auth-btn-text');
   const formContainer = document.getElementById('auth-form-container');
+  
+  // Animasi form fade
   formContainer.style.animation = 'none';
-  formContainer.offsetHeight;
+  formContainer.offsetHeight; // trigger reflow
   formContainer.style.animation = 'fadeInScale 0.3s ease-out forwards';
+
   if (mode === 'login') {
     ind.style.transform = 'translateX(0%)'; loginBtn.style.color = 'white'; regBtn.style.color = 'var(--text-1)';
     emailField.classList.add('hide'); btnText.innerText = 'Masuk';
@@ -2438,22 +2352,28 @@ async function handleAuthAction() {
   const password = document.getElementById('auth-password').value.trim();
   const email = document.getElementById('auth-email').value.trim();
   const formContainer = document.getElementById('auth-form-container');
+  
   if (!username || !password) {
     formContainer.classList.add('shake-error');
     setTimeout(() => formContainer.classList.remove('shake-error'), 500);
     return showToast('Username dan password wajib!', 'error');
   }
+  
   let deviceToken = localStorage.getItem('am_device_token');
   if (currentAuthMode === 'register' && deviceToken) {
     formContainer.classList.add('shake-error');
     setTimeout(() => formContainer.classList.remove('shake-error'), 500);
     return showToast('Perangkat sudah terdaftar!', 'error');
   }
+  
   const btn = document.getElementById('auth-submit-btn');
   const originalText = document.getElementById('auth-btn-text').innerText;
+  
+  // Efek loading pada tombol
   btn.classList.add('btn-loading');
   btn.disabled = true;
   document.getElementById('auth-btn-text').innerText = '';
+  
   try {
     const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, email, deviceToken }) });
     const data = await res.json();
@@ -2461,26 +2381,29 @@ async function handleAuthAction() {
       if (currentAuthMode === 'register' && data.deviceToken) localStorage.setItem('am_device_token', data.deviceToken);
       if (data.token) { localStorage.setItem('authToken', data.token); localStorage.setItem('savedUsername', data.username); }
       showToast(data.message, 'success');
+      
+      // Animasi fade out sebelum masuk
       document.getElementById('auth-view').style.transition = 'opacity 0.3s';
       document.getElementById('auth-view').style.opacity = '0';
       setTimeout(() => {
         applySession(data);
         document.getElementById('auth-view').style.opacity = '1';
       }, 300);
+      
     } else {
       formContainer.classList.add('shake-error');
       setTimeout(() => formContainer.classList.remove('shake-error'), 500);
       showToast(data.message, 'error');
     }
-  } catch (err) {
+  } catch (err) { 
     formContainer.classList.add('shake-error');
     setTimeout(() => formContainer.classList.remove('shake-error'), 500);
-    showToast('Kesalahan koneksi', 'error');
+    showToast('Kesalahan koneksi', 'error'); 
   }
-  finally {
+  finally { 
     btn.classList.remove('btn-loading');
-    document.getElementById('auth-btn-text').innerText = originalText;
-    btn.disabled = false;
+    document.getElementById('auth-btn-text').innerText = originalText; 
+    btn.disabled = false; 
   }
 }
 
@@ -2492,8 +2415,11 @@ function applySession(data) {
   document.getElementById('terminal-view').classList.remove('hide');
   document.getElementById('menu-btn').classList.remove('hide');
   document.getElementById('logged-username').innerText = data.username;
+  
+  // Set avatar huruf depan, bukan hardcode 'A'
   document.getElementById('user-avatar').innerText = data.username.charAt(0).toUpperCase();
   document.getElementById('drawer-avatar').innerText = data.username.charAt(0).toUpperCase();
+  
   document.getElementById('drawer-username').innerText = data.username;
   document.getElementById('drawer-role').innerText = data.isAdmin ? 'Admin' : (data.isVip ? 'VIP Member' : 'User');
   document.getElementById('drawer-logout-btn').classList.remove('hide');
@@ -2503,8 +2429,8 @@ function applySession(data) {
   updateQuotaDisplay(data);
   checkVipStatus(data);
   loadUserAnnouncements();
-  loadVerifiedEmails(true);
-  loadActiveRedeems(true);
+  loadVerifiedEmails();
+  loadActiveRedeems();
   updateStatusUI(data.serverStatus);
   fetchFeaturedVideo(true);
   updateNetflixQuotaDisplay();
@@ -2573,32 +2499,16 @@ function renderActiveRedeems(payload) {
       const quotaPerUser = val.quotaPerUser || 1;
       const hasClaimed = claimedRedeemCodes[code] === true;
       if (remainingClaims <= 0) return '';
-      const buttonHtml = hasClaimed
-        ? '<span class="badge badge-ok">✓ Sudah</span>'
-        : '<button data-code="' + escapeHtml(code) + '" onclick="claimRedeemBtn(this)" class="btn btn-info btn-xs">Klaim</button>';
-      return '<div style="padding:9px 11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px;">' +
-        '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;">' +
-        '<div style="flex:1; min-width:0;"><div class="mono" style="font-size:11.5px; font-weight:700; color:var(--info);">' + escapeHtml(code) + '</div><div style="font-size:9.5px; color:var(--text-2);">' + quotaPerUser + ' kuota • ' + remainingClaims + '/' + val.maxClaims + ' sisa</div></div>' + buttonHtml +
-        '</div><div class="prog" style="height:4px;"><div class="prog-fill" style="width:' + Math.round((val.claimedCount / val.maxClaims) * 100) + '%; background:var(--info);"></div></div></div>';
+      const buttonHtml = hasClaimed ? '<span class="badge badge-ok">✓ Sudah</span>' : '<button onclick="quickClaimRedeem(\\'' + escapeHtml(code) + '\\')" class="btn btn-info btn-xs">Klaim</button>';
+      return '<div style="padding:9px 11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div class="mono" style="font-size:11.5px; font-weight:700; color:var(--info);">' + escapeHtml(code) + '</div><div style="font-size:9.5px; color:var(--text-2);">' + quotaPerUser + ' kuota • ' + remainingClaims + '/' + val.maxClaims + ' sisa</div></div>' + buttonHtml + '</div><div class="prog" style="height:4px;"><div class="prog-fill" style="width:' + Math.round((val.claimedCount / val.maxClaims) * 100) + '%; background:var(--info);"></div></div></div>';
     }).filter(Boolean).join('') || '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Tidak ada</p>';
   } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Tidak ada kode aktif</p>';
 }
 
-// Klaim redeem langsung dari tombol (fix: tidak sekadar isi input)
-async function claimRedeemBtn(btn) {
-  const code = btn.getAttribute('data-code');
-  if (!code) return;
-  if (!loggedInUsername) return showToast('Harus login!', 'error');
-  btn.disabled = true; btn.innerText = '...';
-  try {
-    const res = await fetch('/api/redeem', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, code }) });
-    const data = await res.json();
-    if (data.success) {
-      showToast(data.message, 'success');
-      updateQuotaDisplay(data); updateNetflixQuotaDisplay(); updateApkQuotaDisplay(); updateMailQuotaDisplay();
-      loadVerifiedEmails(true); loadActiveRedeems(true);
-    } else { showToast(data.message, 'error'); btn.disabled = false; btn.innerText = 'Klaim'; }
-  } catch(e) { showToast('Gagal', 'error'); btn.disabled = false; btn.innerText = 'Klaim'; }
+function quickClaimRedeem(code) {
+  document.getElementById('redeem-code-input-main').value = code;
+  showToast('Kode siap diklaim', 'info');
+  document.getElementById('redeem-code-input-main').focus();
 }
 
 async function loadVipShopItems() {
@@ -2613,13 +2523,11 @@ async function loadVipShopItems() {
       cachedVipShopItems = items;
       container.innerHTML = items.map(([id, item]) => {
         const priceFormatted = 'Rp ' + Number(item.price).toLocaleString('id-ID');
-        return '<div class="shop-item" data-vip-id="' + escapeHtml(id) + '" onclick="selectVipItemFromBtn(this)"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:7px;"><div style="display:flex; align-items:center; gap:10px;"><div style="width:34px; height:34px; border-radius:9px; background:var(--warn-soft); display:flex; align-items:center; justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div><div><div style="font-weight:700; font-size:13px;">' + escapeHtml(item.name) + '</div><div style="font-size:10.5px; color:var(--warn);">⭐ ' + item.days + ' hari</div></div></div><div class="mono" style="font-size:14px; font-weight:800; color:var(--warn);">' + priceFormatted + '</div></div><button class="btn btn-warn btn-sm" style="width:100%;">Pilih & Bayar</button></div>';
+        return '<div class="shop-item" onclick="selectVipItem(\\'' + escapeHtml(id) + '\\')"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:7px;"><div style="display:flex; align-items:center; gap:10px;"><div style="width:34px; height:34px; border-radius:9px; background:var(--warn-soft); display:flex; align-items:center; justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div><div><div style="font-weight:700; font-size:13px;">' + escapeHtml(item.name) + '</div><div style="font-size:10.5px; color:var(--warn);">⭐ ' + item.days + ' hari</div></div></div><div class="mono" style="font-size:14px; font-weight:800; color:var(--warn);">' + priceFormatted + '</div></div><button class="btn btn-warn btn-sm" style="width:100%;">Pilih & Bayar</button></div>';
       }).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
 }
-
-function selectVipItemFromBtn(el) { selectVipItem(el.getAttribute('data-vip-id')); }
 
 function selectVipItem(itemId) {
   const item = cachedVipShopItems.find(([id]) => id === itemId);
@@ -2773,16 +2681,11 @@ async function loadAdminFeatureRequests() {
       container.innerHTML = sorted.map(req => {
         const statusBadge = req.status === 'approved' ? 'badge-ok' : req.status === 'rejected' ? 'badge-err' : 'badge-warn';
         const statusText = req.status === 'approved' ? 'Disetujui' : req.status === 'rejected' ? 'Ditolak' : 'Menunggu';
-        return '<div class="hist-item" style="border-color:rgba(74,222,128,0.2);"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11.5px; font-weight:700; color:var(--ok);">' + escapeHtml(req.title) + '</div><div style="font-size:9px; color:var(--text-2);">Dari: ' + escapeHtml(req.username) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="font-size:10.5px; color:var(--text-1); margin-bottom:5px;">' + escapeHtml(req.description) + '</div>' + (req.adminNote ? '<div style="font-size:9px; color:var(--warn); margin-bottom:5px;">Catatan: ' + escapeHtml(req.adminNote) + '</div>' : '') + '<div style="display:flex; gap:4px; margin-top:5px; padding-top:5px; border-top:1px solid var(--line);"><input type="text" id="admin-note-' + escapeHtml(req.id) + '" placeholder="Catatan..." class="inp" style="flex:1; padding:5px 8px; font-size:10.5px;"><button data-reqid="' + escapeHtml(req.id) + '" data-status="approved" onclick="updateFeatureReqFromBtn(this)" class="btn btn-ok btn-xs">✓</button><button data-reqid="' + escapeHtml(req.id) + '" data-status="rejected" onclick="updateFeatureReqFromBtn(this)" class="btn btn-err btn-xs">✗</button><button data-reqid="' + escapeHtml(req.id) + '" onclick="deleteFeatureReqFromBtn(this)" class="btn btn-ghost btn-xs">🗑</button></div></div>';
+        return '<div class="hist-item" style="border-color:rgba(74,222,128,0.2);"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11.5px; font-weight:700; color:var(--ok);">' + escapeHtml(req.title) + '</div><div style="font-size:9px; color:var(--text-2);">Dari: ' + escapeHtml(req.username) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="font-size:10.5px; color:var(--text-1); margin-bottom:5px;">' + escapeHtml(req.description) + '</div>' + (req.adminNote ? '<div style="font-size:9px; color:var(--warn); margin-bottom:5px;">Catatan: ' + escapeHtml(req.adminNote) + '</div>' : '') + '<div style="display:flex; gap:4px; margin-top:5px; padding-top:5px; border-top:1px solid var(--line);"><input type="text" id="admin-note-' + req.id + '" placeholder="Catatan..." class="inp" style="flex:1; padding:5px 8px; font-size:10.5px;"><button onclick="updateFeatureRequestStatus(\\'' + req.id + '\\', \\'approved\\')" class="btn btn-ok btn-xs">✓</button><button onclick="updateFeatureRequestStatus(\\'' + req.id + '\\', \\'rejected\\')" class="btn btn-err btn-xs">✗</button><button onclick="deleteFeatureRequest(\\'' + req.id + '\\')" class="btn btn-ghost btn-xs">🗑</button></div></div>';
       }).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
 }
-
-function updateFeatureReqFromBtn(btn) {
-  updateFeatureRequestStatus(btn.getAttribute('data-reqid'), btn.getAttribute('data-status'));
-}
-function deleteFeatureReqFromBtn(btn) { deleteFeatureRequest(btn.getAttribute('data-reqid')); }
 
 async function updateFeatureRequestStatus(reqId, status) {
   const noteInput = document.getElementById('admin-note-' + reqId);
@@ -2814,29 +2717,10 @@ async function loadAdminVipShop() {
     const data = await res.json();
     if (data.success && data.items && Object.keys(data.items).length > 0) {
       const items = Object.entries(data.items).sort((a,b) => (a[1].order||0) - (b[1].order||0));
-      container.innerHTML = items.map(([id, item]) =>
-        '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;">' +
-        '<div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700; color:var(--warn);">' + escapeHtml(item.name) + '</div><div style="font-size:9px; color:var(--text-2);">' + item.days + 'd • Rp ' + Number(item.price).toLocaleString('id-ID') + ' • ' + (item.active !== false ? '✅' : '❌') + '</div></div>' +
-        '<div style="display:flex; gap:3px; flex-shrink:0;">' +
-        '<button data-id="' + escapeHtml(id) + '" data-name="' + escapeHtml(item.name) + '" data-price="' + item.price + '" data-days="' + item.days + '" onclick="editVipShopFromBtn(this)" class="btn btn-ghost btn-xs">E</button>' +
-        '<button data-id="' + escapeHtml(id) + '" data-active="' + (item.active !== false ? '1':'0') + '" onclick="toggleVipShopFromBtn(this)" class="btn btn-ghost btn-xs">' + (item.active !== false ? 'O' : 'X') + '</button>' +
-        '<button data-id="' + escapeHtml(id) + '" onclick="deleteVipShopFromBtn(this)" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button>' +
-        '</div></div>'
-      ).join('');
+      container.innerHTML = items.map(([id, item]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700; color:var(--warn);">' + escapeHtml(item.name) + '</div><div style="font-size:9px; color:var(--text-2);">' + item.days + 'd • Rp ' + Number(item.price).toLocaleString('id-ID') + ' • ' + (item.active !== false ? '✅' : '❌') + '</div></div><div style="display:flex; gap:3px; flex-shrink:0;"><button onclick="editVipShopItem(\\'' + id + '\\', \\'' + encodeURIComponent(item.name) + '\\', ' + item.price + ', ' + item.days + ')" class="btn btn-ghost btn-xs">E</button><button onclick="toggleVipShopItem(\\'' + id + '\\', ' + (item.active !== false) + ')" class="btn btn-ghost btn-xs">' + (item.active !== false ? 'O' : 'X') + '</button><button onclick="deleteVipShopItem(\\'' + id + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:6px;">Gagal</p>'; }
 }
-
-function editVipShopFromBtn(btn) {
-  document.getElementById('vip-shop-edit-id').value = btn.getAttribute('data-id');
-  document.getElementById('vip-shop-name').value = btn.getAttribute('data-name');
-  document.getElementById('vip-shop-price').value = btn.getAttribute('data-price');
-  document.getElementById('vip-shop-days').value = btn.getAttribute('data-days');
-  document.getElementById('vip-shop-submit-btn').innerText = 'Perbarui';
-  document.getElementById('vip-shop-cancel-btn').classList.remove('hide');
-}
-function toggleVipShopFromBtn(btn) { toggleVipShopItem(btn.getAttribute('data-id'), btn.getAttribute('data-active') === '1'); }
-function deleteVipShopFromBtn(btn) { deleteVipShopItem(btn.getAttribute('data-id')); }
 
 async function handleSaveVipShop() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
@@ -2853,6 +2737,15 @@ async function handleSaveVipShop() {
     if (data.success) { showToast(data.message, 'success'); resetVipShopForm(); loadAdminVipShop(); }
     else showToast(data.message, 'error');
   } catch(e) { showToast('Gagal', 'error'); }
+}
+
+function editVipShopItem(id, encName, price, days) {
+  document.getElementById('vip-shop-edit-id').value = id;
+  document.getElementById('vip-shop-name').value = decodeURIComponent(encName);
+  document.getElementById('vip-shop-price').value = price;
+  document.getElementById('vip-shop-days').value = days;
+  document.getElementById('vip-shop-submit-btn').innerText = 'Perbarui';
+  document.getElementById('vip-shop-cancel-btn').classList.remove('hide');
 }
 
 function resetVipShopForm() {
@@ -2897,20 +2790,11 @@ async function loadAdminTransactions() {
         const statusBadge = t.status === 'success' ? 'badge-ok' : t.status === 'failed' ? 'badge-err' : t.status === 'process' ? 'badge-info' : 'badge-warn';
         const statusText = t.status === 'success' ? '✓ Sukses' : t.status === 'failed' ? '✗ Gagal' : t.status === 'process' ? '⚙ Diproses' : '⏳ Menunggu';
         const priceFormatted = 'Rp ' + Number(t.vipPrice).toLocaleString('id-ID');
-        const proofHtml = t.proofImage
-          ? '<img src="' + t.proofImage + '" alt="Bukti" style="max-width:100%; max-height:100px; border-radius:6px; margin-top:6px; cursor:pointer;" onclick="window.open(this.src)">'
-          : '<div style="font-size:9px; color:var(--err); margin-top:4px;">Belum upload bukti</div>';
-        const actionHtml = (t.status === 'pending' || t.status === 'process')
-          ? '<button data-tid="' + escapeHtml(t.transactionId) + '" data-status="success" onclick="confirmTrxFromBtn(this)" class="btn btn-ok btn-xs" style="flex:1;">✓ Konfirmasi</button><button data-tid="' + escapeHtml(t.transactionId) + '" data-status="failed" onclick="confirmTrxFromBtn(this)" class="btn btn-err btn-xs" style="flex:1;">✗ Tolak</button>'
-          : '';
-        return '<div class="hist-item"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700;">' + escapeHtml(t.vipName) + ' <span style="font-size:9px; color:var(--text-2);">oleh ' + escapeHtml(t.username) + '</span></div><div class="mono" style="font-size:9px; color:var(--text-2);">' + escapeHtml(t.transactionId) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; margin-top:4px;"><span style="color:var(--warn); font-weight:700;">' + priceFormatted + '</span><span style="color:var(--text-2);">' + new Date(t.createdAt).toLocaleDateString('id-ID') + '</span></div>' + proofHtml + '<div style="display:flex; gap:4px; margin-top:6px; padding-top:6px; border-top:1px solid var(--line);">' + actionHtml + '<button data-tid="' + escapeHtml(t.transactionId) + '" onclick="deleteTrxFromBtn(this)" class="btn btn-ghost btn-xs">🗑</button></div></div>';
+        return '<div class="hist-item"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700;">' + escapeHtml(t.vipName) + ' <span style="font-size:9px; color:var(--text-2);">oleh ' + escapeHtml(t.username) + '</span></div><div class="mono" style="font-size:9px; color:var(--text-2);">' + escapeHtml(t.transactionId) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; margin-top:4px;"><span style="color:var(--warn); font-weight:700;">' + priceFormatted + '</span><span style="color:var(--text-2);">' + new Date(t.createdAt).toLocaleDateString('id-ID') + '</span></div>' + (t.proofImage ? '<img src="' + t.proofImage + '" alt="Bukti" style="max-width:100%; max-height:100px; border-radius:6px; margin-top:6px; cursor:pointer;" onclick="window.open(this.src)">' : '<div style="font-size:9px; color:var(--err); margin-top:4px;">Belum upload bukti</div>') + '<div style="display:flex; gap:4px; margin-top:6px; padding-top:6px; border-top:1px solid var(--line);">' + ((t.status === 'pending' || t.status === 'process') ? '<button onclick="confirmTransaction(\\'' + t.transactionId + '\\', \\'success\\')" class="btn btn-ok btn-xs" style="flex:1;">✓ Konfirmasi</button><button onclick="confirmTransaction(\\'' + t.transactionId + '\\', \\'failed\\')" class="btn btn-err btn-xs" style="flex:1;">✗ Tolak</button>' : '') + '<button onclick="deleteTransaction(\\'' + t.transactionId + '\\')" class="btn btn-ghost btn-xs">🗑</button></div></div>';
       }).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
 }
-
-function confirmTrxFromBtn(btn) { confirmTransaction(btn.getAttribute('data-tid'), btn.getAttribute('data-status')); }
-function deleteTrxFromBtn(btn) { deleteTransaction(btn.getAttribute('data-tid')); }
 
 async function confirmTransaction(transactionId, status) {
   const note = prompt('Catatan admin (opsional):') || '';
@@ -2996,7 +2880,8 @@ function renderVerifiedEmails(data) {
   }
   container.innerHTML = emails.map((email, idx) => {
     const isLatest = idx === emails.length - 1;
-    return '<div style="padding:8px 11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px; display:flex; align-items:center; justify-content:space-between; gap:8px;"><div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;"><div style="width:28px; height:28px; border-radius:7px; background:rgba(96,165,250,0.15); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div><div style="min-width:0; flex:1;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(email) + '</div><div style="display:flex; align-items:center; gap:4px; margin-top:2px;"><span style="font-size:9px; color:var(--ok); font-weight:700;">●</span><span style="font-size:9px; color:var(--ok); font-weight:700;">Terverifikasi</span>' + (isLatest ? '<span style="font-size:9px; color:var(--warn); font-weight:700;">• Terbaru</span>' : '') + '</div></div></div><button data-email="' + escapeHtml(email) + '" onclick="safeCopy(this.getAttribute(\\'data-email\\'))" class="btn btn-ghost btn-xs" style="flex-shrink:0;">Copy</button></div>';
+    const safeEmail = email.replace(/'/g, "\\\\'");
+    return '<div style="padding:8px 11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px; display:flex; align-items:center; justify-content:space-between; gap:8px;"><div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;"><div style="width:28px; height:28px; border-radius:7px; background:rgba(96,165,250,0.15); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div><div style="min-width:0; flex:1;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(email) + '</div><div style="display:flex; align-items:center; gap:4px; margin-top:2px;"><span style="font-size:9px; color:var(--ok); font-weight:700;">●</span><span style="font-size:9px; color:var(--ok); font-weight:700;">Terverifikasi</span>' + (isLatest ? '<span style="font-size:9px; color:var(--warn); font-weight:700;">• Terbaru</span>' : '') + '</div></div></div><button onclick="copyEmail(\\'' + safeEmail + '\\')" class="btn btn-ghost btn-xs" style="flex-shrink:0;">Copy</button></div>';
   }).join('');
 }
 
@@ -3082,6 +2967,8 @@ function updateResetTimerDisplay(data) {
   }
   updateStatCard(); globalCountdownInterval = setInterval(updateStatCard, 60000);
 }
+
+function copyEmail(email) { navigator.clipboard.writeText(email).then(() => showToast('Tersalin!', 'success')).catch(() => showToast('Gagal', 'error')); }
 
 function initFileDrop() {
   const dropZone = document.getElementById('file-drop-zone');
@@ -3211,14 +3098,10 @@ async function loadAdminVipList() {
     const data = await res.json();
     const container = document.getElementById('admin-vip-list');
     if (data.success && Object.keys(data.vipUsers).length > 0) {
-      container.innerHTML = Object.entries(data.vipUsers).map(([uname, val]) =>
-        '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div><span style="color:var(--warn); font-weight:700;">' + escapeHtml(uname) + '</span><span style="color:var(--text-2); display:block; font-size:9px;">Exp: ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span></div><button data-user="' + escapeHtml(uname) + '" onclick="removeVipFromBtn(this)" class="btn btn-ghost btn-xs" style="color:var(--err);">Hapus</button></div>'
-      ).join('');
+      container.innerHTML = Object.entries(data.vipUsers).map(([uname, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div><span style="color:var(--warn); font-weight:700;">' + uname + '</span><span style="color:var(--text-2); display:block; font-size:9px;">Exp: ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span></div><button onclick="handleRemoveVip(\\'' + uname + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">Hapus</button></div>').join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Tidak ada</p>';
   } catch(e) {}
 }
-
-function removeVipFromBtn(btn) { handleRemoveVip(btn.getAttribute('data-user')); }
 
 async function handleRemoveVip(targetUser) {
   if (!confirm('Cabut VIP untuk ' + targetUser + '?')) return;
@@ -3260,17 +3143,16 @@ async function loadVipAccounts() {
       const now = Date.now();
       container.innerHTML = Object.entries(data.vipAccounts).map(([uname, val]) => {
         const isActive = val.vipUntil > now;
-        return '<div style="padding:9px 11px; background:linear-gradient(135deg,var(--warn-soft),var(--accent-soft)); border:1px solid rgba(251,191,36,0.3); border-radius:8px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(uname) + '</div><div class="mono" style="font-size:10px; color:var(--text-2);">Pwd: ' + escapeHtml(val.password) + '</div></div><span class="badge ' + (isActive ? 'badge-ok' : 'badge-err') + '">' + (isActive ? 'AKTIF' : 'EXPIRED') + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px;"><span style="color:var(--warn);">⭐ s/d ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span><div style="display:flex; gap:3px;"><button data-user="' + escapeHtml(uname) + '" data-pass="' + escapeHtml(val.password) + '" onclick="copyVipCredFromBtn(this)" class="btn btn-ghost btn-xs">📋</button><button data-user="' + escapeHtml(uname) + '" onclick="deleteVipAccFromBtn(this)" class="btn btn-ghost btn-xs" style="color:var(--err);">🗑</button></div></div></div>';
+        return '<div style="padding:9px 11px; background:linear-gradient(135deg,var(--warn-soft),var(--accent-soft)); border:1px solid rgba(251,191,36,0.3); border-radius:8px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(uname) + '</div><div class="mono" style="font-size:10px; color:var(--text-2);">Pwd: ' + escapeHtml(val.password) + '</div></div><span class="badge ' + (isActive ? 'badge-ok' : 'badge-err') + '">' + (isActive ? 'AKTIF' : 'EXPIRED') + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px;"><span style="color:var(--warn);">⭐ s/d ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span><div style="display:flex; gap:3px;"><button onclick="copyVipCredentials(\\'' + escapeHtml(uname) + '\\', \\'' + escapeHtml(val.password) + '\\')" class="btn btn-ghost btn-xs">📋</button><button onclick="deleteVipAccount(\\'' + escapeHtml(uname) + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">🗑</button></div></div></div>';
       }).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Belum ada</p>';
   } catch(e) {}
 }
 
-function copyVipCredFromBtn(btn) {
-  const u = btn.getAttribute('data-user'); const p = btn.getAttribute('data-pass');
-  safeCopy('Username: ' + u + '\nPassword: ' + p);
+function copyVipCredentials(username, password) {
+  const text = 'Username: ' + username + '\\nPassword: ' + password;
+  navigator.clipboard.writeText(text).then(() => showToast('Tersalin!', 'success'));
 }
-function deleteVipAccFromBtn(btn) { deleteVipAccount(btn.getAttribute('data-user')); }
 
 async function deleteVipAccount(vipUsername) {
   if (!confirm('Hapus akun VIP ' + vipUsername + '?')) return;
@@ -3339,15 +3221,13 @@ function renderUserList() {
     else resetText = '✓ Baru direset';
     let vipText = '';
     if (u.isVip && u.vipUntil) vipText = '⭐ VIP s/d ' + new Date(u.vipUntil).toLocaleDateString('id-ID');
-    return '<div style="padding:8px 10px; background:var(--bg-0); border:1px solid ' + borderColor + '; border-radius:7px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;"><span class="mono" style="font-weight:700; color:var(--text-0); font-size:11.5px;">' + escapeHtml(u.username) + '</span><span class="badge ' + badgeClass + '" style="font-size:9px;">' + badgeText + '</span></div><div style="font-size:9.5px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:1px;">📧 ' + escapeHtml(u.email) + '</div></div></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:5px; font-size:9.5px;"><div style="padding:5px; background:var(--info-soft); border-radius:5px;"><div style="color:var(--text-2); font-size:8px; text-transform:uppercase; font-weight:700;">Kuota</div><div class="mono" style="color:' + quotaColor + '; font-weight:700;">' + quotaText + '</div></div><div style="padding:5px; background:var(--accent-soft); border-radius:5px;"><div style="color:var(--text-2); font-size:8px; text-transform:uppercase; font-weight:700;">Reset</div><div class="mono" style="color:var(--accent); font-weight:700;">' + resetText + '</div></div></div>' + (vipText ? '<div style="font-size:9.5px; color:var(--warn); margin-top:5px; font-weight:600;">' + vipText + '</div>' : '') + (u.activatedEmails && u.activatedEmails.length > 0 ? '<details style="margin-top:5px;"><summary style="font-size:9.5px; color:var(--info); cursor:pointer;">📨 ' + u.activatedEmails.length + ' email</summary><div style="margin-top:3px; padding-left:6px;">' + u.activatedEmails.slice(0, 10).map(e => '<div class="mono" style="font-size:9px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">• ' + escapeHtml(e) + '</div>').join('') + (u.activatedEmails.length > 10 ? '<div style="font-size:9px; color:var(--text-2); font-style:italic;">... +' + (u.activatedEmails.length - 10) + '</div>' : '') + '</div></details>' : '') + '<div style="display:flex; gap:4px; margin-top:6px; padding-top:6px; border-top:1px solid var(--line);"><button data-user="' + escapeHtml(u.username) + '" onclick="quickSetVipFromBtn(this)" class="btn btn-ghost btn-xs" style="flex:1;">⭐ VIP</button><button data-user="' + escapeHtml(u.username) + '" onclick="safeCopy(this.getAttribute(\\'data-user\\'))" class="btn btn-ghost btn-xs" style="flex:1;">📋 Copy</button>' + (u.isAdmin && u.username === loggedInUsername ? '' : '<button data-user="' + escapeHtml(u.username) + '" data-isadmin="' + (u.isAdmin?'1':'0') + '" onclick="deleteUserFromBtn(this)" class="btn btn-ghost btn-xs" style="flex:1; color:var(--err);">🗑 Hapus</button>') + '</div></div>';
+    const safeUser = u.username.replace(/'/g, "\\\\'");
+    return '<div style="padding:8px 10px; background:var(--bg-0); border:1px solid ' + borderColor + '; border-radius:7px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;"><span class="mono" style="font-weight:700; color:var(--text-0); font-size:11.5px;">' + escapeHtml(u.username) + '</span><span class="badge ' + badgeClass + '" style="font-size:9px;">' + badgeText + '</span></div><div style="font-size:9.5px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:1px;">📧 ' + escapeHtml(u.email) + '</div></div></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:5px; font-size:9.5px;"><div style="padding:5px; background:var(--info-soft); border-radius:5px;"><div style="color:var(--text-2); font-size:8px; text-transform:uppercase; font-weight:700;">Kuota</div><div class="mono" style="color:' + quotaColor + '; font-weight:700;">' + quotaText + '</div></div><div style="padding:5px; background:var(--accent-soft); border-radius:5px;"><div style="color:var(--text-2); font-size:8px; text-transform:uppercase; font-weight:700;">Reset</div><div class="mono" style="color:var(--accent); font-weight:700;">' + resetText + '</div></div></div>' + (vipText ? '<div style="font-size:9.5px; color:var(--warn); margin-top:5px; font-weight:600;">' + vipText + '</div>' : '') + (u.activatedEmails && u.activatedEmails.length > 0 ? '<details style="margin-top:5px;"><summary style="font-size:9.5px; color:var(--info); cursor:pointer;">📨 ' + u.activatedEmails.length + ' email</summary><div style="margin-top:3px; padding-left:6px;">' + u.activatedEmails.slice(0, 10).map(e => '<div class="mono" style="font-size:9px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">• ' + escapeHtml(e) + '</div>').join('') + (u.activatedEmails.length > 10 ? '<div style="font-size:9px; color:var(--text-2); font-style:italic;">... +' + (u.activatedEmails.length - 10) + '</div>' : '') + '</div></details>' : '') + '<div style="display:flex; gap:4px; margin-top:6px; padding-top:6px; border-top:1px solid var(--line);"><button onclick="quickSetVip(\\'' + safeUser + '\\')" class="btn btn-ghost btn-xs" style="flex:1;">⭐ VIP</button><button onclick="copyUsername(\\'' + safeUser + '\\')" class="btn btn-ghost btn-xs" style="flex:1;">📋 Copy</button>' + (u.isAdmin && u.username === loggedInUsername ? '' : '<button onclick="deleteUserAccount(\\'' + safeUser + '\\', ' + (u.isAdmin ? 'true' : 'false') + ')" class="btn btn-ghost btn-xs" style="flex:1; color:var(--err);">🗑 Hapus</button>') + '</div></div>';
   }).join('');
 }
 
-function quickSetVipFromBtn(btn) { quickSetVip(btn.getAttribute('data-user')); }
-function deleteUserFromBtn(btn) { deleteUserAccount(btn.getAttribute('data-user'), btn.getAttribute('data-isadmin') === '1'); }
-
 async function deleteUserAccount(targetUsername, isTargetAdmin) {
-  const confirmText = isTargetAdmin ? '⚠️ HAPUS ADMIN "' + targetUsername + '"?\n\nPermanen!' : 'Hapus akun "' + targetUsername + '"?';
+  const confirmText = isTargetAdmin ? '⚠️ HAPUS ADMIN "' + targetUsername + '"?\\n\\nPermanen!' : 'Hapus akun "' + targetUsername + '"?';
   if (!confirm(confirmText)) return;
   if (isTargetAdmin) { const second = prompt('Ketik "HAPUS" untuk konfirmasi:'); if (second !== 'HAPUS') { showToast('Dibatalkan', 'info'); return; } }
   try {
@@ -3364,6 +3244,8 @@ function quickSetVip(username) {
   showToast('Username siap: ' + username, 'info');
   document.getElementById('vip-target-user').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
+
+function copyUsername(username) { navigator.clipboard.writeText(username).then(() => showToast('Tersalin!', 'success')); }
 
 function updateChatBadge() {
   const badge = document.getElementById('chat-unread-badge');
@@ -3419,14 +3301,12 @@ function renderGlobalChat(data) {
     const date = new Date(msg.timestamp).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
     const isToday = new Date(msg.timestamp).toDateString() === new Date().toDateString();
     const timeStr = isToday ? time : date + ' ' + time;
-    const deleteBtn = isAdminUser ? ' <button data-mid="' + escapeHtml(id) + '" onclick="deleteChatFromBtn(this)" style="background:none; border:none; font-size:9px; opacity:0.5; cursor:pointer; margin-left:2px;">🗑</button>' : '';
+    const deleteBtn = isAdminUser ? ' <button onclick="deleteChatMessage(\\'' + id + '\\')" style="background:none; border:none; font-size:9px; opacity:0.5; cursor:pointer; margin-left:2px;">🗑</button>' : '';
     return '<div class="chat-msg ' + bubbleClass + '"><div class="chat-msg-header">' + roleIcon + '<span>' + escapeHtml(msg.username) + '</span>' + (isAdmin ? ' · ADMIN' : '') + (isVip && !isAdmin ? ' · VIP' : '') + deleteBtn + '</div><div>' + escapeHtml(msg.message) + '</div><div class="chat-time">' + timeStr + '</div></div>';
   }).join('');
   if (wasAtBottom || container.scrollTop === 0) container.scrollTop = container.scrollHeight;
   updateOnlineCount(onlineUsersCount);
 }
-
-function deleteChatFromBtn(btn) { deleteChatMessage(btn.getAttribute('data-mid')); }
 
 async function sendChatMessage() {
   if (!loggedInUsername) return showToast('Harus login!', 'error');
@@ -3479,21 +3359,10 @@ async function loadAdminAnnouncements() {
     const container = document.getElementById('admin-info-list');
     if (data.success && Object.keys(data.announcements).length > 0) {
       const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
-      container.innerHTML = entries.map(([id, val]) =>
-        '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div style="flex:1; min-width:0;"><span style="color:var(--warn); font-weight:700; font-size:10.5px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(val.title) + '</span></div><div style="display:flex; gap:2px; flex-shrink:0;"><button data-id="' + escapeHtml(id) + '" data-title="' + escapeHtml(val.title) + '" data-content="' + escapeHtml(val.content) + '" onclick="editAnnouncementFromBtn(this)" class="btn btn-ghost btn-xs">E</button><button data-id="' + escapeHtml(id) + '" onclick="deleteAnnouncementFromBtn(this)" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>'
-      ).join('');
+      container.innerHTML = entries.map(([id, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div style="flex:1; min-width:0;"><span style="color:var(--warn); font-weight:700; font-size:10.5px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(val.title) + '</span></div><div style="display:flex; gap:2px; flex-shrink:0;"><button onclick="editAnnouncement(\\'' + id + '\\', \\'' + encodeURIComponent(val.title) + '\\', \\'' + encodeURIComponent(val.content) + '\\')" class="btn btn-ghost btn-xs">E</button><button onclick="deleteAnnouncement(\\'' + id + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Belum ada</p>';
   } catch(e) {}
 }
-
-function editAnnouncementFromBtn(btn) {
-  document.getElementById('info-edit-id').value = btn.getAttribute('data-id');
-  document.getElementById('info-title').value = btn.getAttribute('data-title');
-  document.getElementById('info-content').value = btn.getAttribute('data-content');
-  document.getElementById('info-submit-btn').innerText = 'Perbarui';
-  document.getElementById('info-cancel-btn').classList.remove('hide');
-}
-function deleteAnnouncementFromBtn(btn) { deleteAnnouncement(btn.getAttribute('data-id')); }
 
 async function handleSaveAnnouncement() {
   if (!isAdminUser) return;
@@ -3511,6 +3380,14 @@ async function handleSaveAnnouncement() {
       lastAnnouncementsFetch = 0; loadUserAnnouncements(true);
     } else showToast(data.message, 'error');
   } catch(e) { showToast('Gagal', 'error'); }
+}
+
+function editAnnouncement(id, encTitle, encContent) {
+  document.getElementById('info-edit-id').value = id;
+  document.getElementById('info-title').value = decodeURIComponent(encTitle);
+  document.getElementById('info-content').value = decodeURIComponent(encContent);
+  document.getElementById('info-submit-btn').innerText = 'Perbarui';
+  document.getElementById('info-cancel-btn').classList.remove('hide');
 }
 
 function resetInfoForm() {
@@ -3558,14 +3435,10 @@ async function loadAdminRedeems() {
     const data = await res.json();
     const container = document.getElementById('admin-redeem-list');
     if (data.success && Object.keys(data.redeems).length > 0) {
-      container.innerHTML = Object.entries(data.redeems).map(([code, val]) =>
-        '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div><span class="mono" style="color:var(--warn); font-weight:700; font-size:10.5px;">' + escapeHtml(code) + '</span><span style="color:var(--text-2); display:block; font-size:9px;">' + (val.quotaPerUser || 1) + '/user • ' + val.claimedCount + '/' + val.maxClaims + '</span></div><button data-code="' + escapeHtml(code) + '" onclick="deleteRedeemFromBtn(this)" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div>'
-      ).join('');
+      container.innerHTML = Object.entries(data.redeems).map(([code, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div><span class="mono" style="color:var(--warn); font-weight:700; font-size:10.5px;">' + code + '</span><span style="color:var(--text-2); display:block; font-size:9px;">' + (val.quotaPerUser || 1) + '/user • ' + val.claimedCount + '/' + val.maxClaims + '</span></div><button onclick="handleDeleteRedeem(\\'' + code + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div>').join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Belum ada</p>';
   } catch(e) {}
 }
-
-function deleteRedeemFromBtn(btn) { handleDeleteRedeem(btn.getAttribute('data-code')); }
 
 async function handleDeleteRedeem(code) {
   if (!confirm('Hapus kode ' + code + '?')) return;
@@ -3627,10 +3500,8 @@ async function handleActivate() {
     const data = await res.json();
     currentResultText = JSON.stringify(data, null, 2);
     resultText.innerText = currentResultText;
-    if (data.success || !data.error) {
-      showToast('Verifikasi selesai!', 'success');
-      loadVerifiedEmails(true); // fix: reload kuota setelah verifikasi
-    } else showToast(data.error || 'Gagal', 'error');
+    if (data.success || !data.error) showToast('Verifikasi selesai!', 'success');
+    else showToast(data.error || 'Gagal', 'error');
   } catch (err) {
     currentResultText = 'Error: ' + err.message;
     resultText.innerText = currentResultText;
@@ -3640,7 +3511,13 @@ async function handleActivate() {
 
 function copyResult() {
   if (!currentResultText) return;
-  safeCopy(currentResultText);
+  navigator.clipboard.writeText(currentResultText).then(() => showToast('Tersalin!', 'success'));
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text || '';
+  return div.innerHTML;
 }
 
 async function handleLogout() {
@@ -3663,7 +3540,7 @@ initFileDrop();
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     const drawer = document.getElementById('nav-drawer');
-    if (drawer && drawer.classList.contains('open')) toggleMenu();
+    if (drawer.classList.contains('open')) toggleMenu();
   }
 });
 </script>
@@ -4021,62 +3898,6 @@ const server = http.createServer(async (req, res) => {
       const historyId = 'nf_' + now + '_' + Math.random().toString(36).substring(2, 8);
       await saveNetflixResultToDb(historyId, { id: historyId, orderId, username: cleanUser, plan: genResult.plan, quality: genResult.quality, country: genResult.country, url: genResult.url, expires: genResult.expires, pool: genResult.pool, timestamp: now });
       jsonResponse(res, 200, { success: true, orderId, result: genResult, quotaInfo: { usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
-
-    // === FITUR BARU: AKTIVASI GMAIL LANGSUNG ===
-    } else if (parsedUrl.pathname === '/api/netflix/activate-gmail' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { username, plan, gmail } = JSON.parse(body);
-      const cleanUser = username ? username.toLowerCase() : '';
-      await checkAndExpireBonusQuota(cleanUser);
-      const userObj = await getUserFromDb(cleanUser);
-      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
-      if (currentServerStatus !== 'online' && !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Server offline!' });
-      if (!gmail || !gmail.includes('@') || !gmail.includes('.')) return jsonResponse(res, 400, { success: false, message: 'Gmail tidak valid!' });
-      const now = Date.now();
-      const twentyFourHours = 24 * 60 * 60 * 1000;
-      if (now - (userObj.lastResetTime || now) >= twentyFourHours) { userObj.activatedEmails = []; userObj.lastResetTime = now; }
-      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
-      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
-      const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
-      if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) return jsonResponse(res, 403, { success: false, message: 'Quota habis!' });
-      const quotaEntry = 'netflix_act_' + now + '_' + Math.random().toString(36).substring(2, 6);
-      if (!userObj.isAdmin && !isVipActive) {
-        if (!userObj.activatedEmails) userObj.activatedEmails = [];
-        userObj.activatedEmails.push(quotaEntry);
-        if (userObj.bonusQuota > 0) { userObj.lastBonusActivity = now; userObj.bonusGrantedAt = userObj.bonusGrantedAt || now; }
-        await saveUserToDb(cleanUser, userObj);
-      }
-      try {
-        const actResult = await activateNetflixForGmail(gmail, plan || 'premium');
-        const orderId = generateOrderId('NFLX');
-        const detailStr = (plan || 'premium').toUpperCase() + ' • Aktivasi ' + gmail;
-        await saveOrderToDb(orderId, { orderId, username: cleanUser, type: 'netflix', detail: detailStr, result: actResult.activationLink, timestamp: now, quotaEntry, gmail });
-        const historyId = 'nf_' + now + '_' + Math.random().toString(36).substring(2, 8);
-        await saveNetflixResultToDb(historyId, { id: historyId, orderId, username: cleanUser, plan: actResult.plan, quality: actResult.quality, country: actResult.country, url: actResult.activationLink, expires: actResult.expires, pool: actResult.pool, gmail, timestamp: now, isActivation: true });
-        const actId = 'act_' + now + '_' + Math.random().toString(36).substring(2, 8);
-        await saveNetflixActivationToDb(actId, { id: actId, orderId, username: cleanUser, gmail, plan: actResult.plan, quality: actResult.quality, country: actResult.country, activationLink: actResult.activationLink, expires: actResult.expires, createdAt: now });
-        jsonResponse(res, 200, {
-          success: true,
-          orderId,
-          result: {
-            gmail,
-            plan: actResult.plan,
-            quality: actResult.quality,
-            country: actResult.country,
-            url: actResult.activationLink,
-            activationLink: actResult.activationLink,
-            expires: actResult.expires,
-            pool: actResult.pool,
-            instructions: actResult.instructions
-          },
-          quotaInfo: { usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive }
-        });
-      } catch (apiErr) {
-        const refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
-        const refreshedUser = await getUserFromDb(cleanUser);
-        const refreshedUsed = refreshedUser.activatedEmails ? refreshedUser.activatedEmails.length : 0;
-        jsonResponse(res, 500, { success: false, refilled, message: refilled ? 'Aktivasi gagal: ' + apiErr.message + '. Kuota dikembalikan.' : 'Aktivasi gagal: ' + apiErr.message, quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
-      }
 
     } else if (parsedUrl.pathname === '/api/netflix/history' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
@@ -4666,14 +4487,13 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v7.2                                  ║');
+  console.log('║  🚀 AM Premium Banggus v7.1                                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
   console.log('║  💳 DANA Admin: ' + DANA_ADMIN_NUMBER + '                     ║');
   console.log('║  ──────────────────────────────────────────────────────────  ║');
-  console.log('║  ✨ UPDATE v7.2:                                             ║');
-  console.log('║  🔧 FIX semua button yang tidak berfungsi                    ║');
-  console.log('║  🎬 Netflix AKTIVASI LANGSUNG ke Gmail (fitur baru)         ║');
-  console.log('║  ⏱ Bonus quota EXPIRED 2 hari → reset ke 2 kuota awal      ║');
-  console.log('║  🛡️ Safe copy via data-attribute (anti quote rusak)         ║');
+  console.log('║  ✨ UPDATE v7.1:                                             ║');
+  console.log('║  📧 TEMP MAIL AUTO-REFRESH (Pesan otomatis terbuka)         ║');
+  console.log('║  🎨 UI AUTH REDESIGN (Animasi login/register baru)          ║');
+  console.log('║  🗑️ HAPUS IKON PETIR & HURUF "A" HARDCODE                   ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
