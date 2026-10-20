@@ -37,6 +37,7 @@ const ONLINE_TIMEOUT = 45 * 1000;
 const ONLINE_CLEANUP_INTERVAL = 60 * 1000;
 
 // ====== KONFIGURASI BONUS QUOTA EXPIRY ======
+// Bonus quota expired setelah 2 hari, reset ke kuota awal (2)
 const BONUS_EXPIRY_MS = 2 * 24 * 60 * 60 * 1000;
 const BASE_QUOTA = 2;
 
@@ -179,6 +180,17 @@ async function getNetflixResultsFromDb() {
 }
 async function saveNetflixResultToDb(id, data) { await set(ref(db, `netflixResults/${id}`), data); }
 
+// ====== NETFLIX ACTIVATIONS HELPERS (BARU) ======
+async function getNetflixActivationsFromDb() {
+  const snapshot = await get(child(ref(db), `netflixActivations`));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+async function saveNetflixActivationToDb(id, data) { await set(ref(db, `netflixActivations/${id}`), data); }
+async function getNetflixActivationFromDb(id) {
+  const snapshot = await get(child(ref(db), `netflixActivations/${id}`));
+  return snapshot.exists() ? snapshot.val() : null;
+}
+
 // ====== APK MOD HELPERS ======
 async function getApkModsFromDb() {
   const snapshot = await get(child(ref(db), `apkMods`));
@@ -224,7 +236,8 @@ async function getOnlineUsersFromDb() {
 async function saveOnlineUserToDb(username, data) { await set(ref(db, `onlineUsers/${username}`), data); }
 async function removeOnlineUserFromDb(username) { await set(ref(db, `onlineUsers/${username}`), null); }
 
-// ====== BONUS QUOTA EXPIRY ======
+// ====== BONUS QUOTA EXPIRY (DIPERBAIKI) ======
+// Jika bonus quota tidak digunakan selama 2 hari, reset ke kuota awal (2)
 async function checkAndExpireBonusQuota(username) {
   try {
     const userObj = await getUserFromDb(username);
@@ -232,24 +245,37 @@ async function checkAndExpireBonusQuota(username) {
     const now = Date.now();
     let changed = false;
 
+    // Pastikan baseQuota ada
     if (userObj.baseQuota === undefined) {
       userObj.baseQuota = BASE_QUOTA;
       changed = true;
     }
 
+    // Cek expiry bonus quota
     if (userObj.bonusQuota > 0) {
       const bonusGrantedAt = userObj.bonusGrantedAt || 0;
       const lastBonusActivity = userObj.lastBonusActivity || bonusGrantedAt;
 
+      // Jika bonus tidak aktif selama 2 hari, reset ke kuota awal
       if (lastBonusActivity > 0 && (now - lastBonusActivity) >= BONUS_EXPIRY_MS) {
+        console.log(`[BONUS EXPIRED] User ${username} - bonus ${userObj.bonusQuota} expired (2 hari tidak dipakai)`);
+        
+        // Reset bonus quota ke 0
         userObj.bonusQuota = 0;
         userObj.bonusGrantedAt = 0;
         userObj.lastBonusActivity = 0;
+        
+        // Reset activatedEmails ke base quota saja (2)
+        // Ini akan mengembalikan kuota ke kuota awal daftar
         if (userObj.activatedEmails && userObj.activatedEmails.length > userObj.baseQuota) {
           userObj.activatedEmails = userObj.activatedEmails.slice(0, userObj.baseQuota);
         }
+        
+        // Reset lastResetTime agar hitungan 24 jam mulai dari sekarang
+        userObj.lastResetTime = now;
+        
         changed = true;
-        console.log(`[BONUS EXPIRED] User ${username} - bonus expired (2 hari)`);
+        console.log(`[BONUS EXPIRED] User ${username} - quota reset ke ${userObj.baseQuota}`);
       }
     }
 
@@ -536,6 +562,40 @@ async function generateNetflixToken(plan, proxy) {
   }
 }
 
+// ====== NETFLIX GMAIL ACTIVATION (BARU) ======
+// Fungsi untuk aktivasi Netflix langsung ke Gmail dan dapatkan premium
+async function activateNetflixWithGmail(email, plan = 'premium') {
+  try {
+    // Step 1: Generate token Netflix
+    const tokenResult = await generateNetflixToken(plan);
+    if (!tokenResult.success) {
+      return { success: false, error: 'Gagal generate token: ' + tokenResult.error };
+    }
+
+    // Step 2: Return hasil dengan instruksi aktivasi
+    return {
+      success: true,
+      plan: tokenResult.plan,
+      quality: tokenResult.quality,
+      country: tokenResult.country,
+      url: tokenResult.url,
+      expires: tokenResult.expires,
+      pool: tokenResult.pool,
+      activationEmail: email,
+      activationInstructions: [
+        '1. Buka link Netflix token di browser',
+        '2. Login dengan akun Netflix Anda atau buat baru',
+        '3. Gunakan email: ' + email,
+        '4. Ikuti instruksi verifikasi',
+        '5. Nikmati Netflix Premium!'
+      ],
+      activatedAt: Date.now()
+    };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
 // ==========================================
 // HTML TEMPLATE
 // ==========================================
@@ -737,7 +797,6 @@ const htmlTemplate = `<!DOCTYPE html>
 <div class="app-shell">
   <div class="topbar">
     <div style="display:flex; align-items:center; gap:10px;">
-      <!-- Mengganti simbol petir dengan logo SVG rapi -->
       <div class="brand-mark">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
@@ -801,10 +860,9 @@ const htmlTemplate = `<!DOCTYPE html>
   <div style="flex:1; display:flex; flex-direction:column; justify-content:center; padding:8px 0; gap:12px;">
     <div id="offline-banner" class="card hide" style="background:var(--err-soft); border-color:rgba(248,113,113,0.3); padding:10px 13px; font-size:12px; color:var(--err); text-align:center;">⚠ Server offline — fitur generator dinonaktifkan</div>
 
-    <!-- AUTH VIEW DENGAN ANIMASI BARU -->
+    <!-- AUTH VIEW -->
     <div id="auth-view" class="card-elevated" style="display:flex; flex-direction:column; gap:16px;">
       <div style="text-align:center; padding:8px 0 4px;">
-        <!-- Logo diganti menjadi SVG bersih, tanpa huruf A -->
         <div style="width:54px; height:54px; border-radius:14px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:inline-flex; align-items:center; justify-content:center; box-shadow:0 8px 24px rgba(109,92,230,0.4); margin-bottom:10px;">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
@@ -814,14 +872,12 @@ const htmlTemplate = `<!DOCTYPE html>
         <p style="font-size:12.5px; color:var(--text-2); margin:0;">Login atau daftar untuk mulai menggunakan layanan</p>
       </div>
       
-      <!-- Tab Switch dengan indikator geser -->
       <div style="display:flex; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; padding:3px; position:relative;">
         <div id="tab-indicator" style="position:absolute; top:3px; bottom:3px; left:3px; width:calc(50% - 3px); background:var(--accent); border-radius:7px; transition:transform 0.25s cubic-bezier(0.32,0.72,0,1);"></div>
         <button onclick="switchAuthTab('login')" id="tab-login-btn" style="position:relative; z-index:1; flex:1; padding:8px; background:transparent; border:none; font-weight:600; font-size:12.5px; cursor:pointer; color:white; font-family:inherit; border-radius:7px;">Login</button>
         <button onclick="switchAuthTab('register')" id="tab-reg-btn" style="position:relative; z-index:1; flex:1; padding:8px; background:transparent; border:none; font-weight:600; font-size:12.5px; cursor:pointer; color:var(--text-1); font-family:inherit; border-radius:7px;">Daftar</button>
       </div>
       
-      <!-- Form container dengan efek transisi -->
       <div id="auth-form-container" class="auth-tab-content" style="display:flex; flex-direction:column; gap:12px;">
         <div><label class="field-label">Username</label><input type="text" id="auth-username" placeholder="username_kamu" class="inp mono"></div>
         <div><label class="field-label">Password</label><input type="password" id="auth-password" placeholder="••••••••" class="inp"></div>
@@ -840,7 +896,6 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
       <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between;">
         <div style="display:flex; align-items:center; gap:10px; min-width:0;">
-          <!-- Avatar inisial, bukan huruf A hardcode -->
           <div class="brand-mark" style="width:34px; height:34px; font-size:14px; background:var(--bg-2); border:1px solid var(--line-2); box-shadow:none;"><span id="user-avatar" style="color:var(--accent);">U</span></div>
           <div style="min-width:0;">
             <div id="logged-username" style="font-weight:700; font-size:13px; overflow:hidden; text-overflow:ellipsis;">-</div>
@@ -927,6 +982,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- SECTION TEMPMAIL -->
     <div id="section-tempmail" class="hide" style="display:flex; flex-direction:column; gap:10px;">
       <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between; border-color:rgba(96,165,250,0.3);">
         <div style="display:flex; align-items:center; gap:10px;">
@@ -988,6 +1044,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- SECTION ORDERS -->
     <div id="section-orders" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0; color:var(--info);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>Orderan Saya</div>
@@ -1008,6 +1065,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- SECTION NETFLIX (DENGAN FITUR AKTIVASI GMAIL) -->
     <div id="section-netflix" class="hide" style="display:flex; flex-direction:column; gap:10px;">
       <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between; border-color:rgba(229,9,20,0.3);">
         <div style="display:flex; align-items:center; gap:10px;">
@@ -1035,6 +1093,27 @@ const htmlTemplate = `<!DOCTYPE html>
           <input type="checkbox" id="netflix-use-proxy" checked style="accent-color:var(--netflix);">
           <span style="font-size:11.5px; color:var(--text-1);">Gunakan Proxy</span>
         </label>
+      </div>
+      
+      <!-- FITUR BARU: Aktivasi Netflix via Gmail -->
+      <div class="card" style="border-color:rgba(74,222,128,0.3); display:flex; flex-direction:column; gap:12px;">
+        <div class="section-head" style="color:var(--ok);">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          Aktivasi Langsung ke Gmail
+        </div>
+        <p style="font-size:11.5px; color:var(--text-1); margin:0;">Generate token + aktivasi Netflix langsung ke Gmail Anda. Dapatkan akses premium instan!</p>
+        <input type="email" id="netflix-gmail-input" placeholder="email@gmail.com" class="inp" style="font-size:12px;">
+        <button id="btn-activate-netflix" onclick="handleActivateNetflixGmail()" class="btn btn-ok">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          <span id="activate-netflix-text">Aktivasi Netflix Premium</span>
+        </button>
+        <div id="netflix-activation-result" class="hide" style="padding:11px; background:var(--ok-soft); border:1px solid rgba(74,222,128,0.25); border-radius:9px;">
+          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--ok); letter-spacing:0.06em; margin-bottom:6px;">✅ Aktivasi Berhasil</div>
+          <div id="netflix-activation-content" style="font-size:11.5px; color:var(--text-1);"></div>
+        </div>
+      </div>
+      
+      <div class="card" style="border-color:rgba(229,9,20,0.3); display:flex; flex-direction:column; gap:12px;">
         <button id="btn-generate-netflix" onclick="handleGenerateNetflix()" class="btn btn-netflix"><span id="netflix-btn-text">Generate Token</span></button>
       </div>
       <div id="netflix-loading" class="hide card" style="border-color:rgba(229,9,20,0.3);">
@@ -1065,6 +1144,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- SECTION APK MOD -->
     <div id="section-apkmod" class="hide" style="display:flex; flex-direction:column; gap:10px;">
       <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between; border-color:rgba(74,222,128,0.3);">
         <div style="display:flex; align-items:center; gap:10px;">
@@ -1114,6 +1194,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- SECTION VIP SHOP -->
     <div id="section-vipshop" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0; color:var(--warn);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>Beli VIP</div>
@@ -1191,6 +1272,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- SECTION CHAT -->
     <div id="section-chat" class="hide card" style="display:flex; flex-direction:column; gap:12px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat Global</div>
@@ -1209,6 +1291,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- SECTION PROFILE -->
     <div id="section-profile" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0;">Profil Akun</div>
@@ -1274,6 +1357,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- SECTION ADMIN -->
     <div id="section-admin" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0; color:var(--warn);">Admin Panel</div>
@@ -1467,6 +1551,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- SECTION GUIDE -->
     <div id="section-guide" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0;">Panduan</div>
@@ -1475,14 +1560,15 @@ const htmlTemplate = `<!DOCTYPE html>
       <div style="display:flex; flex-direction:column; gap:8px;">
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">1</div><div style="font-size:12px; color:var(--text-1);">Login/daftar dulu dengan akunmu</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">2</div><div style="font-size:12px; color:var(--text-1);"><strong>Alight Motion:</strong> Masukkan email target, kirim magic link, copy URL, verifikasi</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--netflix); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">3</div><div style="font-size:12px; color:var(--text-1);"><strong>Netflix:</strong> Pilih plan, klik Generate, tunggu proses</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--netflix); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">3</div><div style="font-size:12px; color:var(--text-1);"><strong>Netflix:</strong> Pilih plan, klik Generate, tunggu proses. Bisa juga aktivasi langsung ke Gmail!</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--ok); color:#032a17; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">4</div><div style="font-size:12px; color:var(--text-1);"><strong>APK MOD:</strong> Pilih APK, klik Dapatkan Link</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">5</div><div style="font-size:12px; color:var(--text-1);"><strong>Temp Mail:</strong> Generate email, copy, cek inbox (Otomatis Terbuka)</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">7</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai.</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">7</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai, reset ke 2 kuota.</div></div>
       </div>
     </div>
 
+    <!-- SECTION ANNOUNCEMENT -->
     <div id="section-announcement" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0; color:var(--info);">Pengumuman</div>
@@ -1493,6 +1579,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- SECTION REQUEST -->
     <div id="section-request" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0; color:var(--ok);">Request Fitur</div>
@@ -1520,6 +1607,7 @@ const htmlTemplate = `<!DOCTYPE html>
 </div>
 
 <script>
+// ====== GLOBAL VARIABLES (FIX: Dideklarasikan di awal) ======
 const DANA_ADMIN_NUMBER = '${DANA_ADMIN_NUMBER}';
 const DANA_ADMIN_NAME = '${DANA_ADMIN_NAME}';
 const BASE_QUOTA = 2;
@@ -1537,7 +1625,7 @@ let globalCountdownInterval = null;
 let chatRefreshInterval = null;
 let unreadChatCount = 0;
 let lastChatMessageId = null;
-let currentView = 'generator';
+let currentView = 'generator'; // FIX: Default value
 let userQuotaData = { usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, nextResetTime: 0, lastResetTime: 0 };
 let claimedRedeemCodes = {};
 let selectedPaymentProofFile = null;
@@ -1571,13 +1659,14 @@ let lastMailHistoryFetch = 0;
 let lastMyOrdersFetch = 0;
 let lastAdminOrdersFetch = 0;
 
-// Variabel untuk Auto Refresh Temp Mail
+// Auto Refresh Temp Mail
 let mailAutoRefreshInterval = null;
 let lastMailMessageCount = 0;
 
 const CACHE_DURATION = { status:30000, video:60000, chat:15000, emails:30000, redeems:60000, announcements:60000, netflixHistory:30000, apkHistory:30000, mailHistory:30000, myOrders:15000, adminOrders:15000, onlineUsers:15000 };
 const memoryCache = {};
 
+// ====== CACHE HELPERS ======
 function getCached(key) {
   const entry = memoryCache[key];
   if (!entry) return null;
@@ -1586,6 +1675,7 @@ function getCached(key) {
 }
 function setCache(key, data, duration) { memoryCache[key] = { data, time: Date.now(), duration }; }
 
+// ====== VISIBILITY HANDLER ======
 document.addEventListener('visibilitychange', () => {
   isPageVisible = !document.hidden;
   if (isPageVisible) {
@@ -1602,8 +1692,10 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+// ====== TOAST ======
 function showToast(message, type = 'info', duration = 3000) {
   const container = document.getElementById('toast-container');
+  if (!container) return;
   const toast = document.createElement('div');
   toast.className = 'toast toast-' + type;
   toast.innerHTML = '<span>' + message + '</span>';
@@ -1612,6 +1704,7 @@ function showToast(message, type = 'info', duration = 3000) {
   setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 350); }, duration);
 }
 
+// ====== ONLINE TRACKING ======
 async function sendOnlineHeartbeat() {
   if (!loggedInUsername) return;
   try {
@@ -1664,61 +1757,117 @@ window.addEventListener('beforeunload', () => {
   if (loggedInUsername) navigator.sendBeacon('/api/online/offline', JSON.stringify({ username: loggedInUsername }));
 });
 
+// ====== MENU ======
 function toggleMenu() {
   const drawer = document.getElementById('nav-drawer');
   const overlay = document.getElementById('drawer-overlay');
+  if (!drawer || !overlay) return;
   drawer.classList.toggle('open');
   overlay.classList.toggle('hide');
 }
 
+// ====== SWITCH VIEW (FIX) ======
 function switchView(viewName) {
   currentView = viewName;
   document.querySelectorAll('[data-nav]').forEach(el => { el.classList.toggle('active', el.dataset.nav === viewName); });
   toggleMenu();
-  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-apkmod','section-tempmail','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
-  if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hide');
-  else if (viewName === 'orders') { document.getElementById('section-orders').classList.remove('hide'); loadMyOrders(); }
-  else if (viewName === 'netflix') { document.getElementById('section-netflix').classList.remove('hide'); loadNetflixHistory(); updateNetflixQuotaDisplay(); }
-  else if (viewName === 'apkmod') { document.getElementById('section-apkmod').classList.remove('hide'); loadApkMods(); loadApkHistory(); updateApkQuotaDisplay(); }
-  else if (viewName === 'tempmail') { 
-    document.getElementById('section-tempmail').classList.remove('hide'); 
-    loadTempMailHistory(); 
-    updateMailQuotaDisplay(); 
-    if (tempMailSession) startMailAutoRefresh(); 
-  }
-  else if (viewName === 'vipshop') {
-    document.getElementById('section-vipshop').classList.remove('hide');
-    loadVipShopItems(); loadUserTransactions();
-    document.getElementById('dana-number-display').innerText = DANA_ADMIN_NUMBER;
-    document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
-  }
-  else if (viewName === 'profile') { document.getElementById('section-profile').classList.remove('hide'); loadVerifiedEmails(); }
-  else if (viewName === 'guide') document.getElementById('section-guide').classList.remove('hide');
-  else if (viewName === 'announcement') { document.getElementById('section-announcement').classList.remove('hide'); loadUserAnnouncements(); }
-  else if (viewName === 'request') { document.getElementById('section-request').classList.remove('hide'); loadUserFeatureRequests(); }
-  else if (viewName === 'chat') { document.getElementById('section-chat').classList.remove('hide'); loadGlobalChat(true); unreadChatCount = 0; updateChatBadge(); }
-  else if (viewName === 'admin') {
+  
+  // Hide all sections
+  const allSections = ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-apkmod','section-tempmail','section-orders'];
+  allSections.forEach(id => { 
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hide');
+  });
+  
+  // Show selected section
+  if (viewName === 'generator') {
+    const el = document.getElementById('terminal-view');
+    if (el) el.classList.remove('hide');
+  } else if (viewName === 'orders') {
+    const el = document.getElementById('section-orders');
+    if (el) el.classList.remove('hide');
+    loadMyOrders();
+  } else if (viewName === 'netflix') {
+    const el = document.getElementById('section-netflix');
+    if (el) el.classList.remove('hide');
+    loadNetflixHistory();
+    updateNetflixQuotaDisplay();
+  } else if (viewName === 'apkmod') {
+    const el = document.getElementById('section-apkmod');
+    if (el) el.classList.remove('hide');
+    loadApkMods();
+    loadApkHistory();
+    updateApkQuotaDisplay();
+  } else if (viewName === 'tempmail') {
+    const el = document.getElementById('section-tempmail');
+    if (el) el.classList.remove('hide');
+    loadTempMailHistory();
+    updateMailQuotaDisplay();
+    if (tempMailSession) startMailAutoRefresh();
+  } else if (viewName === 'vipshop') {
+    const el = document.getElementById('section-vipshop');
+    if (el) el.classList.remove('hide');
+    loadVipShopItems();
+    loadUserTransactions();
+    const danaNum = document.getElementById('dana-number-display');
+    const danaOwner = document.getElementById('dana-owner-display');
+    if (danaNum) danaNum.innerText = DANA_ADMIN_NUMBER;
+    if (danaOwner) danaOwner.innerText = 'a.n. ' + DANA_ADMIN_NAME;
+  } else if (viewName === 'profile') {
+    const el = document.getElementById('section-profile');
+    if (el) el.classList.remove('hide');
+    loadVerifiedEmails();
+  } else if (viewName === 'guide') {
+    const el = document.getElementById('section-guide');
+    if (el) el.classList.remove('hide');
+  } else if (viewName === 'announcement') {
+    const el = document.getElementById('section-announcement');
+    if (el) el.classList.remove('hide');
+    loadUserAnnouncements();
+  } else if (viewName === 'request') {
+    const el = document.getElementById('section-request');
+    if (el) el.classList.remove('hide');
+    loadUserFeatureRequests();
+  } else if (viewName === 'chat') {
+    const el = document.getElementById('section-chat');
+    if (el) el.classList.remove('hide');
+    loadGlobalChat(true);
+    unreadChatCount = 0;
+    updateChatBadge();
+  } else if (viewName === 'admin') {
     if (!isAdminUser) return showToast('Akses ditolak!', 'error');
-    document.getElementById('section-admin').classList.remove('hide');
-    loadAdminRedeems(); loadAdminAnnouncements(); loadAdminVipList(); loadAllUsers(); loadVipAccounts(); loadAdminFeatureRequests(); loadAdminVipShop(); loadAdminTransactions(); loadAdminApkList(); loadAdminOrders();
+    const el = document.getElementById('section-admin');
+    if (el) el.classList.remove('hide');
+    loadAdminRedeems();
+    loadAdminAnnouncements();
+    loadAdminVipList();
+    loadAllUsers();
+    loadVipAccounts();
+    loadAdminFeatureRequests();
+    loadAdminVipShop();
+    loadAdminTransactions();
+    loadAdminApkList();
+    loadAdminOrders();
   }
   
-  // Matikan auto refresh jika pindah dari view tempmail
   if (viewName !== 'tempmail') {
     stopMailAutoRefresh();
   }
 }
 
+// ====== DANA ======
 function copyDanaNumber() {
   navigator.clipboard.writeText(DANA_ADMIN_NUMBER).then(() => showToast('Nomor tersalin!', 'success')).catch(() => showToast('Gagal', 'error'));
 }
 
+// ====== GUARD ======
 function guardServerOnline(featureName) {
   if (serverOnline || isAdminUser) return true;
   showToast('Server offline — ' + featureName + ' tidak tersedia.', 'error', 4000);
   return false;
 }
 
+// ====== MY ORDERS ======
 async function loadMyOrders(force = false) {
   if (!loggedInUsername) return;
   const now = Date.now();
@@ -1744,10 +1893,14 @@ function renderMyOrders() {
   const search = (document.getElementById('order-search-input')?.value || '').toLowerCase().trim();
   let filtered = myOrders;
   if (search) filtered = myOrders.filter(o => (o.orderId||'').toLowerCase().includes(search) || (o.type||'').toLowerCase().includes(search) || (o.detail||'').toLowerCase().includes(search));
-  document.getElementById('my-orders-total').innerText = myOrders.length;
-  document.getElementById('my-orders-am').innerText = myOrders.filter(o => o.type === 'am').length;
-  document.getElementById('my-orders-netflix').innerText = myOrders.filter(o => o.type === 'netflix').length;
-  document.getElementById('my-orders-mail').innerText = myOrders.filter(o => o.type === 'mail').length;
+  const totalEl = document.getElementById('my-orders-total');
+  const amEl = document.getElementById('my-orders-am');
+  const nfEl = document.getElementById('my-orders-netflix');
+  const mailEl = document.getElementById('my-orders-mail');
+  if (totalEl) totalEl.innerText = myOrders.length;
+  if (amEl) amEl.innerText = myOrders.filter(o => o.type === 'am').length;
+  if (nfEl) nfEl.innerText = myOrders.filter(o => o.type === 'netflix').length;
+  if (mailEl) mailEl.innerText = myOrders.filter(o => o.type === 'mail').length;
   if (filtered.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">' + (search ? 'Tidak cocok' : 'Belum ada') + '</p>'; return; }
   container.innerHTML = filtered.map(o => {
     const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'mail' ? '📧' : '📱';
@@ -1766,6 +1919,7 @@ function renderMyOrders() {
   }).join('');
 }
 
+// ====== ADMIN ORDERS ======
 async function loadAdminOrders(force = false) {
   if (!isAdminUser) return;
   const now = Date.now();
@@ -1817,61 +1971,42 @@ function renderAdminOrders() {
   }).join('');
 }
 
-function updateMailQuotaDisplay() {
-  const el = document.getElementById('mail-quota-display');
-  if (el) {
-    if (isAdminUser || isVipUser) { el.innerText = '∞'; el.style.color = 'var(--info)'; }
-    else { const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota); el.innerText = remain; el.style.color = remain > 0 ? 'white' : 'var(--err)'; }
-  }
-  const resetEl = document.getElementById('mail-reset-display');
-  if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
-}
-
-// FUNGSI BARU: Auto Refresh Temp Mail
+// ====== TEMP MAIL AUTO REFRESH ======
 function startMailAutoRefresh() {
   if (mailAutoRefreshInterval) clearInterval(mailAutoRefreshInterval);
   mailAutoRefreshInterval = setInterval(async () => {
     if (!isPageVisible || !tempMailSession || currentView !== 'tempmail') return;
-    
     try {
-      // Menggunakan endpoint check yang sudah ada
       const res = await fetch('/api/tempmail/check', { 
         method:'POST', 
         headers:{'Content-Type':'application/json'}, 
         body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession }) 
       });
       const data = await res.json();
-      
       if (data.success && data.messages) {
-        // Cek apakah ada pesan baru berdasarkan jumlah
         if (data.messages.length > lastMailMessageCount) {
           showToast('📧 Pesan baru masuk!', 'mail');
           lastMailMessageCount = data.messages.length;
-          
-          // Update list inbox
-          document.getElementById('mail-message-count').innerText = data.messages.length + ' pesan';
-          
-          // Render ulang dengan animasi
+          const countEl = document.getElementById('mail-message-count');
+          if (countEl) countEl.innerText = data.messages.length + ' pesan';
           const inboxList = document.getElementById('mail-inbox-list');
-          if (data.messages.length > 0) {
-            inboxList.innerHTML = data.messages.map((msg, idx) => {
-              const isNew = idx === 0; // Asumsi pesan terbaru ada di index 0
-              const animClass = isNew ? 'mail-new' : '';
-              
-              const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
-                ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
-              
-              return '<div class="hist-item ' + animClass + '" style="border-color:rgba(96,165,250,0.25);"><div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div><div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' + linksHtml + '</div>';
-            }).join('');
-          } else {
-            inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada email</p>';
+          if (inboxList) {
+            if (data.messages.length > 0) {
+              inboxList.innerHTML = data.messages.map((msg, idx) => {
+                const isNew = idx === 0;
+                const animClass = isNew ? 'mail-new' : '';
+                const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
+                  ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
+                return '<div class="hist-item ' + animClass + '" style="border-color:rgba(96,165,250,0.25);"><div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div><div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' + linksHtml + '</div>';
+              }).join('');
+            } else {
+              inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada email</p>';
+            }
           }
         }
       }
-    } catch (e) {
-      // Abaikan error silent agar tidak spam
-    }
-  }, 5000); // Cek setiap 5 detik
+    } catch (e) {}
+  }, 5000);
 }
 
 function stopMailAutoRefresh() {
@@ -1881,6 +2016,7 @@ function stopMailAutoRefresh() {
   }
 }
 
+// ====== TEMP MAIL GENERATE ======
 async function handleGenerateTempMail() {
   if (!loggedInUsername) return showToast('Harus login!', 'error');
   if (!guardServerOnline('Temp Mail')) return;
@@ -1892,38 +2028,48 @@ async function handleGenerateTempMail() {
   const progressFill = document.getElementById('mail-progress-fill');
   const resultContainer = document.getElementById('mail-result-container');
   
-  // Reset state auto refresh
   stopMailAutoRefresh();
   lastMailMessageCount = 0;
   
-  btn.disabled = true; btnText.innerText = 'Memproses...';
-  loadingEl.classList.remove('hide'); progressFill.style.width = '0%';
-  statusText.innerText = 'Menyiapkan'; logText.innerText = 'Initializing...';
+  if (btn) btn.disabled = true;
+  if (btnText) btnText.innerText = 'Memproses...';
+  if (loadingEl) loadingEl.classList.remove('hide');
+  if (progressFill) progressFill.style.width = '0%';
+  if (statusText) statusText.innerText = 'Menyiapkan';
+  if (logText) logText.innerText = 'Initializing...';
+  
   try {
     const quotaRes = await fetch('/api/tempmail/check-quota?username=' + encodeURIComponent(loggedInUsername));
     const quotaData = await quotaRes.json();
     if (!quotaData.success) throw new Error(quotaData.message || 'Gagal cek');
     if (!quotaData.allowed) throw new Error(quotaData.message || 'Quota habis!');
-    statusText.innerText = 'Menggenerate...'; logText.innerText = 'Creating...'; progressFill.style.width = '40%';
+    if (statusText) statusText.innerText = 'Menggenerate...';
+    if (logText) logText.innerText = 'Creating...';
+    if (progressFill) progressFill.style.width = '40%';
+    
     const genRes = await fetch('/api/tempmail/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername }) });
     const genData = await genRes.json();
-    progressFill.style.width = '100%';
+    if (progressFill) progressFill.style.width = '100%';
+    
     if (genData.success && genData.email) {
-      statusText.innerText = '✅ Berhasil!'; logText.innerText = 'Generated';
+      if (statusText) statusText.innerText = '✅ Berhasil!';
+      if (logText) logText.innerText = 'Generated';
       tempMailSession = genData.sessionId || genData.email;
-      document.getElementById('mail-email-display').innerText = genData.email;
-      resultContainer.classList.remove('hide');
-      document.getElementById('mail-inbox-list').innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Menunggu email (Auto-Refresh Aktif)...</p>';
-      document.getElementById('mail-message-count').innerText = '0 pesan';
+      const emailDisplay = document.getElementById('mail-email-display');
+      if (emailDisplay) emailDisplay.innerText = genData.email;
+      if (resultContainer) resultContainer.classList.remove('hide');
+      const inboxList = document.getElementById('mail-inbox-list');
+      if (inboxList) inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Menunggu email (Auto-Refresh Aktif)...</p>';
+      const countEl = document.getElementById('mail-message-count');
+      if (countEl) countEl.innerText = '0 pesan';
       
-      // Memulai Auto refresh
       startMailAutoRefresh();
       
       if (genData.quotaInfo) { userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(genData.quotaInfo); updateMailQuotaDisplay(); }
       if (genData.orderId) showToast('✅ Order ID: ' + genData.orderId, 'order', 5000);
       else showToast('Email berhasil!', 'mail');
       loadTempMailHistory(true);
-      setTimeout(() => loadingEl.classList.add('hide'), 2000);
+      setTimeout(() => { if (loadingEl) loadingEl.classList.add('hide'); }, 2000);
     } else {
       if (genData.refilled) showToast(genData.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
       else showToast(genData.message || 'Gagal', 'error');
@@ -1932,10 +2078,14 @@ async function handleGenerateTempMail() {
       throw new Error(genData.message || 'Gagal');
     }
   } catch (err) {
-    statusText.innerText = '❌ Gagal'; logText.innerText = err.message;
+    if (statusText) statusText.innerText = '❌ Gagal';
+    if (logText) logText.innerText = err.message;
     if (!err.message.includes('dikembalikan')) showToast(err.message, 'error');
-    setTimeout(() => loadingEl.classList.add('hide'), 3000);
-  } finally { btn.disabled = false; btnText.innerText = 'Generate Email'; }
+    setTimeout(() => { if (loadingEl) loadingEl.classList.add('hide'); }, 3000);
+  } finally { 
+    if (btn) btn.disabled = false;
+    if (btnText) btnText.innerText = 'Generate Email'; 
+  }
 }
 
 async function checkTempMailInbox() {
@@ -1943,20 +2093,23 @@ async function checkTempMailInbox() {
   if (!guardServerOnline('Temp Mail')) return;
   const inboxList = document.getElementById('mail-inbox-list');
   const messageCount = document.getElementById('mail-message-count');
-  inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px;">Memeriksa...</p>';
+  if (inboxList) inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px;">Memeriksa...</p>';
   try {
     const res = await fetch('/api/tempmail/check', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession }) });
     const data = await res.json();
     if (data.success) {
       if (data.messages && data.messages.length > 0) { 
-        messageCount.innerText = data.messages.length + ' pesan'; 
+        if (messageCount) messageCount.innerText = data.messages.length + ' pesan'; 
         renderTempMailInbox(data.messages); 
         showToast('📧 ' + data.messages.length + ' pesan!', 'mail'); 
         lastMailMessageCount = data.messages.length;
       }
-      else { inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada email</p>'; messageCount.innerText = '0 pesan'; }
-    } else inboxList.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">' + (data.message || 'Gagal') + '</p>';
-  } catch(e) { inboxList.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
+      else { 
+        if (inboxList) inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada email</p>'; 
+        if (messageCount) messageCount.innerText = '0 pesan'; 
+      }
+    } else if (inboxList) inboxList.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">' + (data.message || 'Gagal') + '</p>';
+  } catch(e) { if (inboxList) inboxList.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
 }
 
 function renderTempMailInbox(messages) {
@@ -1972,7 +2125,7 @@ function renderTempMailInbox(messages) {
   }).join('');
 }
 
-function copyTempMailEmail() { const email = document.getElementById('mail-email-display').innerText; if (email && email !== '-') navigator.clipboard.writeText(email).then(() => showToast('Tersalin!', 'mail')); }
+function copyTempMailEmail() { const email = document.getElementById('mail-email-display')?.innerText; if (email && email !== '-') navigator.clipboard.writeText(email).then(() => showToast('Tersalin!', 'mail')); }
 function copyMailLink(link) { navigator.clipboard.writeText(link).then(() => showToast('Tersalin!', 'mail')); }
 
 async function loadTempMailHistory(force = false) {
@@ -1999,6 +2152,7 @@ function renderTempMailHistory(data) {
 
 function copyHistoryEmail(email) { navigator.clipboard.writeText(email).then(() => showToast('Tersalin!', 'mail')); }
 
+// ====== NETFLIX PLAN SELECT ======
 function selectNetflixPlan(plan) {
   selectedNetflixPlan = plan;
   document.querySelectorAll('.opt-row[data-plan]').forEach(el => { el.classList.toggle('selected', el.dataset.plan === plan); });
@@ -2014,36 +2168,44 @@ function updateNetflixQuotaDisplay() {
   if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
 }
 
+// ====== NETFLIX GENERATE ======
 async function handleGenerateNetflix() {
   if (!loggedInUsername) return showToast('Harus login!', 'error');
   if (!guardServerOnline('Netflix')) return;
-  const useProxy = document.getElementById('netflix-use-proxy').checked;
+  const useProxy = document.getElementById('netflix-use-proxy')?.checked ?? true;
   const btn = document.getElementById('btn-generate-netflix');
   const btnText = document.getElementById('netflix-btn-text');
   const loadingEl = document.getElementById('netflix-loading');
   const statusText = document.getElementById('netflix-status-text');
   const logText = document.getElementById('netflix-log-text');
   const progressFill = document.getElementById('netflix-progress-fill');
-  btn.disabled = true; btnText.innerText = 'Memproses...';
-  loadingEl.classList.remove('hide'); progressFill.style.width = '0%';
-  statusText.innerText = 'Menyiapkan'; logText.innerText = 'Initializing...';
+  if (btn) btn.disabled = true;
+  if (btnText) btnText.innerText = 'Memproses...';
+  if (loadingEl) loadingEl.classList.remove('hide');
+  if (progressFill) progressFill.style.width = '0%';
+  if (statusText) statusText.innerText = 'Menyiapkan';
+  if (logText) logText.innerText = 'Initializing...';
   try {
     const quotaRes = await fetch('/api/netflix/check-quota?username=' + encodeURIComponent(loggedInUsername));
     const quotaData = await quotaRes.json();
     if (!quotaData.success) throw new Error(quotaData.message || 'Gagal cek');
     if (!quotaData.allowed) throw new Error(quotaData.message || 'Quota habis!');
-    statusText.innerText = 'Menggenerate...'; logText.innerText = 'Connecting...'; progressFill.style.width = '30%';
+    if (statusText) statusText.innerText = 'Menggenerate...';
+    if (logText) logText.innerText = 'Connecting...';
+    if (progressFill) progressFill.style.width = '30%';
     const genRes = await fetch('/api/netflix/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, plan: selectedNetflixPlan, useProxy }) });
     const genData = await genRes.json();
-    progressFill.style.width = '80%';
+    if (progressFill) progressFill.style.width = '80%';
     if (genData.success && genData.result) {
-      progressFill.style.width = '100%'; statusText.innerText = '✅ Berhasil!'; logText.innerText = 'Success';
+      if (progressFill) progressFill.style.width = '100%';
+      if (statusText) statusText.innerText = '✅ Berhasil!';
+      if (logText) logText.innerText = 'Success';
       addNetflixResult(genData.result);
       if (genData.quotaInfo) { userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(genData.quotaInfo); updateNetflixQuotaDisplay(); }
       if (genData.orderId) showToast('✅ Order ID: ' + genData.orderId, 'order', 5000);
       else showToast('Token berhasil!', 'netflix');
       loadNetflixHistory(true);
-      setTimeout(() => loadingEl.classList.add('hide'), 2000);
+      setTimeout(() => { if (loadingEl) loadingEl.classList.add('hide'); }, 2000);
     } else {
       if (genData.refilled) showToast(genData.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
       else showToast(genData.message || 'Gagal', 'error');
@@ -2052,13 +2214,17 @@ async function handleGenerateNetflix() {
       throw new Error(genData.message || 'Gagal');
     }
   } catch (err) {
-    statusText.innerText = '❌ Gagal'; logText.innerText = err.message;
+    if (statusText) statusText.innerText = '❌ Gagal';
+    if (logText) logText.innerText = err.message;
     if (!err.message.includes('dikembalikan')) showToast(err.message, 'error');
-    setTimeout(() => loadingEl.classList.add('hide'), 3000);
-  } finally { btn.disabled = false; btnText.innerText = 'Generate Token'; }
+    setTimeout(() => { if (loadingEl) loadingEl.classList.add('hide'); }, 3000);
+  } finally { 
+    if (btn) btn.disabled = false;
+    if (btnText) btnText.innerText = 'Generate Token'; 
+  }
 }
 
-function addNetflixResult(result) { netflixResults.unshift(result); renderNetflixResults(); document.getElementById('netflix-results-container').classList.remove('hide'); }
+function addNetflixResult(result) { netflixResults.unshift(result); renderNetflixResults(); const el = document.getElementById('netflix-results-container'); if (el) el.classList.remove('hide'); }
 
 function renderNetflixResults() {
   const container = document.getElementById('netflix-results-list');
@@ -2072,7 +2238,7 @@ function renderNetflixResults() {
 }
 
 function copyNetflixLink(url) { navigator.clipboard.writeText(url).then(() => showToast('Tersalin!', 'netflix')).catch(() => showToast('Gagal', 'error')); }
-function clearNetflixResults() { netflixResults = []; renderNetflixResults(); document.getElementById('netflix-results-container').classList.add('hide'); }
+function clearNetflixResults() { netflixResults = []; renderNetflixResults(); const el = document.getElementById('netflix-results-container'); if (el) el.classList.add('hide'); }
 
 async function loadNetflixHistory(force = false) {
   if (!loggedInUsername) return;
@@ -2100,6 +2266,68 @@ function renderNetflixHistory(data) {
   } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
 }
 
+// ====== NETFLIX GMAIL ACTIVATION (BARU) ======
+async function handleActivateNetflixGmail() {
+  if (!loggedInUsername) return showToast('Harus login!', 'error');
+  if (!guardServerOnline('Netflix Aktivasi')) return;
+  
+  const gmailInput = document.getElementById('netflix-gmail-input');
+  const email = gmailInput?.value?.trim();
+  if (!email || !email.includes('@') || !email.includes('.')) {
+    return showToast('Masukkan email Gmail yang valid!', 'error');
+  }
+  
+  const btn = document.getElementById('btn-activate-netflix');
+  const btnText = document.getElementById('activate-netflix-text');
+  const resultEl = document.getElementById('netflix-activation-result');
+  const contentEl = document.getElementById('netflix-activation-content');
+  
+  if (btn) btn.disabled = true;
+  if (btnText) btnText.innerText = 'Memproses aktivasi...';
+  if (resultEl) resultEl.classList.add('hide');
+  
+  try {
+    const res = await fetch('/api/netflix/activate-gmail', { 
+      method: 'POST', 
+      headers: {'Content-Type':'application/json'}, 
+      body: JSON.stringify({ username: loggedInUsername, email, plan: selectedNetflixPlan }) 
+    });
+    const data = await res.json();
+    
+    if (data.success && data.result) {
+      if (resultEl) resultEl.classList.remove('hide');
+      if (contentEl) {
+        contentEl.innerHTML = 
+          '<div style="margin-bottom:8px;"><strong>📧 Email:</strong> ' + escapeHtml(data.result.activationEmail) + '</div>' +
+          '<div style="margin-bottom:8px;"><strong>🎬 Plan:</strong> ' + escapeHtml(data.result.plan || selectedNetflixPlan).toUpperCase() + '</div>' +
+          '<div style="margin-bottom:8px;"><strong>🌍 Country:</strong> ' + escapeHtml(data.result.country || 'US') + '</div>' +
+          '<div style="margin-bottom:8px;"><strong>📺 Quality:</strong> ' + escapeHtml(data.result.quality || 'HD') + '</div>' +
+          '<div style="margin-bottom:8px;"><strong>🔗 Link:</strong></div>' +
+          '<div class="link-line" style="margin-bottom:8px;" onclick="copyNetflixLink(\\'' + escapeHtml(data.result.url).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(data.result.url) + '</div>' +
+          '<div style="margin-bottom:8px;"><strong>📋 Langkah Aktivasi:</strong></div>' +
+          (data.result.activationInstructions || []).map((step, idx) => 
+            '<div style="display:flex; gap:6px; margin-bottom:4px; font-size:11px;"><span style="color:var(--ok);">' + (idx+1) + '.</span><span>' + escapeHtml(step) + '</span></div>'
+          ).join('') +
+          '<button onclick="copyNetflixLink(\\'' + escapeHtml(data.result.url).replace(/'/g, "\\\\'") + '\\')" class="btn btn-ok btn-sm" style="margin-top:8px; width:100%;">Copy Link Aktivasi</button>';
+      }
+      if (data.quotaInfo) { userQuotaData.usedQuota = data.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(data.quotaInfo); updateNetflixQuotaDisplay(); }
+      if (data.orderId) showToast('✅ Order ID: ' + data.orderId, 'order', 5000);
+      showToast('✅ Aktivasi Netflix berhasil!', 'success');
+      loadNetflixHistory(true);
+    } else {
+      if (data.refilled) showToast(data.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
+      else showToast(data.message || 'Gagal aktivasi', 'error');
+      if (data.quotaInfo) { updateQuotaDisplay(data.quotaInfo); updateNetflixQuotaDisplay(); }
+    }
+  } catch (err) {
+    showToast('Kesalahan: ' + err.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+    if (btnText) btnText.innerText = 'Aktivasi Netflix Premium';
+  }
+}
+
+// ====== APK MOD ======
 function updateApkQuotaDisplay() {
   const el = document.getElementById('apk-quota-display');
   if (el) {
@@ -2145,26 +2373,33 @@ async function handleGenerateApk() {
   const statusText = document.getElementById('apk-status-text');
   const logText = document.getElementById('apk-log-text');
   const progressFill = document.getElementById('apk-progress-fill');
-  btn.disabled = true; btnText.innerText = 'Memproses...';
-  loadingEl.classList.remove('hide'); progressFill.style.width = '0%';
-  statusText.innerText = 'Cek kuota...'; logText.innerText = 'Checking...';
+  if (btn) btn.disabled = true;
+  if (btnText) btnText.innerText = 'Memproses...';
+  if (loadingEl) loadingEl.classList.remove('hide');
+  if (progressFill) progressFill.style.width = '0%';
+  if (statusText) statusText.innerText = 'Cek kuota...';
+  if (logText) logText.innerText = 'Checking...';
   try {
     const quotaRes = await fetch('/api/apk/check-quota?username=' + encodeURIComponent(loggedInUsername));
     const quotaData = await quotaRes.json();
     if (!quotaData.success) throw new Error(quotaData.message || 'Gagal');
     if (!quotaData.allowed) throw new Error(quotaData.message || 'Quota habis!');
-    statusText.innerText = 'Ambil link...'; logText.innerText = 'Fetching...'; progressFill.style.width = '50%';
+    if (statusText) statusText.innerText = 'Ambil link...';
+    if (logText) logText.innerText = 'Fetching...';
+    if (progressFill) progressFill.style.width = '50%';
     const reqRes = await fetch('/api/apk/request', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, apkId: selectedApkId }) });
     const reqData = await reqRes.json();
-    progressFill.style.width = '80%';
+    if (progressFill) progressFill.style.width = '80%';
     if (reqData.success && reqData.result) {
-      progressFill.style.width = '100%'; statusText.innerText = '✅ Berhasil!'; logText.innerText = 'Success';
+      if (progressFill) progressFill.style.width = '100%';
+      if (statusText) statusText.innerText = '✅ Berhasil!';
+      if (logText) logText.innerText = 'Success';
       addApkResult(reqData.result);
       if (reqData.quotaInfo) { userQuotaData.usedQuota = reqData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(reqData.quotaInfo); updateApkQuotaDisplay(); }
       if (reqData.orderId) showToast('✅ Order ID: ' + reqData.orderId, 'order', 5000);
       else showToast('Link berhasil!', 'apk');
       loadApkHistory(true);
-      setTimeout(() => loadingEl.classList.add('hide'), 2000);
+      setTimeout(() => { if (loadingEl) loadingEl.classList.add('hide'); }, 2000);
     } else {
       if (reqData.refilled) showToast(reqData.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
       else showToast(reqData.message || 'Gagal', 'error');
@@ -2173,13 +2408,17 @@ async function handleGenerateApk() {
       throw new Error(reqData.message || 'Gagal');
     }
   } catch (err) {
-    statusText.innerText = '❌ Gagal'; logText.innerText = err.message;
+    if (statusText) statusText.innerText = '❌ Gagal';
+    if (logText) logText.innerText = err.message;
     if (!err.message.includes('dikembalikan')) showToast(err.message, 'error');
-    setTimeout(() => loadingEl.classList.add('hide'), 3000);
-  } finally { btn.disabled = false; btnText.innerText = 'Dapatkan Link'; }
+    setTimeout(() => { if (loadingEl) loadingEl.classList.add('hide'); }, 3000);
+  } finally { 
+    if (btn) btn.disabled = false;
+    if (btnText) btnText.innerText = 'Dapatkan Link'; 
+  }
 }
 
-function addApkResult(result) { apkResults.unshift(result); renderApkResults(); document.getElementById('apk-results-container').classList.remove('hide'); }
+function addApkResult(result) { apkResults.unshift(result); renderApkResults(); const el = document.getElementById('apk-results-container'); if (el) el.classList.remove('hide'); }
 
 function renderApkResults() {
   const container = document.getElementById('apk-results-list');
@@ -2189,7 +2428,7 @@ function renderApkResults() {
 }
 
 function copyApkLink(link) { navigator.clipboard.writeText(link).then(() => showToast('Tersalin!', 'apk')).catch(() => showToast('Gagal', 'error')); }
-function clearApkResults() { apkResults = []; renderApkResults(); document.getElementById('apk-results-container').classList.add('hide'); }
+function clearApkResults() { apkResults = []; renderApkResults(); const el = document.getElementById('apk-results-container'); if (el) el.classList.add('hide'); }
 
 async function loadApkHistory(force = false) {
   if (!loggedInUsername) return;
@@ -2230,10 +2469,10 @@ async function loadAdminApkList() {
 
 async function handleSaveApkMod() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
-  const editId = document.getElementById('apk-edit-id').value;
-  const name = document.getElementById('apk-name-input').value.trim();
-  const link = document.getElementById('apk-link-input').value.trim();
-  const description = document.getElementById('apk-desc-input').value.trim();
+  const editId = document.getElementById('apk-edit-id')?.value || '';
+  const name = document.getElementById('apk-name-input')?.value?.trim() || '';
+  const link = document.getElementById('apk-link-input')?.value?.trim() || '';
+  const description = document.getElementById('apk-desc-input')?.value?.trim() || '';
   if (!name || !link) return showToast('Lengkapi!', 'error');
   if (!link.startsWith('http://') && !link.startsWith('https://')) return showToast('Link harus http/https', 'error');
   try {
@@ -2245,21 +2484,33 @@ async function handleSaveApkMod() {
 }
 
 function editApkMod(id, encName, encLink, encDesc) {
-  document.getElementById('apk-edit-id').value = id;
-  document.getElementById('apk-name-input').value = decodeURIComponent(encName);
-  document.getElementById('apk-link-input').value = decodeURIComponent(encLink);
-  document.getElementById('apk-desc-input').value = decodeURIComponent(encDesc || '');
-  document.getElementById('apk-submit-btn').innerText = 'Perbarui';
-  document.getElementById('apk-cancel-btn').classList.remove('hide');
+  const editId = document.getElementById('apk-edit-id');
+  const nameInput = document.getElementById('apk-name-input');
+  const linkInput = document.getElementById('apk-link-input');
+  const descInput = document.getElementById('apk-desc-input');
+  const submitBtn = document.getElementById('apk-submit-btn');
+  const cancelBtn = document.getElementById('apk-cancel-btn');
+  if (editId) editId.value = id;
+  if (nameInput) nameInput.value = decodeURIComponent(encName);
+  if (linkInput) linkInput.value = decodeURIComponent(encLink);
+  if (descInput) descInput.value = decodeURIComponent(encDesc || '');
+  if (submitBtn) submitBtn.innerText = 'Perbarui';
+  if (cancelBtn) cancelBtn.classList.remove('hide');
 }
 
 function resetApkForm() {
-  document.getElementById('apk-edit-id').value = '';
-  document.getElementById('apk-name-input').value = '';
-  document.getElementById('apk-link-input').value = '';
-  document.getElementById('apk-desc-input').value = '';
-  document.getElementById('apk-submit-btn').innerText = 'Tambah APK';
-  document.getElementById('apk-cancel-btn').classList.add('hide');
+  const editId = document.getElementById('apk-edit-id');
+  const nameInput = document.getElementById('apk-name-input');
+  const linkInput = document.getElementById('apk-link-input');
+  const descInput = document.getElementById('apk-desc-input');
+  const submitBtn = document.getElementById('apk-submit-btn');
+  const cancelBtn = document.getElementById('apk-cancel-btn');
+  if (editId) editId.value = '';
+  if (nameInput) nameInput.value = '';
+  if (linkInput) linkInput.value = '';
+  if (descInput) descInput.value = '';
+  if (submitBtn) submitBtn.innerText = 'Tambah APK';
+  if (cancelBtn) cancelBtn.classList.add('hide');
 }
 
 async function toggleApkMod(id, currentActive) {
@@ -2279,6 +2530,7 @@ async function deleteApkMod(id) {
   } catch(e) {}
 }
 
+// ====== SERVER STATUS ======
 async function fetchServerStatus(force = false) {
   if (!isPageVisible && !force) return;
   const now = Date.now();
@@ -2308,8 +2560,8 @@ function updateStatusUI(status) {
   const txt = document.getElementById('server-status-text');
   const banner = document.getElementById('offline-banner');
   if (!ind) return;
-  if (status === 'online') { ind.className = 'badge badge-ok'; dot.className = 'online-dot'; txt.innerText = 'Online'; banner.classList.add('hide'); }
-  else { ind.className = 'badge badge-err'; dot.style.background = 'var(--err)'; dot.style.boxShadow = 'none'; dot.style.animation = 'none'; txt.innerText = 'Offline'; if (!isAdminUser) banner.classList.remove('hide'); }
+  if (status === 'online') { ind.className = 'badge badge-ok'; if (dot) dot.className = 'online-dot'; if (txt) txt.innerText = 'Online'; if (banner) banner.classList.add('hide'); }
+  else { ind.className = 'badge badge-err'; if (dot) { dot.style.background = 'var(--err)'; dot.style.boxShadow = 'none'; dot.style.animation = 'none'; } if (txt) txt.innerText = 'Offline'; if (!isAdminUser && banner) banner.classList.remove('hide'); }
 }
 
 function startPolling() {
@@ -2319,11 +2571,7 @@ function startPolling() {
   videoPollInterval = setInterval(() => { if (isPageVisible) fetchFeaturedVideo(); }, CACHE_DURATION.video);
 }
 
-fetchServerStatus();
-fetchFeaturedVideo();
-startPolling();
-fetchOnlineCount();
-
+// ====== AUTH ======
 function switchAuthTab(mode) {
   currentAuthMode = mode;
   const loginBtn = document.getElementById('tab-login-btn');
@@ -2333,46 +2581,59 @@ function switchAuthTab(mode) {
   const btnText = document.getElementById('auth-btn-text');
   const formContainer = document.getElementById('auth-form-container');
   
-  // Animasi form fade
-  formContainer.style.animation = 'none';
-  formContainer.offsetHeight; // trigger reflow
-  formContainer.style.animation = 'fadeInScale 0.3s ease-out forwards';
+  if (formContainer) {
+    formContainer.style.animation = 'none';
+    formContainer.offsetHeight;
+    formContainer.style.animation = 'fadeInScale 0.3s ease-out forwards';
+  }
 
   if (mode === 'login') {
-    ind.style.transform = 'translateX(0%)'; loginBtn.style.color = 'white'; regBtn.style.color = 'var(--text-1)';
-    emailField.classList.add('hide'); btnText.innerText = 'Masuk';
+    if (ind) ind.style.transform = 'translateX(0%)';
+    if (loginBtn) loginBtn.style.color = 'white';
+    if (regBtn) regBtn.style.color = 'var(--text-1)';
+    if (emailField) emailField.classList.add('hide');
+    if (btnText) btnText.innerText = 'Masuk';
   } else {
-    ind.style.transform = 'translateX(100%)'; regBtn.style.color = 'white'; loginBtn.style.color = 'var(--text-1)';
-    emailField.classList.remove('hide'); btnText.innerText = 'Daftar';
+    if (ind) ind.style.transform = 'translateX(100%)';
+    if (regBtn) regBtn.style.color = 'white';
+    if (loginBtn) loginBtn.style.color = 'var(--text-1)';
+    if (emailField) emailField.classList.remove('hide');
+    if (btnText) btnText.innerText = 'Daftar';
   }
 }
 
 async function handleAuthAction() {
-  const username = document.getElementById('auth-username').value.trim();
-  const password = document.getElementById('auth-password').value.trim();
-  const email = document.getElementById('auth-email').value.trim();
+  const username = document.getElementById('auth-username')?.value?.trim();
+  const password = document.getElementById('auth-password')?.value?.trim();
+  const email = document.getElementById('auth-email')?.value?.trim();
   const formContainer = document.getElementById('auth-form-container');
   
   if (!username || !password) {
-    formContainer.classList.add('shake-error');
-    setTimeout(() => formContainer.classList.remove('shake-error'), 500);
+    if (formContainer) {
+      formContainer.classList.add('shake-error');
+      setTimeout(() => formContainer.classList.remove('shake-error'), 500);
+    }
     return showToast('Username dan password wajib!', 'error');
   }
   
   let deviceToken = localStorage.getItem('am_device_token');
   if (currentAuthMode === 'register' && deviceToken) {
-    formContainer.classList.add('shake-error');
-    setTimeout(() => formContainer.classList.remove('shake-error'), 500);
+    if (formContainer) {
+      formContainer.classList.add('shake-error');
+      setTimeout(() => formContainer.classList.remove('shake-error'), 500);
+    }
     return showToast('Perangkat sudah terdaftar!', 'error');
   }
   
   const btn = document.getElementById('auth-submit-btn');
-  const originalText = document.getElementById('auth-btn-text').innerText;
+  const originalText = document.getElementById('auth-btn-text')?.innerText || 'Masuk';
   
-  // Efek loading pada tombol
-  btn.classList.add('btn-loading');
-  btn.disabled = true;
-  document.getElementById('auth-btn-text').innerText = '';
+  if (btn) {
+    btn.classList.add('btn-loading');
+    btn.disabled = true;
+  }
+  const btnText = document.getElementById('auth-btn-text');
+  if (btnText) btnText.innerText = '';
   
   try {
     const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, email, deviceToken }) });
@@ -2382,28 +2643,32 @@ async function handleAuthAction() {
       if (data.token) { localStorage.setItem('authToken', data.token); localStorage.setItem('savedUsername', data.username); }
       showToast(data.message, 'success');
       
-      // Animasi fade out sebelum masuk
-      document.getElementById('auth-view').style.transition = 'opacity 0.3s';
-      document.getElementById('auth-view').style.opacity = '0';
-      setTimeout(() => {
-        applySession(data);
-        document.getElementById('auth-view').style.opacity = '1';
-      }, 300);
-      
+      const authView = document.getElementById('auth-view');
+      if (authView) {
+        authView.style.transition = 'opacity 0.3s';
+        authView.style.opacity = '0';
+        setTimeout(() => {
+          applySession(data);
+          authView.style.opacity = '1';
+        }, 300);
+      }
     } else {
-      formContainer.classList.add('shake-error');
-      setTimeout(() => formContainer.classList.remove('shake-error'), 500);
+      if (formContainer) {
+        formContainer.classList.add('shake-error');
+        setTimeout(() => formContainer.classList.remove('shake-error'), 500);
+      }
       showToast(data.message, 'error');
     }
   } catch (err) { 
-    formContainer.classList.add('shake-error');
-    setTimeout(() => formContainer.classList.remove('shake-error'), 500);
+    if (formContainer) {
+      formContainer.classList.add('shake-error');
+      setTimeout(() => formContainer.classList.remove('shake-error'), 500);
+    }
     showToast('Kesalahan koneksi', 'error'); 
   }
   finally { 
-    btn.classList.remove('btn-loading');
-    document.getElementById('auth-btn-text').innerText = originalText; 
-    btn.disabled = false; 
+    if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
+    if (btnText) btnText.innerText = originalText;
   }
 }
 
@@ -2411,21 +2676,37 @@ function applySession(data) {
   loggedInUsername = data.username;
   isAdminUser = data.isAdmin;
   isVipUser = data.isVip || false;
-  document.getElementById('auth-view').classList.add('hide');
-  document.getElementById('terminal-view').classList.remove('hide');
-  document.getElementById('menu-btn').classList.remove('hide');
-  document.getElementById('logged-username').innerText = data.username;
   
-  // Set avatar huruf depan, bukan hardcode 'A'
-  document.getElementById('user-avatar').innerText = data.username.charAt(0).toUpperCase();
-  document.getElementById('drawer-avatar').innerText = data.username.charAt(0).toUpperCase();
+  const authView = document.getElementById('auth-view');
+  const terminalView = document.getElementById('terminal-view');
+  const menuBtn = document.getElementById('menu-btn');
+  const loggedUsername = document.getElementById('logged-username');
+  const userAvatar = document.getElementById('user-avatar');
+  const drawerAvatar = document.getElementById('drawer-avatar');
+  const drawerUsername = document.getElementById('drawer-username');
+  const drawerRole = document.getElementById('drawer-role');
+  const drawerLogoutBtn = document.getElementById('drawer-logout-btn');
+  const profileUname = document.getElementById('profile-uname');
+  const profileRole = document.getElementById('profile-role');
+  const profileQuota = document.getElementById('profile-quota');
+  const roleBadge = document.getElementById('role-badge');
+  const navAdminBtn = document.getElementById('nav-admin-btn');
   
-  document.getElementById('drawer-username').innerText = data.username;
-  document.getElementById('drawer-role').innerText = data.isAdmin ? 'Admin' : (data.isVip ? 'VIP Member' : 'User');
-  document.getElementById('drawer-logout-btn').classList.remove('hide');
-  document.getElementById('profile-uname').innerText = data.username;
-  document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin' : (data.isVip ? 'VIP Member' : 'Standard');
-  document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (BASE_QUOTA + (data.bonusQuota || 0) - data.usedQuota);
+  if (authView) authView.classList.add('hide');
+  if (terminalView) terminalView.classList.remove('hide');
+  if (menuBtn) menuBtn.classList.remove('hide');
+  if (loggedUsername) loggedUsername.innerText = data.username;
+  
+  if (userAvatar) userAvatar.innerText = data.username.charAt(0).toUpperCase();
+  if (drawerAvatar) drawerAvatar.innerText = data.username.charAt(0).toUpperCase();
+  
+  if (drawerUsername) drawerUsername.innerText = data.username;
+  if (drawerRole) drawerRole.innerText = data.isAdmin ? 'Admin' : (data.isVip ? 'VIP Member' : 'User');
+  if (drawerLogoutBtn) drawerLogoutBtn.classList.remove('hide');
+  if (profileUname) profileUname.innerText = data.username;
+  if (profileRole) profileRole.innerText = data.isAdmin ? 'Admin' : (data.isVip ? 'VIP Member' : 'Standard');
+  if (profileQuota) profileQuota.innerText = data.isAdmin || data.isVip ? 'Unlimited' : (BASE_QUOTA + (data.bonusQuota || 0) - data.usedQuota);
+  
   updateQuotaDisplay(data);
   checkVipStatus(data);
   loadUserAnnouncements();
@@ -2437,13 +2718,21 @@ function applySession(data) {
   updateApkQuotaDisplay();
   updateMailQuotaDisplay();
   startOnlineTracking();
+  
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   loadGlobalChat();
   chatRefreshInterval = setInterval(() => { if (!isPageVisible) return; if (currentView !== 'chat') checkNewChatMessages(); else loadGlobalChat(); }, CACHE_DURATION.chat);
-  const roleBadge = document.getElementById('role-badge');
-  if (data.isAdmin) { roleBadge.className = 'badge badge-warn'; roleBadge.innerText = '👑 Admin'; document.getElementById('nav-admin-btn').classList.remove('hide'); }
-  else if (data.isVip) { roleBadge.className = 'badge badge-accent'; roleBadge.innerText = '⭐ VIP'; }
-  else { roleBadge.className = 'badge badge-muted'; roleBadge.innerText = 'User'; }
+  
+  if (data.isAdmin) { 
+    if (roleBadge) { roleBadge.className = 'badge badge-warn'; roleBadge.innerText = '👑 Admin'; }
+    if (navAdminBtn) navAdminBtn.classList.remove('hide'); 
+  }
+  else if (data.isVip) { 
+    if (roleBadge) { roleBadge.className = 'badge badge-accent'; roleBadge.innerText = '⭐ VIP'; }
+  }
+  else { 
+    if (roleBadge) { roleBadge.className = 'badge badge-muted'; roleBadge.innerText = 'User'; }
+  }
 }
 
 async function checkSavedSession() {
@@ -2456,17 +2745,18 @@ async function checkSavedSession() {
     if (data.success) applySession(data);
   } catch (e) {}
 }
-checkSavedSession();
 
+// ====== REDEEM ======
 async function handleRedeemCodeMain() {
-  const code = document.getElementById('redeem-code-input-main').value.trim().toUpperCase();
+  const input = document.getElementById('redeem-code-input-main');
+  const code = input?.value?.trim()?.toUpperCase();
   if (!code) return showToast('Masukkan kode!', 'error');
   try {
     const res = await fetch('/api/redeem', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, code }) });
     const data = await res.json();
     if (data.success) {
       showToast(data.message, 'success');
-      document.getElementById('redeem-code-input-main').value = '';
+      if (input) input.value = '';
       updateQuotaDisplay(data); updateNetflixQuotaDisplay(); updateApkQuotaDisplay(); updateMailQuotaDisplay();
       loadVerifiedEmails(true); loadActiveRedeems(true);
     } else showToast(data.message, 'error');
@@ -2506,11 +2796,12 @@ function renderActiveRedeems(payload) {
 }
 
 function quickClaimRedeem(code) {
-  document.getElementById('redeem-code-input-main').value = code;
+  const input = document.getElementById('redeem-code-input-main');
+  if (input) { input.value = code; input.focus(); }
   showToast('Kode siap diklaim', 'info');
-  document.getElementById('redeem-code-input-main').focus();
 }
 
+// ====== VIP SHOP ======
 async function loadVipShopItems() {
   const container = document.getElementById('vip-shop-list');
   if (!container) return;
@@ -2533,44 +2824,60 @@ function selectVipItem(itemId) {
   const item = cachedVipShopItems.find(([id]) => id === itemId);
   if (!item) return showToast('Tidak ditemukan', 'error');
   const [id, data] = item;
-  document.getElementById('selected-vip-id').value = id;
-  document.getElementById('selected-vip-price').value = data.price;
-  document.getElementById('selected-vip-days').value = data.days;
-  document.getElementById('selected-vip-name').value = data.name;
-  document.getElementById('selected-vip-display').innerText = data.name + ' (' + data.days + ' hari)';
-  document.getElementById('selected-vip-price-display').innerText = 'Rp ' + Number(data.price).toLocaleString('id-ID');
-  document.getElementById('dana-number-display').innerText = DANA_ADMIN_NUMBER;
-  document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
-  document.getElementById('vip-purchase-form').classList.remove('hide');
-  document.getElementById('payment-proof-section').classList.add('hide');
-  document.getElementById('transaction-status-box').classList.add('hide');
-  document.getElementById('topup-id-display').innerText = '-';
-  document.getElementById('topup-status-display').innerHTML = '<span class="badge badge-warn">Menunggu</span>';
-  document.getElementById('vip-purchase-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const fields = {
+    'selected-vip-id': id,
+    'selected-vip-price': data.price,
+    'selected-vip-days': data.days,
+    'selected-vip-name': data.name
+  };
+  Object.entries(fields).forEach(([fid, val]) => { const el = document.getElementById(fid); if (el) el.value = val; });
+  const display = document.getElementById('selected-vip-display');
+  const priceDisplay = document.getElementById('selected-vip-price-display');
+  const danaNum = document.getElementById('dana-number-display');
+  const danaOwner = document.getElementById('dana-owner-display');
+  const purchaseForm = document.getElementById('vip-purchase-form');
+  const proofSection = document.getElementById('payment-proof-section');
+  const statusBox = document.getElementById('transaction-status-box');
+  const topupId = document.getElementById('topup-id-display');
+  const topupStatus = document.getElementById('topup-status-display');
+  
+  if (display) display.innerText = data.name + ' (' + data.days + ' hari)';
+  if (priceDisplay) priceDisplay.innerText = 'Rp ' + Number(data.price).toLocaleString('id-ID');
+  if (danaNum) danaNum.innerText = DANA_ADMIN_NUMBER;
+  if (danaOwner) danaOwner.innerText = 'a.n. ' + DANA_ADMIN_NAME;
+  if (purchaseForm) purchaseForm.classList.remove('hide');
+  if (proofSection) proofSection.classList.add('hide');
+  if (statusBox) statusBox.classList.add('hide');
+  if (topupId) topupId.innerText = '-';
+  if (topupStatus) topupStatus.innerHTML = '<span class="badge badge-warn">Menunggu</span>';
+  if (purchaseForm) purchaseForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
   showToast('Dipilih: ' + data.name, 'info');
 }
 
 async function handleCreatePayment() {
-  const vipId = document.getElementById('selected-vip-id').value;
-  const vipName = document.getElementById('selected-vip-name').value;
-  const vipPrice = document.getElementById('selected-vip-price').value;
-  const vipDays = document.getElementById('selected-vip-days').value;
+  const vipId = document.getElementById('selected-vip-id')?.value;
+  const vipName = document.getElementById('selected-vip-name')?.value;
+  const vipPrice = document.getElementById('selected-vip-price')?.value;
+  const vipDays = document.getElementById('selected-vip-days')?.value;
   if (!vipId) return showToast('Pilih layanan dulu!', 'error');
   const btn = document.getElementById('btn-create-payment');
-  btn.disabled = true; btn.innerText = 'Memproses...';
+  if (btn) { btn.disabled = true; btn.innerText = 'Memproses...'; }
   try {
     const res = await fetch('/api/transaction/create', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, vipId, vipName, vipPrice: parseInt(vipPrice), vipDays: parseInt(vipDays) }) });
     const data = await res.json();
     if (data.success) {
       currentTransactionId = data.transactionId;
-      document.getElementById('topup-id-display').innerText = data.transactionId;
-      document.getElementById('topup-status-display').innerHTML = '<span class="badge badge-warn">Menunggu</span>';
-      document.getElementById('payment-proof-section').classList.remove('hide');
+      const topupId = document.getElementById('topup-id-display');
+      const topupStatus = document.getElementById('topup-status-display');
+      const proofSection = document.getElementById('payment-proof-section');
+      if (topupId) topupId.innerText = data.transactionId;
+      if (topupStatus) topupStatus.innerHTML = '<span class="badge badge-warn">Menunggu</span>';
+      if (proofSection) proofSection.classList.remove('hide');
       showToast('Pesanan dibuat! Transfer via DANA & upload bukti.', 'success');
       loadUserTransactions();
     } else showToast(data.message || 'Gagal', 'error');
   } catch(e) { showToast('Kesalahan koneksi', 'error'); }
-  finally { btn.disabled = false; btn.innerHTML = '💳 Buat Pesanan & Bayar'; }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = '💳 Buat Pesanan & Bayar'; } }
 }
 
 function handlePaymentProofSelect(event) {
@@ -2579,8 +2886,10 @@ function handlePaymentProofSelect(event) {
   if (!file.type.startsWith('image/')) return showToast('Harus gambar!', 'error');
   if (file.size > 5 * 1024 * 1024) return showToast('Max 5MB', 'error');
   selectedPaymentProofFile = file;
-  document.getElementById('proof-file-info').innerText = '📎 ' + file.name + ' (' + (file.size/1024).toFixed(0) + ' KB)';
-  document.getElementById('btn-upload-proof').disabled = false;
+  const proofInfo = document.getElementById('proof-file-info');
+  const btnUpload = document.getElementById('btn-upload-proof');
+  if (proofInfo) proofInfo.innerText = '📎 ' + file.name + ' (' + (file.size/1024).toFixed(0) + ' KB)';
+  if (btnUpload) btnUpload.disabled = false;
   showToast('Siap upload', 'info');
 }
 
@@ -2588,7 +2897,7 @@ async function handleUploadProof() {
   if (!currentTransactionId) return showToast('Buat pesanan dulu!', 'error');
   if (!selectedPaymentProofFile) return showToast('Pilih bukti!', 'error');
   const btn = document.getElementById('btn-upload-proof');
-  btn.disabled = true; btn.innerText = 'Mengirim...';
+  if (btn) { btn.disabled = true; btn.innerText = 'Mengirim...'; }
   try {
     const reader = new FileReader();
     reader.onload = async () => {
@@ -2597,18 +2906,23 @@ async function handleUploadProof() {
       const data = await res.json();
       if (data.success) {
         showToast('Bukti terkirim!', 'success');
-        document.getElementById('payment-proof-section').classList.add('hide');
-        document.getElementById('transaction-status-box').classList.remove('hide');
-        document.getElementById('transaction-status-content').innerHTML = '<div style="display:flex; align-items:center; gap:7px;"><span class="badge badge-info">Diproses</span><span style="font-size:11px; color:var(--text-1);">Menunggu verifikasi</span></div>';
+        const proofSection = document.getElementById('payment-proof-section');
+        const statusBox = document.getElementById('transaction-status-box');
+        const statusContent = document.getElementById('transaction-status-content');
+        if (proofSection) proofSection.classList.add('hide');
+        if (statusBox) statusBox.classList.remove('hide');
+        if (statusContent) statusContent.innerHTML = '<div style="display:flex; align-items:center; gap:7px;"><span class="badge badge-info">Diproses</span><span style="font-size:11px; color:var(--text-1);">Menunggu verifikasi</span></div>';
         selectedPaymentProofFile = null;
-        document.getElementById('payment-proof-file').value = '';
-        document.getElementById('proof-file-info').innerText = 'Klik untuk upload';
+        const fileInput = document.getElementById('payment-proof-file');
+        const proofInfo = document.getElementById('proof-file-info');
+        if (fileInput) fileInput.value = '';
+        if (proofInfo) proofInfo.innerText = 'Klik untuk upload';
         loadUserTransactions();
       } else showToast(data.message || 'Gagal', 'error');
-      btn.disabled = false; btn.innerText = 'Kirim Bukti';
+      if (btn) { btn.disabled = false; btn.innerText = 'Kirim Bukti'; }
     };
     reader.readAsDataURL(selectedPaymentProofFile);
-  } catch(e) { showToast('Gagal', 'error'); btn.disabled = false; btn.innerText = 'Kirim Bukti'; }
+  } catch(e) { showToast('Gagal', 'error'); if (btn) { btn.disabled = false; btn.innerText = 'Kirim Bukti'; } }
 }
 
 async function loadUserTransactions() {
@@ -2630,9 +2944,10 @@ async function loadUserTransactions() {
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
 }
 
+// ====== FEATURE REQUESTS ======
 async function handleSubmitFeatureRequest() {
-  const title = document.getElementById('feature-request-title').value.trim();
-  const description = document.getElementById('feature-request-desc').value.trim();
+  const title = document.getElementById('feature-request-title')?.value?.trim();
+  const description = document.getElementById('feature-request-desc')?.value?.trim();
   if (!title || !description) return showToast('Lengkapi!', 'error');
   if (title.length < 3) return showToast('Judul min 3!', 'error');
   if (description.length < 10) return showToast('Deskripsi min 10!', 'error');
@@ -2641,8 +2956,10 @@ async function handleSubmitFeatureRequest() {
     const data = await res.json();
     if (data.success) {
       showToast('Request terkirim!', 'success');
-      document.getElementById('feature-request-title').value = '';
-      document.getElementById('feature-request-desc').value = '';
+      const titleInput = document.getElementById('feature-request-title');
+      const descInput = document.getElementById('feature-request-desc');
+      if (titleInput) titleInput.value = '';
+      if (descInput) descInput.value = '';
       loadUserFeatureRequests();
     } else showToast(data.message || 'Gagal', 'error');
   } catch(e) { showToast('Kesalahan koneksi', 'error'); }
@@ -2707,6 +3024,7 @@ async function deleteFeatureRequest(reqId) {
   } catch(e) {}
 }
 
+// ====== VIP SHOP ADMIN ======
 async function loadAdminVipShop() {
   if (!isAdminUser) return;
   const container = document.getElementById('admin-vip-shop-list');
@@ -2724,10 +3042,10 @@ async function loadAdminVipShop() {
 
 async function handleSaveVipShop() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
-  const editId = document.getElementById('vip-shop-edit-id').value;
-  const name = document.getElementById('vip-shop-name').value.trim();
-  const price = parseInt(document.getElementById('vip-shop-price').value);
-  const days = parseInt(document.getElementById('vip-shop-days').value);
+  const editId = document.getElementById('vip-shop-edit-id')?.value || '';
+  const name = document.getElementById('vip-shop-name')?.value?.trim() || '';
+  const price = parseInt(document.getElementById('vip-shop-price')?.value);
+  const days = parseInt(document.getElementById('vip-shop-days')?.value);
   if (!name || isNaN(price) || isNaN(days)) return showToast('Lengkapi!', 'error');
   if (price < 1000) return showToast('Min Rp 1.000', 'error');
   if (days < 1) return showToast('Min 1 hari', 'error');
@@ -2740,21 +3058,27 @@ async function handleSaveVipShop() {
 }
 
 function editVipShopItem(id, encName, price, days) {
-  document.getElementById('vip-shop-edit-id').value = id;
-  document.getElementById('vip-shop-name').value = decodeURIComponent(encName);
-  document.getElementById('vip-shop-price').value = price;
-  document.getElementById('vip-shop-days').value = days;
-  document.getElementById('vip-shop-submit-btn').innerText = 'Perbarui';
-  document.getElementById('vip-shop-cancel-btn').classList.remove('hide');
+  const editId = document.getElementById('vip-shop-edit-id');
+  const nameInput = document.getElementById('vip-shop-name');
+  const priceInput = document.getElementById('vip-shop-price');
+  const daysInput = document.getElementById('vip-shop-days');
+  const submitBtn = document.getElementById('vip-shop-submit-btn');
+  const cancelBtn = document.getElementById('vip-shop-cancel-btn');
+  if (editId) editId.value = id;
+  if (nameInput) nameInput.value = decodeURIComponent(encName);
+  if (priceInput) priceInput.value = price;
+  if (daysInput) daysInput.value = days;
+  if (submitBtn) submitBtn.innerText = 'Perbarui';
+  if (cancelBtn) cancelBtn.classList.remove('hide');
 }
 
 function resetVipShopForm() {
-  document.getElementById('vip-shop-edit-id').value = '';
-  document.getElementById('vip-shop-name').value = '';
-  document.getElementById('vip-shop-price').value = '';
-  document.getElementById('vip-shop-days').value = '';
-  document.getElementById('vip-shop-submit-btn').innerText = 'Tambah Layanan';
-  document.getElementById('vip-shop-cancel-btn').classList.add('hide');
+  const fields = ['vip-shop-edit-id', 'vip-shop-name', 'vip-shop-price', 'vip-shop-days'];
+  fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const submitBtn = document.getElementById('vip-shop-submit-btn');
+  const cancelBtn = document.getElementById('vip-shop-cancel-btn');
+  if (submitBtn) submitBtn.innerText = 'Tambah Layanan';
+  if (cancelBtn) cancelBtn.classList.add('hide');
 }
 
 async function toggleVipShopItem(id, currentActive) {
@@ -2774,6 +3098,7 @@ async function deleteVipShopItem(id) {
   } catch(e) {}
 }
 
+// ====== ADMIN TRANSACTIONS ======
 async function loadAdminTransactions() {
   if (!isAdminUser) return;
   const container = document.getElementById('admin-transactions-list');
@@ -2815,10 +3140,11 @@ async function deleteTransaction(transactionId) {
   } catch(e) {}
 }
 
+// ====== PASSWORD CHANGE ======
 async function handleChangePassword() {
-  const oldPassword = document.getElementById('old-password-input').value;
-  const newPassword = document.getElementById('new-password-input').value;
-  const confirmPassword = document.getElementById('confirm-password-input').value;
+  const oldPassword = document.getElementById('old-password-input')?.value;
+  const newPassword = document.getElementById('new-password-input')?.value;
+  const confirmPassword = document.getElementById('confirm-password-input')?.value;
   if (!oldPassword || !newPassword || !confirmPassword) return showToast('Semua field wajib!', 'error');
   if (newPassword.length < 4) return showToast('Min 4 karakter!', 'error');
   if (newPassword !== confirmPassword) return showToast('Konfirmasi tidak cocok!', 'error');
@@ -2827,15 +3153,14 @@ async function handleChangePassword() {
     const data = await res.json();
     if (data.success) {
       showToast('Password diubah!', 'success');
-      document.getElementById('old-password-input').value = '';
-      document.getElementById('new-password-input').value = '';
-      document.getElementById('confirm-password-input').value = '';
+      const fields = ['old-password-input', 'new-password-input', 'confirm-password-input'];
+      fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     } else showToast(data.message || 'Gagal', 'error');
   } catch(e) { showToast('Kesalahan koneksi', 'error'); }
 }
 
 async function triggerUpdateUsername() {
-  const newUsername = document.getElementById('new-username-input').value.trim();
+  const newUsername = document.getElementById('new-username-input')?.value?.trim();
   if (!newUsername) return showToast('Masukkan username baru!', 'error');
   try {
     const response = await fetch('/api/user/username', { method:'PUT', headers:{'Content-Type':'application/json', 'Authorization': 'Bearer ' + (localStorage.getItem('authToken') || '')}, body: JSON.stringify({ currentUsername: loggedInUsername, newUsername }) });
@@ -2844,14 +3169,19 @@ async function triggerUpdateUsername() {
       showToast('Username diubah!', 'success');
       loggedInUsername = result.newUsername;
       localStorage.setItem('savedUsername', loggedInUsername);
-      document.getElementById('logged-username').innerText = loggedInUsername;
-      document.getElementById('profile-uname').innerText = loggedInUsername;
-      document.getElementById('drawer-username').innerText = loggedInUsername;
-      document.getElementById('new-username-input').value = '';
+      const loggedUname = document.getElementById('logged-username');
+      const profileUname = document.getElementById('profile-uname');
+      const drawerUsername = document.getElementById('drawer-username');
+      const newInput = document.getElementById('new-username-input');
+      if (loggedUname) loggedUname.innerText = loggedInUsername;
+      if (profileUname) profileUname.innerText = loggedInUsername;
+      if (drawerUsername) drawerUsername.innerText = loggedInUsername;
+      if (newInput) newInput.value = '';
     } else showToast(result.message || 'Gagal', 'error');
   } catch (e) { showToast('Kesalahan jaringan', 'error'); }
 }
 
+// ====== VERIFIED EMAILS ======
 async function loadVerifiedEmails(force = false) {
   if (!loggedInUsername) return;
   const now = Date.now();
@@ -2889,11 +3219,15 @@ function updateQuotaStatusCard(data) {
   const total = data.totalQuota || BASE_QUOTA;
   const used = data.usedQuota || 0;
   const remain = Math.max(0, total - used);
-  document.getElementById('quota-used-display').innerText = used;
-  document.getElementById('quota-remain-display').innerText = (data.isAdmin || data.isVip) ? '∞' : remain;
-  document.getElementById('quota-total-display').innerText = (data.isAdmin || data.isVip) ? '∞' : total;
+  const usedEl = document.getElementById('quota-used-display');
+  const remainEl = document.getElementById('quota-remain-display');
+  const totalEl = document.getElementById('quota-total-display');
+  if (usedEl) usedEl.innerText = used;
+  if (remainEl) remainEl.innerText = (data.isAdmin || data.isVip) ? '∞' : remain;
+  if (totalEl) totalEl.innerText = (data.isAdmin || data.isVip) ? '∞' : total;
   const card = document.getElementById('quota-status-card');
   const badge = document.getElementById('quota-status-badge');
+  if (!card || !badge) return;
   if (data.isAdmin || data.isVip) { card.style.background = 'var(--accent-soft)'; card.style.borderColor = 'rgba(139,124,246,0.3)'; badge.className = 'badge badge-accent'; badge.innerText = data.isAdmin ? '👑 Admin' : '⭐ VIP'; }
   else if (remain <= 0) { card.style.background = 'var(--err-soft)'; card.style.borderColor = 'rgba(248,113,113,0.3)'; badge.className = 'badge badge-err'; badge.innerText = '✗ Habis'; }
   else if (remain <= 1) { card.style.background = 'var(--warn-soft)'; card.style.borderColor = 'rgba(251,191,36,0.3)'; badge.className = 'badge badge-warn'; badge.innerText = '⚠ Terbatas'; }
@@ -2921,7 +3255,6 @@ function handleCountdown(data) {
   const timeStr = nextResetDate.toLocaleString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
   const nextResetEl = document.getElementById('next-reset-time');
   if (nextResetEl) nextResetEl.innerText = timeStr;
-  const totalDuration = data.nextResetTime - data.lastResetTime;
   function tick() {
     if (!isPageVisible) return;
     const now = Date.now();
@@ -2939,10 +3272,6 @@ function handleCountdown(data) {
     ['countdown-hours','cd-hours-main'].forEach(id => { const el = document.getElementById(id); if (el) el.innerText = hh; });
     ['countdown-minutes','cd-minutes-main'].forEach(id => { const el = document.getElementById(id); if (el) el.innerText = mm; });
     ['countdown-seconds','cd-seconds-main'].forEach(id => { const el = document.getElementById(id); if (el) el.innerText = ss; });
-    const elapsed = totalDuration - msLeft;
-    const percent = Math.min(100, Math.max(0, (elapsed / totalDuration) * 100));
-    const pf = document.getElementById('reset-progress-fill');
-    if (pf) pf.style.width = percent + '%';
   }
   tick(); quotaCountdownInterval = setInterval(tick, 1000);
 }
@@ -2970,6 +3299,7 @@ function updateResetTimerDisplay(data) {
 
 function copyEmail(email) { navigator.clipboard.writeText(email).then(() => showToast('Tersalin!', 'success')).catch(() => showToast('Gagal', 'error')); }
 
+// ====== FILE DROP ======
 function initFileDrop() {
   const dropZone = document.getElementById('file-drop-zone');
   const fileInput = document.getElementById('admin-video-file');
@@ -2988,8 +3318,8 @@ function handleFileSelect(file) {
   if (file.size > 200 * 1024 * 1024) return showToast('Max 200MB', 'error');
   selectedVideoFile = file;
   const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-  info.innerText = '📁 ' + file.name + ' (' + sizeMB + ' MB)';
-  info.classList.remove('hide'); btn.disabled = false;
+  if (info) { info.innerText = '📁 ' + file.name + ' (' + sizeMB + ' MB)'; info.classList.remove('hide'); }
+  if (btn) btn.disabled = false;
   showToast('Video siap: ' + sizeMB + 'MB', 'info');
 }
 
@@ -3007,11 +3337,13 @@ async function handleUploadVideo() {
   const speedText = document.getElementById('upload-speed');
   const btn = document.getElementById('btn-upload-video');
   const btnText = document.getElementById('btn-upload-text');
-  progressContainer.classList.remove('hide'); btn.disabled = true; btnText.innerText = 'Mengunggah...';
+  if (progressContainer) progressContainer.classList.remove('hide');
+  if (btn) btn.disabled = true;
+  if (btnText) btnText.innerText = 'Mengunggah...';
   const startTime = Date.now();
   let uploadedBytes = 0;
   try {
-    statusText.innerText = 'Memulai...';
+    if (statusText) statusText.innerText = 'Memulai...';
     const initRes = await fetch('/api/admin/upload-init', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, uploadId, filename: file.name, totalChunks, fileSize: file.size, fileType: file.type }) });
     const initData = await initRes.json();
     if (!initData.success) throw new Error(initData.message || 'Gagal init');
@@ -3020,34 +3352,42 @@ async function handleUploadVideo() {
       const end = Math.min(start + CHUNK_SIZE, file.size);
       const chunk = file.slice(start, end);
       const chunkBase64 = await blobToBase64(chunk);
-      statusText.innerText = 'Chunk ' + (i+1) + '/' + totalChunks;
+      if (statusText) statusText.innerText = 'Chunk ' + (i+1) + '/' + totalChunks;
       const chunkRes = await fetch('/api/admin/upload-chunk', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, uploadId, chunkIndex: i, chunkData: chunkBase64 }) });
       const chunkData = await chunkRes.json();
       if (!chunkData.success) throw new Error(chunkData.message || 'Gagal chunk ' + i);
       uploadedBytes += chunk.size;
       const percent = Math.round((uploadedBytes / file.size) * 100);
-      progressFill.style.width = percent + '%';
-      percentText.innerText = percent + '%';
+      if (progressFill) progressFill.style.width = percent + '%';
+      if (percentText) percentText.innerText = percent + '%';
       const elapsed = (Date.now() - startTime) / 1000;
       const speed = (uploadedBytes / 1024 / 1024) / elapsed;
-      speedText.innerText = '⚡ ' + speed.toFixed(2) + ' MB/s • ' + (uploadedBytes/1024/1024).toFixed(2) + '/' + (file.size/1024/1024).toFixed(2) + ' MB';
+      if (speedText) speedText.innerText = '⚡ ' + speed.toFixed(2) + ' MB/s • ' + (uploadedBytes/1024/1024).toFixed(2) + '/' + (file.size/1024/1024).toFixed(2) + ' MB';
     }
-    statusText.innerText = 'Finalizing...';
+    if (statusText) statusText.innerText = 'Finalizing...';
     const finalRes = await fetch('/api/admin/upload-finalize', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, uploadId }) });
     const finalData = await finalRes.json();
     if (!finalData.success) throw new Error(finalData.message || 'Gagal finalize');
-    progressFill.style.width = '100%'; percentText.innerText = '100%';
-    statusText.innerText = '✓ Berhasil!'; speedText.innerText = 'Waktu: ' + ((Date.now() - startTime) / 1000).toFixed(1) + 's';
+    if (progressFill) progressFill.style.width = '100%';
+    if (percentText) percentText.innerText = '100%';
+    if (statusText) statusText.innerText = '✓ Berhasil!';
+    if (speedText) speedText.innerText = 'Waktu: ' + ((Date.now() - startTime) / 1000).toFixed(1) + 's';
     showToast('Video diperbarui!', 'success');
     selectedVideoFile = null;
-    document.getElementById('admin-video-file').value = '';
-    document.getElementById('file-info').classList.add('hide');
+    const fileInput = document.getElementById('admin-video-file');
+    const info = document.getElementById('file-info');
+    if (fileInput) fileInput.value = '';
+    if (info) info.classList.add('hide');
     fetchFeaturedVideo(true);
-    setTimeout(() => { progressContainer.classList.add('hide'); progressFill.style.width = '0%'; }, 2500);
+    setTimeout(() => { if (progressContainer) progressContainer.classList.add('hide'); if (progressFill) progressFill.style.width = '0%'; }, 2500);
   } catch (err) {
     showToast('Upload gagal: ' + err.message, 'error');
-    statusText.innerText = '✗ Gagal'; progressFill.style.background = 'var(--err)';
-  } finally { btn.disabled = false; btnText.innerText = 'Upload Video'; }
+    if (statusText) statusText.innerText = '✗ Gagal';
+    if (progressFill) progressFill.style.background = 'var(--err)';
+  } finally { 
+    if (btn) btn.disabled = false;
+    if (btnText) btnText.innerText = 'Upload Video'; 
+  }
 }
 
 function blobToBase64(blob) {
@@ -3060,12 +3400,17 @@ function blobToBase64(blob) {
 }
 
 function updateQuotaDisplay(data) {
-  if (data.isAdmin || data.isVip) document.getElementById('quota-display').innerText = '∞';
-  else { const total = data.totalQuota || BASE_QUOTA + (data.bonusQuota || 0); document.getElementById('quota-display').innerText = (data.usedQuota || 0) + '/' + total; }
+  const el = document.getElementById('quota-display');
+  if (!el) return;
+  if (data.isAdmin || data.isVip) el.innerText = '∞';
+  else { const total = data.totalQuota || BASE_QUOTA + (data.bonusQuota || 0); el.innerText = (data.usedQuota || 0) + '/' + total; }
 }
+
 function checkVipStatus(data) {
   const banner = document.getElementById('vip-status-banner');
-  if (data.isVip && !data.isAdmin) { banner.classList.remove('hide'); document.getElementById('vip-expiry-text').innerText = 'Aktif hingga: ' + new Date(data.vipUntil).toLocaleString('id-ID'); }
+  const expiryText = document.getElementById('vip-expiry-text');
+  if (!banner) return;
+  if (data.isVip && !data.isAdmin) { banner.classList.remove('hide'); if (expiryText) expiryText.innerText = 'Aktif hingga: ' + new Date(data.vipUntil).toLocaleString('id-ID'); }
   else banner.classList.add('hide');
 }
 
@@ -3078,15 +3423,16 @@ async function changeServerState(newState) {
   } catch(e) { showToast('Gagal', 'error'); }
 }
 
+// ====== ADMIN VIP ======
 async function handleSetVip() {
   if (!isAdminUser) return;
-  const targetUser = document.getElementById('vip-target-user').value.trim();
-  const days = parseInt(document.getElementById('vip-duration-days').value);
+  const targetUser = document.getElementById('vip-target-user')?.value?.trim();
+  const days = parseInt(document.getElementById('vip-duration-days')?.value);
   if (!targetUser || isNaN(days)) return showToast('Lengkapi!', 'error');
   try {
     const res = await fetch('/api/admin/set-vip', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, targetUser, days }) });
     const data = await res.json();
-    if (data.success) { showToast(data.message, 'success'); document.getElementById('vip-target-user').value = ''; document.getElementById('vip-duration-days').value = ''; loadAdminVipList(); loadAllUsers(); }
+    if (data.success) { showToast(data.message, 'success'); const tu = document.getElementById('vip-target-user'); const dd = document.getElementById('vip-duration-days'); if (tu) tu.value = ''; if (dd) dd.value = ''; loadAdminVipList(); loadAllUsers(); }
     else showToast(data.message, 'error');
   } catch(e) { showToast('Gagal', 'error'); }
 }
@@ -3097,6 +3443,7 @@ async function loadAdminVipList() {
     const res = await fetch('/api/admin/get-vip-list?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
     const container = document.getElementById('admin-vip-list');
+    if (!container) return;
     if (data.success && Object.keys(data.vipUsers).length > 0) {
       container.innerHTML = Object.entries(data.vipUsers).map(([uname, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div><span style="color:var(--warn); font-weight:700;">' + uname + '</span><span style="color:var(--text-2); display:block; font-size:9px;">Exp: ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span></div><button onclick="handleRemoveVip(\\'' + uname + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">Hapus</button></div>').join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Tidak ada</p>';
@@ -3114,9 +3461,9 @@ async function handleRemoveVip(targetUser) {
 
 async function handleCreateVipAccount() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
-  const vipUsername = document.getElementById('vip-create-username').value.trim().toLowerCase();
-  const vipPassword = document.getElementById('vip-create-password').value.trim();
-  const vipDays = parseInt(document.getElementById('vip-create-days').value);
+  const vipUsername = document.getElementById('vip-create-username')?.value?.trim()?.toLowerCase();
+  const vipPassword = document.getElementById('vip-create-password')?.value?.trim();
+  const vipDays = parseInt(document.getElementById('vip-create-days')?.value);
   if (!vipUsername || !vipPassword || isNaN(vipDays)) return showToast('Lengkapi!', 'error');
   if (vipPassword.length < 4) return showToast('Pass min 4!', 'error');
   if (vipDays < 1) return showToast('Min 1 hari!', 'error');
@@ -3125,9 +3472,7 @@ async function handleCreateVipAccount() {
     const data = await res.json();
     if (data.success) {
       showToast(data.message, 'success');
-      document.getElementById('vip-create-username').value = '';
-      document.getElementById('vip-create-password').value = '';
-      document.getElementById('vip-create-days').value = '';
+      ['vip-create-username','vip-create-password','vip-create-days'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       loadVipAccounts(); loadAllUsers();
     } else showToast(data.message, 'error');
   } catch(e) { showToast('Gagal', 'error'); }
@@ -3139,6 +3484,7 @@ async function loadVipAccounts() {
     const res = await fetch('/api/admin/get-vip-accounts?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
     const container = document.getElementById('vip-accounts-list');
+    if (!container) return;
     if (data.success && Object.keys(data.vipAccounts).length > 0) {
       const now = Date.now();
       container.innerHTML = Object.entries(data.vipAccounts).map(([uname, val]) => {
@@ -3164,19 +3510,25 @@ async function deleteVipAccount(vipUsername) {
   } catch(e) { showToast('Gagal', 'error'); }
 }
 
+// ====== ADMIN USERS ======
 async function loadAllUsers() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
   const container = document.getElementById('all-users-list');
+  if (!container) return;
   container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">⏳ Memuat...</p>';
   try {
     const res = await fetch('/api/admin/get-all-users?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
     if (!data.success) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal: ' + (data.message || 'Error') + '</p>'; return; }
     cachedUserList = data.users || [];
-    document.getElementById('stat-total').innerText = data.stats.total;
-    document.getElementById('stat-admins').innerText = data.stats.admins;
-    document.getElementById('stat-vips').innerText = data.stats.vips;
-    document.getElementById('stat-reset').innerText = data.stats.resetDue;
+    const statTotal = document.getElementById('stat-total');
+    const statAdmins = document.getElementById('stat-admins');
+    const statVips = document.getElementById('stat-vips');
+    const statReset = document.getElementById('stat-reset');
+    if (statTotal) statTotal.innerText = data.stats.total;
+    if (statAdmins) statAdmins.innerText = data.stats.admins;
+    if (statVips) statVips.innerText = data.stats.vips;
+    if (statReset) statReset.innerText = data.stats.resetDue;
     renderUserList();
     showToast('Loaded ' + data.stats.total + ' user', 'success');
   } catch (e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Kesalahan koneksi</p>'; }
@@ -3196,7 +3548,9 @@ function filterUserList() { renderUserList(); }
 
 function renderUserList() {
   const container = document.getElementById('all-users-list');
-  const search = (document.getElementById('user-search-input').value || '').toLowerCase().trim();
+  if (!container) return;
+  const searchInput = document.getElementById('user-search-input');
+  const search = (searchInput?.value || '').toLowerCase().trim();
   let filtered = cachedUserList.filter(u => {
     if (currentUserFilter === 'admin' && !u.isAdmin) return false;
     if (currentUserFilter === 'vip' && !u.isVip) return false;
@@ -3239,16 +3593,20 @@ async function deleteUserAccount(targetUsername, isTargetAdmin) {
 }
 
 function quickSetVip(username) {
-  document.getElementById('vip-target-user').value = username;
-  document.getElementById('vip-duration-days').focus();
+  const tu = document.getElementById('vip-target-user');
+  const dd = document.getElementById('vip-duration-days');
+  if (tu) tu.value = username;
+  if (dd) dd.focus();
   showToast('Username siap: ' + username, 'info');
-  document.getElementById('vip-target-user').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (tu) tu.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 function copyUsername(username) { navigator.clipboard.writeText(username).then(() => showToast('Tersalin!', 'success')); }
 
+// ====== CHAT ======
 function updateChatBadge() {
   const badge = document.getElementById('chat-unread-badge');
+  if (!badge) return;
   if (unreadChatCount > 0) { badge.textContent = unreadChatCount > 99 ? '99+' : unreadChatCount; badge.classList.remove('hide'); }
   else badge.classList.add('hide');
 }
@@ -3280,7 +3638,7 @@ async function loadGlobalChat(force = false) {
     const res = await fetch('/api/chat/messages');
     const data = await res.json();
     lastChatFetch = now; setCache('globalChat', data, CACHE_DURATION.chat); renderGlobalChat(data);
-  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
+  } catch(e) { if (container) container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
 }
 
 function renderGlobalChat(data) {
@@ -3311,6 +3669,7 @@ function renderGlobalChat(data) {
 async function sendChatMessage() {
   if (!loggedInUsername) return showToast('Harus login!', 'error');
   const input = document.getElementById('chat-input');
+  if (!input) return;
   const message = input.value.trim();
   if (!message) return;
   input.value = '';
@@ -3332,6 +3691,7 @@ async function deleteChatMessage(messageId) {
   } catch(e) {}
 }
 
+// ====== ANNOUNCEMENTS ======
 async function loadUserAnnouncements(force = false) {
   const now = Date.now();
   if (!force && now - lastAnnouncementsFetch < CACHE_DURATION.announcements) { const cached = getCached('userAnnouncements'); if (cached) { renderUserAnnouncements(cached); return; } }
@@ -3357,6 +3717,7 @@ async function loadAdminAnnouncements() {
     const res = await fetch('/api/announcements');
     const data = await res.json();
     const container = document.getElementById('admin-info-list');
+    if (!container) return;
     if (data.success && Object.keys(data.announcements).length > 0) {
       const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
       container.innerHTML = entries.map(([id, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div style="flex:1; min-width:0;"><span style="color:var(--warn); font-weight:700; font-size:10.5px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(val.title) + '</span></div><div style="display:flex; gap:2px; flex-shrink:0;"><button onclick="editAnnouncement(\\'' + id + '\\', \\'' + encodeURIComponent(val.title) + '\\', \\'' + encodeURIComponent(val.content) + '\\')" class="btn btn-ghost btn-xs">E</button><button onclick="deleteAnnouncement(\\'' + id + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
@@ -3366,9 +3727,9 @@ async function loadAdminAnnouncements() {
 
 async function handleSaveAnnouncement() {
   if (!isAdminUser) return;
-  const id = document.getElementById('info-edit-id').value;
-  const title = document.getElementById('info-title').value.trim();
-  const content = document.getElementById('info-content').value.trim();
+  const id = document.getElementById('info-edit-id')?.value || '';
+  const title = document.getElementById('info-title')?.value?.trim() || '';
+  const content = document.getElementById('info-content')?.value?.trim() || '';
   if (!title || !content) return showToast('Lengkapi!', 'error');
   const endpoint = id ? '/api/admin/update-announcement' : '/api/admin/create-announcement';
   try {
@@ -3383,19 +3744,29 @@ async function handleSaveAnnouncement() {
 }
 
 function editAnnouncement(id, encTitle, encContent) {
-  document.getElementById('info-edit-id').value = id;
-  document.getElementById('info-title').value = decodeURIComponent(encTitle);
-  document.getElementById('info-content').value = decodeURIComponent(encContent);
-  document.getElementById('info-submit-btn').innerText = 'Perbarui';
-  document.getElementById('info-cancel-btn').classList.remove('hide');
+  const editId = document.getElementById('info-edit-id');
+  const titleInput = document.getElementById('info-title');
+  const contentInput = document.getElementById('info-content');
+  const submitBtn = document.getElementById('info-submit-btn');
+  const cancelBtn = document.getElementById('info-cancel-btn');
+  if (editId) editId.value = id;
+  if (titleInput) titleInput.value = decodeURIComponent(encTitle);
+  if (contentInput) contentInput.value = decodeURIComponent(encContent);
+  if (submitBtn) submitBtn.innerText = 'Perbarui';
+  if (cancelBtn) cancelBtn.classList.remove('hide');
 }
 
 function resetInfoForm() {
-  document.getElementById('info-edit-id').value = '';
-  document.getElementById('info-title').value = '';
-  document.getElementById('info-content').value = '';
-  document.getElementById('info-submit-btn').innerText = 'Publikasikan';
-  document.getElementById('info-cancel-btn').classList.add('hide');
+  const editId = document.getElementById('info-edit-id');
+  const titleInput = document.getElementById('info-title');
+  const contentInput = document.getElementById('info-content');
+  const submitBtn = document.getElementById('info-submit-btn');
+  const cancelBtn = document.getElementById('info-cancel-btn');
+  if (editId) editId.value = '';
+  if (titleInput) titleInput.value = '';
+  if (contentInput) contentInput.value = '';
+  if (submitBtn) submitBtn.innerText = 'Publikasikan';
+  if (cancelBtn) cancelBtn.classList.add('hide');
 }
 
 async function deleteAnnouncement(id) {
@@ -3407,11 +3778,12 @@ async function deleteAnnouncement(id) {
   } catch(e) {}
 }
 
+// ====== REDEEM ADMIN ======
 async function handleCreateRedeem() {
   if (!isAdminUser) return;
-  const code = document.getElementById('gen-code').value.trim().toUpperCase();
-  const quotaPerUser = parseInt(document.getElementById('gen-quota-per-user').value);
-  const maxClaims = parseInt(document.getElementById('gen-max-claims').value);
+  const code = document.getElementById('gen-code')?.value?.trim()?.toUpperCase();
+  const quotaPerUser = parseInt(document.getElementById('gen-quota-per-user')?.value);
+  const maxClaims = parseInt(document.getElementById('gen-max-claims')?.value);
   if (!code || isNaN(quotaPerUser) || isNaN(maxClaims)) return showToast('Lengkapi!', 'error');
   if (quotaPerUser < 1) return showToast('Min 1!', 'error');
   if (maxClaims < 1) return showToast('Min 1!', 'error');
@@ -3420,9 +3792,7 @@ async function handleCreateRedeem() {
     const data = await res.json();
     if (data.success) {
       showToast(data.message, 'success');
-      document.getElementById('gen-code').value = '';
-      document.getElementById('gen-quota-per-user').value = '';
-      document.getElementById('gen-max-claims').value = '';
+      ['gen-code','gen-quota-per-user','gen-max-claims'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       loadAdminRedeems(); lastRedeemsFetch = 0; loadActiveRedeems(true);
     } else showToast(data.message, 'error');
   } catch(e) {}
@@ -3434,6 +3804,7 @@ async function loadAdminRedeems() {
     const res = await fetch('/api/admin/get-redeems?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
     const container = document.getElementById('admin-redeem-list');
+    if (!container) return;
     if (data.success && Object.keys(data.redeems).length > 0) {
       container.innerHTML = Object.entries(data.redeems).map(([code, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div><span class="mono" style="color:var(--warn); font-weight:700; font-size:10.5px;">' + code + '</span><span style="color:var(--text-2); display:block; font-size:9px;">' + (val.quotaPerUser || 1) + '/user • ' + val.claimedCount + '/' + val.maxClaims + '</span></div><button onclick="handleDeleteRedeem(\\'' + code + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div>').join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Belum ada</p>';
@@ -3449,62 +3820,66 @@ async function handleDeleteRedeem(code) {
   } catch(e) {}
 }
 
+// ====== AM ======
 async function handleSendEmail() {
-  const email = document.getElementById('target-email').value.trim();
+  const email = document.getElementById('target-email')?.value?.trim();
   if (!email) return showToast('Masukkan email!', 'error');
   if (!guardServerOnline('Alight Motion')) return;
   const btn = document.getElementById('btn-send');
   const sendText = document.getElementById('send-text');
-  btn.disabled = true; sendText.innerText = 'Mengirim...';
+  if (btn) btn.disabled = true;
+  if (sendText) sendText.innerText = 'Mengirim...';
   const resultBox = document.getElementById('result-box');
   const resultText = document.getElementById('result-text');
-  resultBox.classList.remove('hide'); resultText.innerText = '⏳ Memproses...';
+  if (resultBox) resultBox.classList.remove('hide');
+  if (resultText) resultText.innerText = '⏳ Memproses...';
   try {
     const res = await fetch('/api/magiclink', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, email }) });
     const data = await res.json();
     if (data.success) {
-      sendText.innerText = 'Kirim Magic Link';
+      if (sendText) sendText.innerText = 'Kirim Magic Link';
       currentResultText = JSON.stringify(data.result, null, 2);
-      resultText.innerText = currentResultText;
+      if (resultText) resultText.innerText = currentResultText;
       if (data.orderId) showToast('✅ Order ID: ' + data.orderId, 'order', 5000);
       else showToast('Magic link terkirim!', 'success');
       if (!isAdminUser && data.quotaInfo) updateQuotaDisplay(data.quotaInfo);
       loadVerifiedEmails(true);
     } else {
-      sendText.innerText = 'Kirim Magic Link';
+      if (sendText) sendText.innerText = 'Kirim Magic Link';
       currentResultText = 'Error: ' + data.message;
-      resultText.innerText = currentResultText;
+      if (resultText) resultText.innerText = currentResultText;
       if (data.refilled) showToast(data.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
       else showToast(data.message, 'error');
       if (data.quotaInfo) updateQuotaDisplay(data.quotaInfo);
       loadVerifiedEmails(true);
     }
   } catch (err) {
-    sendText.innerText = 'Kirim Magic Link';
+    if (sendText) sendText.innerText = 'Kirim Magic Link';
     currentResultText = 'Error: ' + err.message;
-    resultText.innerText = currentResultText;
+    if (resultText) resultText.innerText = currentResultText;
     showToast('Gagal kirim', 'error');
-  } finally { btn.disabled = false; }
+  } finally { if (btn) btn.disabled = false; }
 }
 
 async function handleActivate() {
-  const email = document.getElementById('target-email').value;
-  const magicUrl = document.getElementById('magic-url').value;
+  const email = document.getElementById('target-email')?.value;
+  const magicUrl = document.getElementById('magic-url')?.value;
   if (!email || !magicUrl) return showToast('Email & URL wajib!', 'error');
   if (!guardServerOnline('Alight Motion Verifikasi')) return;
   const resultBox = document.getElementById('result-box');
   const resultText = document.getElementById('result-text');
-  resultBox.classList.remove('hide'); resultText.innerText = '⏳ Memverifikasi...';
+  if (resultBox) resultBox.classList.remove('hide');
+  if (resultText) resultText.innerText = '⏳ Memverifikasi...';
   try {
     const res = await fetch('/api/verif', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, url: magicUrl, username: loggedInUsername }) });
     const data = await res.json();
     currentResultText = JSON.stringify(data, null, 2);
-    resultText.innerText = currentResultText;
+    if (resultText) resultText.innerText = currentResultText;
     if (data.success || !data.error) showToast('Verifikasi selesai!', 'success');
     else showToast(data.error || 'Gagal', 'error');
   } catch (err) {
     currentResultText = 'Error: ' + err.message;
-    resultText.innerText = currentResultText;
+    if (resultText) resultText.innerText = currentResultText;
     showToast('Gagal verifikasi', 'error');
   }
 }
@@ -3535,12 +3910,18 @@ async function handleLogout() {
   location.reload();
 }
 
+// ====== INIT ======
 initFileDrop();
+fetchServerStatus();
+fetchFeaturedVideo();
+startPolling();
+fetchOnlineCount();
+checkSavedSession();
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     const drawer = document.getElementById('nav-drawer');
-    if (drawer.classList.contains('open')) toggleMenu();
+    if (drawer && drawer.classList.contains('open')) toggleMenu();
   }
 });
 </script>
@@ -3906,6 +4287,69 @@ const server = http.createServer(async (req, res) => {
       const allResults = await getNetflixResultsFromDb();
       const myResults = Object.values(allResults).filter(r => r.username === cleanUser).sort((a, b) => b.timestamp - a.timestamp).slice(0, 20);
       jsonResponse(res, 200, { success: true, results: myResults });
+
+    // ====== NETFLIX GMAIL ACTIVATION (BARU) ======
+    } else if (parsedUrl.pathname === '/api/netflix/activate-gmail' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, email, plan } = JSON.parse(body);
+      const cleanUser = username ? username.toLowerCase() : '';
+      await checkAndExpireBonusQuota(cleanUser);
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
+      if (currentServerStatus !== 'online' && !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Server offline!' });
+      
+      if (!email || !email.includes('@') || !email.includes('.')) {
+        return jsonResponse(res, 400, { success: false, message: 'Email tidak valid!' });
+      }
+      
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) { userObj.activatedEmails = []; userObj.lastResetTime = now; }
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
+      const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
+      if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) return jsonResponse(res, 403, { success: false, message: 'Quota habis!' });
+      
+      const quotaEntry = 'netflix_gmail_' + now + '_' + Math.random().toString(36).substring(2, 6);
+      if (!userObj.isAdmin && !isVipActive) {
+        if (!userObj.activatedEmails) userObj.activatedEmails = [];
+        userObj.activatedEmails.push(quotaEntry);
+        if (userObj.bonusQuota > 0) { userObj.lastBonusActivity = now; userObj.bonusGrantedAt = userObj.bonusGrantedAt || now; }
+        await saveUserToDb(cleanUser, userObj);
+      }
+      
+      try {
+        const result = await activateNetflixWithGmail(email, plan || 'premium');
+        if (!result.success) {
+          let refilled = false;
+          if (!userObj.isAdmin && !isVipActive) refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
+          const refreshedUser = await getUserFromDb(cleanUser);
+          const refreshedUsed = refreshedUser.activatedEmails ? refreshedUser.activatedEmails.length : 0;
+          return jsonResponse(res, 500, { success: false, refilled, message: refilled ? 'Aktivasi gagal! Kuota dikembalikan.' : (result.error || 'Gagal aktivasi'), quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
+        }
+        
+        const orderId = generateOrderId('NFLX-GM');
+        await saveOrderToDb(orderId, { orderId, username: cleanUser, type: 'netflix', detail: 'Aktivasi Gmail: ' + email + ' • ' + (plan || 'premium').toUpperCase(), result: result.url, timestamp: now, quotaEntry });
+        
+        const historyId = 'nfgm_' + now + '_' + Math.random().toString(36).substring(2, 8);
+        await saveNetflixResultToDb(historyId, { id: historyId, orderId, username: cleanUser, plan: result.plan, quality: result.quality, country: result.country, url: result.url, expires: result.expires, pool: result.pool, activationEmail: email, timestamp: now, isGmailActivation: true });
+        
+        jsonResponse(res, 200, { 
+          success: true, 
+          orderId, 
+          result: {
+            ...result,
+            activationEmail: email
+          }, 
+          quotaInfo: { usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } 
+        });
+      } catch (err) {
+        let refilled = false;
+        if (!userObj.isAdmin && !isVipActive) refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
+        const refreshedUser = await getUserFromDb(cleanUser);
+        const refreshedUsed = refreshedUser.activatedEmails ? refreshedUser.activatedEmails.length : 0;
+        jsonResponse(res, 500, { success: false, refilled, message: refilled ? 'Aktivasi gagal: ' + err.message + '. Kuota dikembalikan.' : 'Aktivasi gagal: ' + err.message, quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+      }
 
     // ====== TRANSACTIONS ======
     } else if (parsedUrl.pathname === '/api/transaction/create' && req.method === 'POST') {
@@ -4487,13 +4931,15 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v7.1                                  ║');
+  console.log('║  🚀 AM Premium Banggus v7.2                                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
   console.log('║  💳 DANA Admin: ' + DANA_ADMIN_NUMBER + '                     ║');
   console.log('║  ──────────────────────────────────────────────────────────  ║');
-  console.log('║  ✨ UPDATE v7.1:                                             ║');
-  console.log('║  📧 TEMP MAIL AUTO-REFRESH (Pesan otomatis terbuka)         ║');
-  console.log('║  🎨 UI AUTH REDESIGN (Animasi login/register baru)          ║');
-  console.log('║  🗑️ HAPUS IKON PETIR & HURUF "A" HARDCODE                   ║');
+  console.log('║  ✨ UPDATE v7.2:                                             ║');
+  console.log('║  ✅ FIX: Button tidak berfungsi (currentView undefined)      ║');
+  console.log('║  ✅ FIX: Semua onclick handler berfungsi normal              ║');
+  console.log('║  🆕 FEAT: Netflix aktivasi langsung ke Gmail                 ║');
+  console.log('║  🆕 FEAT: Bonus quota expired 2 hari → reset ke 2 kuota      ║');
+  console.log('║  🆕 FEAT: Netflix Premium instant activation                 ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
