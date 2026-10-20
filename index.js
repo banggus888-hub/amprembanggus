@@ -37,7 +37,6 @@ const ONLINE_TIMEOUT = 45 * 1000;
 const ONLINE_CLEANUP_INTERVAL = 60 * 1000;
 
 // ====== KONFIGURASI BONUS QUOTA EXPIRY ======
-// Bonus quota expired setelah 2 hari, reset ke kuota awal (2)
 const BONUS_EXPIRY_MS = 2 * 24 * 60 * 60 * 1000;
 const BASE_QUOTA = 2;
 
@@ -180,16 +179,12 @@ async function getNetflixResultsFromDb() {
 }
 async function saveNetflixResultToDb(id, data) { await set(ref(db, `netflixResults/${id}`), data); }
 
-// ====== NETFLIX ACTIVATIONS HELPERS (BARU) ======
+// ====== NETFLIX ACTIVATIONS HELPERS (FITUR BARU: aktivasi Gmail) ======
 async function getNetflixActivationsFromDb() {
   const snapshot = await get(child(ref(db), `netflixActivations`));
   return snapshot.exists() ? snapshot.val() : {};
 }
 async function saveNetflixActivationToDb(id, data) { await set(ref(db, `netflixActivations/${id}`), data); }
-async function getNetflixActivationFromDb(id) {
-  const snapshot = await get(child(ref(db), `netflixActivations/${id}`));
-  return snapshot.exists() ? snapshot.val() : null;
-}
 
 // ====== APK MOD HELPERS ======
 async function getApkModsFromDb() {
@@ -237,7 +232,6 @@ async function saveOnlineUserToDb(username, data) { await set(ref(db, `onlineUse
 async function removeOnlineUserFromDb(username) { await set(ref(db, `onlineUsers/${username}`), null); }
 
 // ====== BONUS QUOTA EXPIRY (DIPERBAIKI) ======
-// Jika bonus quota tidak digunakan selama 2 hari, reset ke kuota awal (2)
 async function checkAndExpireBonusQuota(username) {
   try {
     const userObj = await getUserFromDb(username);
@@ -245,37 +239,26 @@ async function checkAndExpireBonusQuota(username) {
     const now = Date.now();
     let changed = false;
 
-    // Pastikan baseQuota ada
     if (userObj.baseQuota === undefined) {
       userObj.baseQuota = BASE_QUOTA;
       changed = true;
     }
 
-    // Cek expiry bonus quota
     if (userObj.bonusQuota > 0) {
       const bonusGrantedAt = userObj.bonusGrantedAt || 0;
       const lastBonusActivity = userObj.lastBonusActivity || bonusGrantedAt;
 
-      // Jika bonus tidak aktif selama 2 hari, reset ke kuota awal
       if (lastBonusActivity > 0 && (now - lastBonusActivity) >= BONUS_EXPIRY_MS) {
-        console.log(`[BONUS EXPIRED] User ${username} - bonus ${userObj.bonusQuota} expired (2 hari tidak dipakai)`);
-        
-        // Reset bonus quota ke 0
+        // Bonus expired: reset ke kuota awal (2) — hapus bonus dan pangkas activatedEmails
         userObj.bonusQuota = 0;
         userObj.bonusGrantedAt = 0;
         userObj.lastBonusActivity = 0;
-        
-        // Reset activatedEmails ke base quota saja (2)
-        // Ini akan mengembalikan kuota ke kuota awal daftar
+        userObj.baseQuota = BASE_QUOTA;
         if (userObj.activatedEmails && userObj.activatedEmails.length > userObj.baseQuota) {
           userObj.activatedEmails = userObj.activatedEmails.slice(0, userObj.baseQuota);
         }
-        
-        // Reset lastResetTime agar hitungan 24 jam mulai dari sekarang
-        userObj.lastResetTime = now;
-        
         changed = true;
-        console.log(`[BONUS EXPIRED] User ${username} - quota reset ke ${userObj.baseQuota}`);
+        console.log(`[BONUS EXPIRED] User ${username} - bonus expired (2 hari), reset ke ${BASE_QUOTA} kuota`);
       }
     }
 
@@ -562,38 +545,26 @@ async function generateNetflixToken(plan, proxy) {
   }
 }
 
-// ====== NETFLIX GMAIL ACTIVATION (BARU) ======
-// Fungsi untuk aktivasi Netflix langsung ke Gmail dan dapatkan premium
-async function activateNetflixWithGmail(email, plan = 'premium') {
-  try {
-    // Step 1: Generate token Netflix
-    const tokenResult = await generateNetflixToken(plan);
-    if (!tokenResult.success) {
-      return { success: false, error: 'Gagal generate token: ' + tokenResult.error };
-    }
-
-    // Step 2: Return hasil dengan instruksi aktivasi
-    return {
-      success: true,
-      plan: tokenResult.plan,
-      quality: tokenResult.quality,
-      country: tokenResult.country,
-      url: tokenResult.url,
-      expires: tokenResult.expires,
-      pool: tokenResult.pool,
-      activationEmail: email,
-      activationInstructions: [
-        '1. Buka link Netflix token di browser',
-        '2. Login dengan akun Netflix Anda atau buat baru',
-        '3. Gunakan email: ' + email,
-        '4. Ikuti instruksi verifikasi',
-        '5. Nikmati Netflix Premium!'
-      ],
-      activatedAt: Date.now()
-    };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
+// ====== FITUR BARU: NETFLIX AKTIVASI KE GMAIL ======
+// Flow: terima gmail + plan -> generate token -> simpan aktivasi -> berikan link langsung
+async function activateNetflixForGmail(gmail, plan) {
+  if (!gmail || !gmail.includes('@')) throw new Error('Gmail tidak valid');
+  // Generate token premium
+  const tokenResult = await generateNetflixToken(plan || 'premium', true);
+  if (!tokenResult.success) throw new Error(tokenResult.error || 'Gagal generate token');
+  // Buat link aktivasi yang bisa langsung dibuka user di browser
+  const activationLink = tokenResult.url;
+  return {
+    success: true,
+    gmail,
+    plan: tokenResult.plan || plan,
+    quality: tokenResult.quality,
+    country: tokenResult.country,
+    activationLink,
+    expires: tokenResult.expires,
+    pool: tokenResult.pool,
+    instructions: 'Buka link di browser, login dengan Gmail ' + gmail + ', lalu nikmati Netflix Premium. Link akan otomatis terhubung ke Gmail tersebut saat login.'
+  };
 }
 
 // ==========================================
@@ -745,31 +716,16 @@ const htmlTemplate = `<!DOCTYPE html>
     75% { transform: translateX(-5px); }
   }
   .shake-error { animation: shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; border-color: var(--err) !important; }
-  .auth-tab-content {
-    animation: fadeInScale 0.3s ease-out forwards;
-  }
+  .auth-tab-content { animation: fadeInScale 0.3s ease-out forwards; }
   @keyframes fadeInScale {
     from { opacity: 0; transform: scale(0.95) translateY(5px); }
     to { opacity: 1; transform: scale(1) translateY(0); }
   }
-  .btn-loading {
-    position: relative;
-    color: transparent !important;
-    pointer-events: none;
-  }
+  .btn-loading { position: relative; color: transparent !important; pointer-events: none; }
   .btn-loading::after {
-    content: '';
-    position: absolute;
-    width: 18px;
-    height: 18px;
-    top: 50%;
-    left: 50%;
-    margin-top: -9px;
-    margin-left: -9px;
-    border: 2px solid rgba(255,255,255,0.3);
-    border-radius: 50%;
-    border-top-color: white;
-    animation: spin 0.8s linear infinite;
+    content: ''; position: absolute; width: 18px; height: 18px; top: 50%; left: 50%;
+    margin-top: -9px; margin-left: -9px; border: 2px solid rgba(255,255,255,0.3);
+    border-radius: 50%; border-top-color: white; animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -778,13 +734,8 @@ const htmlTemplate = `<!DOCTYPE html>
     from { opacity: 0; transform: translateX(20px); }
     to { opacity: 1; transform: translateX(0); }
   }
-  .mail-new {
-    animation: slideInRight 0.4s cubic-bezier(0.32, 0.72, 0, 1) forwards;
-    border-left: 3px solid var(--info) !important;
-  }
-  .pulse-border {
-    animation: borderPulse 1.5s infinite;
-  }
+  .mail-new { animation: slideInRight 0.4s cubic-bezier(0.32, 0.72, 0, 1) forwards; border-left: 3px solid var(--info) !important; }
+  .pulse-border { animation: borderPulse 1.5s infinite; }
   @keyframes borderPulse {
     0% { box-shadow: 0 0 0 0 rgba(96,165,250,0.4); }
     70% { box-shadow: 0 0 0 10px rgba(96,165,250,0); }
@@ -871,13 +822,11 @@ const htmlTemplate = `<!DOCTYPE html>
         <h1 class="display-font" style="font-size:22px; font-weight:800; margin:0 0 4px; color:var(--text-0);">Selamat datang</h1>
         <p style="font-size:12.5px; color:var(--text-2); margin:0;">Login atau daftar untuk mulai menggunakan layanan</p>
       </div>
-      
       <div style="display:flex; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; padding:3px; position:relative;">
         <div id="tab-indicator" style="position:absolute; top:3px; bottom:3px; left:3px; width:calc(50% - 3px); background:var(--accent); border-radius:7px; transition:transform 0.25s cubic-bezier(0.32,0.72,0,1);"></div>
         <button onclick="switchAuthTab('login')" id="tab-login-btn" style="position:relative; z-index:1; flex:1; padding:8px; background:transparent; border:none; font-weight:600; font-size:12.5px; cursor:pointer; color:white; font-family:inherit; border-radius:7px;">Login</button>
         <button onclick="switchAuthTab('register')" id="tab-reg-btn" style="position:relative; z-index:1; flex:1; padding:8px; background:transparent; border:none; font-weight:600; font-size:12.5px; cursor:pointer; color:var(--text-1); font-family:inherit; border-radius:7px;">Daftar</button>
       </div>
-      
       <div id="auth-form-container" class="auth-tab-content" style="display:flex; flex-direction:column; gap:12px;">
         <div><label class="field-label">Username</label><input type="text" id="auth-username" placeholder="username_kamu" class="inp mono"></div>
         <div><label class="field-label">Password</label><input type="password" id="auth-password" placeholder="••••••••" class="inp"></div>
@@ -964,7 +913,7 @@ const htmlTemplate = `<!DOCTYPE html>
         <div style="border-top:1px solid var(--line); padding-top:10px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
             <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em;">Kode Aktif</div>
-            <button onclick="loadActiveRedeems()" class="btn btn-ghost btn-xs">Refresh</button>
+            <button onclick="loadActiveRedeems(true)" class="btn btn-ghost btn-xs">Refresh</button>
           </div>
           <div id="active-redeem-list" style="display:flex; flex-direction:column; gap:7px; max-height:180px; overflow-y:auto;">
             <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
@@ -982,7 +931,6 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- SECTION TEMPMAIL -->
     <div id="section-tempmail" class="hide" style="display:flex; flex-direction:column; gap:10px;">
       <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between; border-color:rgba(96,165,250,0.3);">
         <div style="display:flex; align-items:center; gap:10px;">
@@ -1036,7 +984,7 @@ const htmlTemplate = `<!DOCTYPE html>
       <div class="card" style="border-color:rgba(96,165,250,0.2);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em;">Riwayat</div>
-          <button onclick="loadTempMailHistory()" class="btn btn-ghost btn-xs">Refresh</button>
+          <button onclick="loadTempMailHistory(true)" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
         <div id="mail-history-list" style="display:flex; flex-direction:column; gap:7px; max-height:220px; overflow-y:auto;">
           <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
@@ -1044,7 +992,6 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- SECTION ORDERS -->
     <div id="section-orders" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0; color:var(--info);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>Orderan Saya</div>
@@ -1065,7 +1012,6 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- SECTION NETFLIX (DENGAN FITUR AKTIVASI GMAIL) -->
     <div id="section-netflix" class="hide" style="display:flex; flex-direction:column; gap:10px;">
       <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between; border-color:rgba(229,9,20,0.3);">
         <div style="display:flex; align-items:center; gap:10px;">
@@ -1093,27 +1039,11 @@ const htmlTemplate = `<!DOCTYPE html>
           <input type="checkbox" id="netflix-use-proxy" checked style="accent-color:var(--netflix);">
           <span style="font-size:11.5px; color:var(--text-1);">Gunakan Proxy</span>
         </label>
-      </div>
-      
-      <!-- FITUR BARU: Aktivasi Netflix via Gmail -->
-      <div class="card" style="border-color:rgba(74,222,128,0.3); display:flex; flex-direction:column; gap:12px;">
-        <div class="section-head" style="color:var(--ok);">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-          Aktivasi Langsung ke Gmail
+        <div style="padding:11px; background:var(--bg-0); border:1px solid rgba(229,9,20,0.3); border-radius:9px;">
+          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--err); letter-spacing:0.06em; margin-bottom:6px;">✨ Aktivasi ke Gmail (Opsional)</div>
+          <input type="email" id="netflix-target-gmail" placeholder="gmail@gmail.com" class="inp" style="margin-bottom:6px;">
+          <p style="font-size:10px; color:var(--text-2); margin:0;">Isi Gmail untuk aktivasi langsung. Kosongkan untuk generate token biasa.</p>
         </div>
-        <p style="font-size:11.5px; color:var(--text-1); margin:0;">Generate token + aktivasi Netflix langsung ke Gmail Anda. Dapatkan akses premium instan!</p>
-        <input type="email" id="netflix-gmail-input" placeholder="email@gmail.com" class="inp" style="font-size:12px;">
-        <button id="btn-activate-netflix" onclick="handleActivateNetflixGmail()" class="btn btn-ok">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-          <span id="activate-netflix-text">Aktivasi Netflix Premium</span>
-        </button>
-        <div id="netflix-activation-result" class="hide" style="padding:11px; background:var(--ok-soft); border:1px solid rgba(74,222,128,0.25); border-radius:9px;">
-          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--ok); letter-spacing:0.06em; margin-bottom:6px;">✅ Aktivasi Berhasil</div>
-          <div id="netflix-activation-content" style="font-size:11.5px; color:var(--text-1);"></div>
-        </div>
-      </div>
-      
-      <div class="card" style="border-color:rgba(229,9,20,0.3); display:flex; flex-direction:column; gap:12px;">
         <button id="btn-generate-netflix" onclick="handleGenerateNetflix()" class="btn btn-netflix"><span id="netflix-btn-text">Generate Token</span></button>
       </div>
       <div id="netflix-loading" class="hide card" style="border-color:rgba(229,9,20,0.3);">
@@ -1136,7 +1066,7 @@ const htmlTemplate = `<!DOCTYPE html>
       <div class="card" style="border-color:rgba(229,9,20,0.2);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--err); letter-spacing:0.06em;">Riwayat</div>
-          <button onclick="loadNetflixHistory()" class="btn btn-ghost btn-xs">Refresh</button>
+          <button onclick="loadNetflixHistory(true)" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
         <div id="netflix-history-list" style="display:flex; flex-direction:column; gap:7px; max-height:220px; overflow-y:auto;">
           <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
@@ -1144,7 +1074,6 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- SECTION APK MOD -->
     <div id="section-apkmod" class="hide" style="display:flex; flex-direction:column; gap:10px;">
       <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between; border-color:rgba(74,222,128,0.3);">
         <div style="display:flex; align-items:center; gap:10px;">
@@ -1186,7 +1115,7 @@ const htmlTemplate = `<!DOCTYPE html>
       <div class="card" style="border-color:rgba(74,222,128,0.2);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--ok); letter-spacing:0.06em;">Riwayat</div>
-          <button onclick="loadApkHistory()" class="btn btn-ghost btn-xs">Refresh</button>
+          <button onclick="loadApkHistory(true)" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
         <div id="apk-history-list" style="display:flex; flex-direction:column; gap:7px; max-height:220px; overflow-y:auto;">
           <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
@@ -1194,7 +1123,6 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- SECTION VIP SHOP -->
     <div id="section-vipshop" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0; color:var(--warn);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>Beli VIP</div>
@@ -1272,7 +1200,6 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- SECTION CHAT -->
     <div id="section-chat" class="hide card" style="display:flex; flex-direction:column; gap:12px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat Global</div>
@@ -1287,11 +1214,10 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center; font-size:10.5px; color:var(--text-2);">
         <span id="chat-online-count">👥 0 user online</span>
-        <button onclick="loadGlobalChat()" class="btn btn-ghost btn-xs">Refresh</button>
+        <button onclick="loadGlobalChat(true)" class="btn btn-ghost btn-xs">Refresh</button>
       </div>
     </div>
 
-    <!-- SECTION PROFILE -->
     <div id="section-profile" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0;">Profil Akun</div>
@@ -1324,7 +1250,7 @@ const htmlTemplate = `<!DOCTYPE html>
       <div style="padding-top:12px; border-top:1px solid var(--line);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:9px;">
           <div class="section-head" style="margin:0; color:var(--info);">Gmail Terverifikasi</div>
-          <button onclick="loadVerifiedEmails()" class="btn btn-ghost btn-xs">Refresh</button>
+          <button onclick="loadVerifiedEmails(true)" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
         <div id="quota-status-card" style="padding:11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:9px; margin-bottom:9px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:7px;">
@@ -1357,7 +1283,6 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- SECTION ADMIN -->
     <div id="section-admin" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0; color:var(--warn);">Admin Panel</div>
@@ -1445,7 +1370,7 @@ const htmlTemplate = `<!DOCTYPE html>
       <div style="padding:11px; background:linear-gradient(135deg,var(--info-soft),var(--accent-soft)); border:1px solid rgba(96,165,250,0.3); border-radius:9px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:9px;">
           <div class="section-head" style="color:var(--info); margin:0;">Semua Orderan</div>
-          <button onclick="loadAdminOrders()" class="btn btn-ghost btn-xs">Refresh</button>
+          <button onclick="loadAdminOrders(true)" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:7px;">
           <button onclick="setAdminOrderFilter('all')" data-afilter="all" class="admin-order-filter btn btn-xs" style="background:var(--info); color:white;">Semua</button>
@@ -1551,7 +1476,6 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- SECTION GUIDE -->
     <div id="section-guide" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0;">Panduan</div>
@@ -1560,15 +1484,14 @@ const htmlTemplate = `<!DOCTYPE html>
       <div style="display:flex; flex-direction:column; gap:8px;">
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">1</div><div style="font-size:12px; color:var(--text-1);">Login/daftar dulu dengan akunmu</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">2</div><div style="font-size:12px; color:var(--text-1);"><strong>Alight Motion:</strong> Masukkan email target, kirim magic link, copy URL, verifikasi</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--netflix); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">3</div><div style="font-size:12px; color:var(--text-1);"><strong>Netflix:</strong> Pilih plan, klik Generate, tunggu proses. Bisa juga aktivasi langsung ke Gmail!</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--netflix); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">3</div><div style="font-size:12px; color:var(--text-1);"><strong>Netflix:</strong> Pilih plan, isi Gmail untuk aktivasi langsung (opsional), klik Generate</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--ok); color:#032a17; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">4</div><div style="font-size:12px; color:var(--text-1);"><strong>APK MOD:</strong> Pilih APK, klik Dapatkan Link</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">5</div><div style="font-size:12px; color:var(--text-1);"><strong>Temp Mail:</strong> Generate email, copy, cek inbox (Otomatis Terbuka)</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">7</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai, reset ke 2 kuota.</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">7</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari → reset ke 2 kuota awal.</div></div>
       </div>
     </div>
 
-    <!-- SECTION ANNOUNCEMENT -->
     <div id="section-announcement" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0; color:var(--info);">Pengumuman</div>
@@ -1579,7 +1502,6 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- SECTION REQUEST -->
     <div id="section-request" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0; color:var(--ok);">Request Fitur</div>
@@ -1607,7 +1529,6 @@ const htmlTemplate = `<!DOCTYPE html>
 </div>
 
 <script>
-// ====== GLOBAL VARIABLES (FIX: Dideklarasikan di awal) ======
 const DANA_ADMIN_NUMBER = '${DANA_ADMIN_NUMBER}';
 const DANA_ADMIN_NAME = '${DANA_ADMIN_NAME}';
 const BASE_QUOTA = 2;
@@ -1625,7 +1546,7 @@ let globalCountdownInterval = null;
 let chatRefreshInterval = null;
 let unreadChatCount = 0;
 let lastChatMessageId = null;
-let currentView = 'generator'; // FIX: Default value
+let currentView = 'generator';
 let userQuotaData = { usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, nextResetTime: 0, lastResetTime: 0 };
 let claimedRedeemCodes = {};
 let selectedPaymentProofFile = null;
@@ -1658,15 +1579,12 @@ let lastApkHistoryFetch = 0;
 let lastMailHistoryFetch = 0;
 let lastMyOrdersFetch = 0;
 let lastAdminOrdersFetch = 0;
-
-// Auto Refresh Temp Mail
 let mailAutoRefreshInterval = null;
 let lastMailMessageCount = 0;
 
 const CACHE_DURATION = { status:30000, video:60000, chat:15000, emails:30000, redeems:60000, announcements:60000, netflixHistory:30000, apkHistory:30000, mailHistory:30000, myOrders:15000, adminOrders:15000, onlineUsers:15000 };
 const memoryCache = {};
 
-// ====== CACHE HELPERS ======
 function getCached(key) {
   const entry = memoryCache[key];
   if (!entry) return null;
@@ -1675,7 +1593,6 @@ function getCached(key) {
 }
 function setCache(key, data, duration) { memoryCache[key] = { data, time: Date.now(), duration }; }
 
-// ====== VISIBILITY HANDLER ======
 document.addEventListener('visibilitychange', () => {
   isPageVisible = !document.hidden;
   if (isPageVisible) {
@@ -1692,7 +1609,6 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// ====== TOAST ======
 function showToast(message, type = 'info', duration = 3000) {
   const container = document.getElementById('toast-container');
   if (!container) return;
@@ -1704,7 +1620,35 @@ function showToast(message, type = 'info', duration = 3000) {
   setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 350); }, duration);
 }
 
-// ====== ONLINE TRACKING ======
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text == null ? '' : String(text);
+  return div.innerHTML;
+}
+
+// SAFE copy helper: simpan data di dataset, bukan di inline onclick
+function safeCopy(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(String(text)).then(() => showToast('Tersalin!', 'success')).catch(() => fallbackCopy(String(text)));
+    } else fallbackCopy(String(text));
+  } catch(e) { fallbackCopy(String(text)); }
+}
+function fallbackCopy(text) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    showToast('Tersalin!', 'success');
+  } catch(e) { showToast('Gagal menyalin', 'error'); }
+}
+
+// Tombol Copy di inbox temp mail pakai data-attribute untuk menghindari quote rusak
+function copyMailLink(el) {
+  const link = el && el.getAttribute ? el.getAttribute('data-link') : '';
+  if (link) safeCopy(link);
+}
+
 async function sendOnlineHeartbeat() {
   if (!loggedInUsername) return;
   try {
@@ -1757,7 +1701,6 @@ window.addEventListener('beforeunload', () => {
   if (loggedInUsername) navigator.sendBeacon('/api/online/offline', JSON.stringify({ username: loggedInUsername }));
 });
 
-// ====== MENU ======
 function toggleMenu() {
   const drawer = document.getElementById('nav-drawer');
   const overlay = document.getElementById('drawer-overlay');
@@ -1766,108 +1709,64 @@ function toggleMenu() {
   overlay.classList.toggle('hide');
 }
 
-// ====== SWITCH VIEW (FIX) ======
 function switchView(viewName) {
   currentView = viewName;
   document.querySelectorAll('[data-nav]').forEach(el => { el.classList.toggle('active', el.dataset.nav === viewName); });
   toggleMenu();
-  
-  // Hide all sections
-  const allSections = ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-apkmod','section-tempmail','section-orders'];
-  allSections.forEach(id => { 
+  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-apkmod','section-tempmail','section-orders'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.classList.add('hide');
   });
-  
-  // Show selected section
   if (viewName === 'generator') {
-    const el = document.getElementById('terminal-view');
-    if (el) el.classList.remove('hide');
+    const tv = document.getElementById('terminal-view'); if (tv) tv.classList.remove('hide');
   } else if (viewName === 'orders') {
-    const el = document.getElementById('section-orders');
-    if (el) el.classList.remove('hide');
-    loadMyOrders();
+    const el = document.getElementById('section-orders'); if (el) el.classList.remove('hide');
+    loadMyOrders(true);
   } else if (viewName === 'netflix') {
-    const el = document.getElementById('section-netflix');
-    if (el) el.classList.remove('hide');
-    loadNetflixHistory();
-    updateNetflixQuotaDisplay();
+    const el = document.getElementById('section-netflix'); if (el) el.classList.remove('hide');
+    loadNetflixHistory(true); updateNetflixQuotaDisplay();
   } else if (viewName === 'apkmod') {
-    const el = document.getElementById('section-apkmod');
-    if (el) el.classList.remove('hide');
-    loadApkMods();
-    loadApkHistory();
-    updateApkQuotaDisplay();
+    const el = document.getElementById('section-apkmod'); if (el) el.classList.remove('hide');
+    loadApkMods(); loadApkHistory(true); updateApkQuotaDisplay();
   } else if (viewName === 'tempmail') {
-    const el = document.getElementById('section-tempmail');
-    if (el) el.classList.remove('hide');
-    loadTempMailHistory();
-    updateMailQuotaDisplay();
+    const el = document.getElementById('section-tempmail'); if (el) el.classList.remove('hide');
+    loadTempMailHistory(true); updateMailQuotaDisplay();
     if (tempMailSession) startMailAutoRefresh();
   } else if (viewName === 'vipshop') {
-    const el = document.getElementById('section-vipshop');
-    if (el) el.classList.remove('hide');
-    loadVipShopItems();
-    loadUserTransactions();
-    const danaNum = document.getElementById('dana-number-display');
-    const danaOwner = document.getElementById('dana-owner-display');
-    if (danaNum) danaNum.innerText = DANA_ADMIN_NUMBER;
-    if (danaOwner) danaOwner.innerText = 'a.n. ' + DANA_ADMIN_NAME;
+    const el = document.getElementById('section-vipshop'); if (el) el.classList.remove('hide');
+    loadVipShopItems(); loadUserTransactions();
+    document.getElementById('dana-number-display').innerText = DANA_ADMIN_NUMBER;
+    document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
   } else if (viewName === 'profile') {
-    const el = document.getElementById('section-profile');
-    if (el) el.classList.remove('hide');
-    loadVerifiedEmails();
+    const el = document.getElementById('section-profile'); if (el) el.classList.remove('hide');
+    loadVerifiedEmails(true);
   } else if (viewName === 'guide') {
-    const el = document.getElementById('section-guide');
-    if (el) el.classList.remove('hide');
+    const el = document.getElementById('section-guide'); if (el) el.classList.remove('hide');
   } else if (viewName === 'announcement') {
-    const el = document.getElementById('section-announcement');
-    if (el) el.classList.remove('hide');
-    loadUserAnnouncements();
+    const el = document.getElementById('section-announcement'); if (el) el.classList.remove('hide');
+    loadUserAnnouncements(true);
   } else if (viewName === 'request') {
-    const el = document.getElementById('section-request');
-    if (el) el.classList.remove('hide');
+    const el = document.getElementById('section-request'); if (el) el.classList.remove('hide');
     loadUserFeatureRequests();
   } else if (viewName === 'chat') {
-    const el = document.getElementById('section-chat');
-    if (el) el.classList.remove('hide');
-    loadGlobalChat(true);
-    unreadChatCount = 0;
-    updateChatBadge();
+    const el = document.getElementById('section-chat'); if (el) el.classList.remove('hide');
+    loadGlobalChat(true); unreadChatCount = 0; updateChatBadge();
   } else if (viewName === 'admin') {
     if (!isAdminUser) return showToast('Akses ditolak!', 'error');
-    const el = document.getElementById('section-admin');
-    if (el) el.classList.remove('hide');
-    loadAdminRedeems();
-    loadAdminAnnouncements();
-    loadAdminVipList();
-    loadAllUsers();
-    loadVipAccounts();
-    loadAdminFeatureRequests();
-    loadAdminVipShop();
-    loadAdminTransactions();
-    loadAdminApkList();
-    loadAdminOrders();
+    const el = document.getElementById('section-admin'); if (el) el.classList.remove('hide');
+    loadAdminRedeems(); loadAdminAnnouncements(); loadAdminVipList(); loadAllUsers(); loadVipAccounts(); loadAdminFeatureRequests(); loadAdminVipShop(); loadAdminTransactions(); loadAdminApkList(); loadAdminOrders(true);
   }
-  
-  if (viewName !== 'tempmail') {
-    stopMailAutoRefresh();
-  }
+  if (viewName !== 'tempmail') stopMailAutoRefresh();
 }
 
-// ====== DANA ======
-function copyDanaNumber() {
-  navigator.clipboard.writeText(DANA_ADMIN_NUMBER).then(() => showToast('Nomor tersalin!', 'success')).catch(() => showToast('Gagal', 'error'));
-}
+function copyDanaNumber() { safeCopy(DANA_ADMIN_NUMBER); }
 
-// ====== GUARD ======
 function guardServerOnline(featureName) {
   if (serverOnline || isAdminUser) return true;
   showToast('Server offline — ' + featureName + ' tidak tersedia.', 'error', 4000);
   return false;
 }
 
-// ====== MY ORDERS ======
 async function loadMyOrders(force = false) {
   if (!loggedInUsername) return;
   const now = Date.now();
@@ -1893,14 +1792,10 @@ function renderMyOrders() {
   const search = (document.getElementById('order-search-input')?.value || '').toLowerCase().trim();
   let filtered = myOrders;
   if (search) filtered = myOrders.filter(o => (o.orderId||'').toLowerCase().includes(search) || (o.type||'').toLowerCase().includes(search) || (o.detail||'').toLowerCase().includes(search));
-  const totalEl = document.getElementById('my-orders-total');
-  const amEl = document.getElementById('my-orders-am');
-  const nfEl = document.getElementById('my-orders-netflix');
-  const mailEl = document.getElementById('my-orders-mail');
-  if (totalEl) totalEl.innerText = myOrders.length;
-  if (amEl) amEl.innerText = myOrders.filter(o => o.type === 'am').length;
-  if (nfEl) nfEl.innerText = myOrders.filter(o => o.type === 'netflix').length;
-  if (mailEl) mailEl.innerText = myOrders.filter(o => o.type === 'mail').length;
+  document.getElementById('my-orders-total').innerText = myOrders.length;
+  document.getElementById('my-orders-am').innerText = myOrders.filter(o => o.type === 'am').length;
+  document.getElementById('my-orders-netflix').innerText = myOrders.filter(o => o.type === 'netflix').length;
+  document.getElementById('my-orders-mail').innerText = myOrders.filter(o => o.type === 'mail').length;
   if (filtered.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">' + (search ? 'Tidak cocok' : 'Belum ada') + '</p>'; return; }
   container.innerHTML = filtered.map(o => {
     const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'mail' ? '📧' : '📱';
@@ -1919,7 +1814,6 @@ function renderMyOrders() {
   }).join('');
 }
 
-// ====== ADMIN ORDERS ======
 async function loadAdminOrders(force = false) {
   if (!isAdminUser) return;
   const now = Date.now();
@@ -1971,38 +1865,33 @@ function renderAdminOrders() {
   }).join('');
 }
 
-// ====== TEMP MAIL AUTO REFRESH ======
+function updateMailQuotaDisplay() {
+  const el = document.getElementById('mail-quota-display');
+  if (el) {
+    if (isAdminUser || isVipUser) { el.innerText = '∞'; el.style.color = 'var(--info)'; }
+    else { const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota); el.innerText = remain; el.style.color = remain > 0 ? 'white' : 'var(--err)'; }
+  }
+  const resetEl = document.getElementById('mail-reset-display');
+  if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
+}
+
 function startMailAutoRefresh() {
   if (mailAutoRefreshInterval) clearInterval(mailAutoRefreshInterval);
   mailAutoRefreshInterval = setInterval(async () => {
     if (!isPageVisible || !tempMailSession || currentView !== 'tempmail') return;
     try {
-      const res = await fetch('/api/tempmail/check', { 
-        method:'POST', 
-        headers:{'Content-Type':'application/json'}, 
-        body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession }) 
+      const res = await fetch('/api/tempmail/check', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession })
       });
       const data = await res.json();
       if (data.success && data.messages) {
         if (data.messages.length > lastMailMessageCount) {
           showToast('📧 Pesan baru masuk!', 'mail');
           lastMailMessageCount = data.messages.length;
-          const countEl = document.getElementById('mail-message-count');
-          if (countEl) countEl.innerText = data.messages.length + ' pesan';
-          const inboxList = document.getElementById('mail-inbox-list');
-          if (inboxList) {
-            if (data.messages.length > 0) {
-              inboxList.innerHTML = data.messages.map((msg, idx) => {
-                const isNew = idx === 0;
-                const animClass = isNew ? 'mail-new' : '';
-                const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
-                  ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
-                return '<div class="hist-item ' + animClass + '" style="border-color:rgba(96,165,250,0.25);"><div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div><div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' + linksHtml + '</div>';
-              }).join('');
-            } else {
-              inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada email</p>';
-            }
-          }
+          document.getElementById('mail-message-count').innerText = data.messages.length + ' pesan';
+          renderTempMailInbox(data.messages);
         }
       }
     } catch (e) {}
@@ -2016,7 +1905,6 @@ function stopMailAutoRefresh() {
   }
 }
 
-// ====== TEMP MAIL GENERATE ======
 async function handleGenerateTempMail() {
   if (!loggedInUsername) return showToast('Harus login!', 'error');
   if (!guardServerOnline('Temp Mail')) return;
@@ -2027,49 +1915,33 @@ async function handleGenerateTempMail() {
   const logText = document.getElementById('mail-log-text');
   const progressFill = document.getElementById('mail-progress-fill');
   const resultContainer = document.getElementById('mail-result-container');
-  
   stopMailAutoRefresh();
   lastMailMessageCount = 0;
-  
-  if (btn) btn.disabled = true;
-  if (btnText) btnText.innerText = 'Memproses...';
-  if (loadingEl) loadingEl.classList.remove('hide');
-  if (progressFill) progressFill.style.width = '0%';
-  if (statusText) statusText.innerText = 'Menyiapkan';
-  if (logText) logText.innerText = 'Initializing...';
-  
+  btn.disabled = true; btnText.innerText = 'Memproses...';
+  loadingEl.classList.remove('hide'); progressFill.style.width = '0%';
+  statusText.innerText = 'Menyiapkan'; logText.innerText = 'Initializing...';
   try {
     const quotaRes = await fetch('/api/tempmail/check-quota?username=' + encodeURIComponent(loggedInUsername));
     const quotaData = await quotaRes.json();
     if (!quotaData.success) throw new Error(quotaData.message || 'Gagal cek');
     if (!quotaData.allowed) throw new Error(quotaData.message || 'Quota habis!');
-    if (statusText) statusText.innerText = 'Menggenerate...';
-    if (logText) logText.innerText = 'Creating...';
-    if (progressFill) progressFill.style.width = '40%';
-    
+    statusText.innerText = 'Menggenerate...'; logText.innerText = 'Creating...'; progressFill.style.width = '40%';
     const genRes = await fetch('/api/tempmail/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername }) });
     const genData = await genRes.json();
-    if (progressFill) progressFill.style.width = '100%';
-    
+    progressFill.style.width = '100%';
     if (genData.success && genData.email) {
-      if (statusText) statusText.innerText = '✅ Berhasil!';
-      if (logText) logText.innerText = 'Generated';
+      statusText.innerText = '✅ Berhasil!'; logText.innerText = 'Generated';
       tempMailSession = genData.sessionId || genData.email;
-      const emailDisplay = document.getElementById('mail-email-display');
-      if (emailDisplay) emailDisplay.innerText = genData.email;
-      if (resultContainer) resultContainer.classList.remove('hide');
-      const inboxList = document.getElementById('mail-inbox-list');
-      if (inboxList) inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Menunggu email (Auto-Refresh Aktif)...</p>';
-      const countEl = document.getElementById('mail-message-count');
-      if (countEl) countEl.innerText = '0 pesan';
-      
+      document.getElementById('mail-email-display').innerText = genData.email;
+      resultContainer.classList.remove('hide');
+      document.getElementById('mail-inbox-list').innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Menunggu email (Auto-Refresh Aktif)...</p>';
+      document.getElementById('mail-message-count').innerText = '0 pesan';
       startMailAutoRefresh();
-      
       if (genData.quotaInfo) { userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(genData.quotaInfo); updateMailQuotaDisplay(); }
       if (genData.orderId) showToast('✅ Order ID: ' + genData.orderId, 'order', 5000);
       else showToast('Email berhasil!', 'mail');
       loadTempMailHistory(true);
-      setTimeout(() => { if (loadingEl) loadingEl.classList.add('hide'); }, 2000);
+      setTimeout(() => loadingEl.classList.add('hide'), 2000);
     } else {
       if (genData.refilled) showToast(genData.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
       else showToast(genData.message || 'Gagal', 'error');
@@ -2078,14 +1950,10 @@ async function handleGenerateTempMail() {
       throw new Error(genData.message || 'Gagal');
     }
   } catch (err) {
-    if (statusText) statusText.innerText = '❌ Gagal';
-    if (logText) logText.innerText = err.message;
+    statusText.innerText = '❌ Gagal'; logText.innerText = err.message;
     if (!err.message.includes('dikembalikan')) showToast(err.message, 'error');
-    setTimeout(() => { if (loadingEl) loadingEl.classList.add('hide'); }, 3000);
-  } finally { 
-    if (btn) btn.disabled = false;
-    if (btnText) btnText.innerText = 'Generate Email'; 
-  }
+    setTimeout(() => loadingEl.classList.add('hide'), 3000);
+  } finally { btn.disabled = false; btnText.innerText = 'Generate Email'; }
 }
 
 async function checkTempMailInbox() {
@@ -2093,40 +1961,45 @@ async function checkTempMailInbox() {
   if (!guardServerOnline('Temp Mail')) return;
   const inboxList = document.getElementById('mail-inbox-list');
   const messageCount = document.getElementById('mail-message-count');
-  if (inboxList) inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px;">Memeriksa...</p>';
+  inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px;">Memeriksa...</p>';
   try {
     const res = await fetch('/api/tempmail/check', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession }) });
     const data = await res.json();
     if (data.success) {
-      if (data.messages && data.messages.length > 0) { 
-        if (messageCount) messageCount.innerText = data.messages.length + ' pesan'; 
-        renderTempMailInbox(data.messages); 
-        showToast('📧 ' + data.messages.length + ' pesan!', 'mail'); 
+      if (data.messages && data.messages.length > 0) {
+        messageCount.innerText = data.messages.length + ' pesan';
+        renderTempMailInbox(data.messages);
+        showToast('📧 ' + data.messages.length + ' pesan!', 'mail');
         lastMailMessageCount = data.messages.length;
       }
-      else { 
-        if (inboxList) inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada email</p>'; 
-        if (messageCount) messageCount.innerText = '0 pesan'; 
-      }
-    } else if (inboxList) inboxList.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">' + (data.message || 'Gagal') + '</p>';
-  } catch(e) { if (inboxList) inboxList.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
+      else { inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada email</p>'; messageCount.innerText = '0 pesan'; }
+    } else inboxList.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">' + escapeHtml(data.message || 'Gagal') + '</p>';
+  } catch(e) { inboxList.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
 }
 
+// Render inbox pakai data-link attribute (menghindari quote rusak)
 function renderTempMailInbox(messages) {
   const container = document.getElementById('mail-inbox-list');
   if (!container) return;
   if (!messages || messages.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px;">Tidak ada</p>'; return; }
   container.innerHTML = messages.map((msg, idx) => {
-    const isNew = idx === 0; 
+    const isNew = idx === 0;
     const animClass = isNew ? 'mail-new' : '';
-    const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
-      ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
-    return '<div class="hist-item ' + animClass + '" style="border-color:rgba(96,165,250,0.25);"><div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div><div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' + linksHtml + '</div>';
+    let linksHtml = '';
+    if (msg.extracted_links && msg.extracted_links.length > 0) {
+      linksHtml = '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' +
+        msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" data-link="' + escapeHtml(link) + '" onclick="copyMailLink(this)">' + escapeHtml(link) + '</div>').join('') +
+        '</div>';
+    }
+    return '<div class="hist-item ' + animClass + '" style="border-color:rgba(96,165,250,0.25);">' +
+      '<div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div>' +
+      '<div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div>' +
+      '<div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' +
+      linksHtml + '</div>';
   }).join('');
 }
 
-function copyTempMailEmail() { const email = document.getElementById('mail-email-display')?.innerText; if (email && email !== '-') navigator.clipboard.writeText(email).then(() => showToast('Tersalin!', 'mail')); }
-function copyMailLink(link) { navigator.clipboard.writeText(link).then(() => showToast('Tersalin!', 'mail')); }
+function copyTempMailEmail() { const email = document.getElementById('mail-email-display').innerText; if (email && email !== '-') safeCopy(email); }
 
 async function loadTempMailHistory(force = false) {
   if (!loggedInUsername) return;
@@ -2146,13 +2019,18 @@ function renderTempMailHistory(data) {
   const container = document.getElementById('mail-history-list');
   if (!container) return;
   if (data.success && data.results && data.results.length > 0) {
-    container.innerHTML = data.results.map(r => '<div class="hist-item" style="border-color:rgba(96,165,250,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--info);">📧 Temp Mail</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div class="mono" style="font-size:10px; color:var(--info); word-break:break-all;">' + escapeHtml(r.email) + '</div><div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px;"><span style="font-size:9px; color:var(--text-2);">' + escapeHtml(r.orderId || '-') + '</span><button onclick="copyHistoryEmail(\\'' + escapeHtml(r.email).replace(/'/g, "\\\\'") + '\\')" class="btn btn-ghost btn-xs">Copy</button></div></div>').join('');
+    container.innerHTML = data.results.map(r =>
+      '<div class="hist-item" style="border-color:rgba(96,165,250,0.2);">' +
+      '<div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--info);">📧 Temp Mail</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div>' +
+      '<div class="mono" style="font-size:10px; color:var(--info); word-break:break-all;">' + escapeHtml(r.email) + '</div>' +
+      '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px;">' +
+      '<span style="font-size:9px; color:var(--text-2);">' + escapeHtml(r.orderId || '-') + '</span>' +
+      '<button data-email="' + escapeHtml(r.email) + '" onclick="safeCopy(this.getAttribute(\\'data-email\\'))" class="btn btn-ghost btn-xs">Copy</button>' +
+      '</div></div>'
+    ).join('');
   } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
 }
 
-function copyHistoryEmail(email) { navigator.clipboard.writeText(email).then(() => showToast('Tersalin!', 'mail')); }
-
-// ====== NETFLIX PLAN SELECT ======
 function selectNetflixPlan(plan) {
   selectedNetflixPlan = plan;
   document.querySelectorAll('.opt-row[data-plan]').forEach(el => { el.classList.toggle('selected', el.dataset.plan === plan); });
@@ -2168,44 +2046,55 @@ function updateNetflixQuotaDisplay() {
   if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
 }
 
-// ====== NETFLIX GENERATE ======
+// === FITUR BARU: NETFLIX AKTIVASI GMAIL ===
 async function handleGenerateNetflix() {
   if (!loggedInUsername) return showToast('Harus login!', 'error');
   if (!guardServerOnline('Netflix')) return;
-  const useProxy = document.getElementById('netflix-use-proxy')?.checked ?? true;
+  const useProxy = document.getElementById('netflix-use-proxy').checked;
+  const targetGmail = (document.getElementById('netflix-target-gmail').value || '').trim();
   const btn = document.getElementById('btn-generate-netflix');
   const btnText = document.getElementById('netflix-btn-text');
   const loadingEl = document.getElementById('netflix-loading');
   const statusText = document.getElementById('netflix-status-text');
   const logText = document.getElementById('netflix-log-text');
   const progressFill = document.getElementById('netflix-progress-fill');
-  if (btn) btn.disabled = true;
-  if (btnText) btnText.innerText = 'Memproses...';
-  if (loadingEl) loadingEl.classList.remove('hide');
-  if (progressFill) progressFill.style.width = '0%';
-  if (statusText) statusText.innerText = 'Menyiapkan';
-  if (logText) logText.innerText = 'Initializing...';
+  btn.disabled = true; btnText.innerText = 'Memproses...';
+  loadingEl.classList.remove('hide'); progressFill.style.width = '0%';
+  statusText.innerText = 'Menyiapkan'; logText.innerText = 'Initializing...';
+
+  const isActivation = !!targetGmail;
+  if (isActivation && (!targetGmail.includes('@') || !targetGmail.includes('.'))) {
+    showToast('Gmail tidak valid!', 'error');
+    btn.disabled = false; btnText.innerText = 'Generate Token'; loadingEl.classList.add('hide');
+    return;
+  }
+
   try {
     const quotaRes = await fetch('/api/netflix/check-quota?username=' + encodeURIComponent(loggedInUsername));
     const quotaData = await quotaRes.json();
     if (!quotaData.success) throw new Error(quotaData.message || 'Gagal cek');
     if (!quotaData.allowed) throw new Error(quotaData.message || 'Quota habis!');
-    if (statusText) statusText.innerText = 'Menggenerate...';
-    if (logText) logText.innerText = 'Connecting...';
-    if (progressFill) progressFill.style.width = '30%';
-    const genRes = await fetch('/api/netflix/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, plan: selectedNetflixPlan, useProxy }) });
+    statusText.innerText = isActivation ? 'Aktivasi Gmail...' : 'Menggenerate...';
+    logText.innerText = 'Connecting...'; progressFill.style.width = '30%';
+
+    const endpoint = isActivation ? '/api/netflix/activate-gmail' : '/api/netflix/generate';
+    const bodyObj = isActivation
+      ? { username: loggedInUsername, plan: selectedNetflixPlan, gmail: targetGmail, useProxy }
+      : { username: loggedInUsername, plan: selectedNetflixPlan, useProxy };
+
+    const genRes = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(bodyObj) });
     const genData = await genRes.json();
-    if (progressFill) progressFill.style.width = '80%';
+    progressFill.style.width = '80%';
+
     if (genData.success && genData.result) {
-      if (progressFill) progressFill.style.width = '100%';
-      if (statusText) statusText.innerText = '✅ Berhasil!';
-      if (logText) logText.innerText = 'Success';
+      progressFill.style.width = '100%'; statusText.innerText = '✅ Berhasil!'; logText.innerText = 'Success';
       addNetflixResult(genData.result);
       if (genData.quotaInfo) { userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(genData.quotaInfo); updateNetflixQuotaDisplay(); }
       if (genData.orderId) showToast('✅ Order ID: ' + genData.orderId, 'order', 5000);
-      else showToast('Token berhasil!', 'netflix');
+      else showToast(isActivation ? 'Aktivasi Gmail berhasil!' : 'Token berhasil!', 'netflix');
       loadNetflixHistory(true);
-      setTimeout(() => { if (loadingEl) loadingEl.classList.add('hide'); }, 2000);
+      document.getElementById('netflix-target-gmail').value = '';
+      setTimeout(() => loadingEl.classList.add('hide'), 2000);
     } else {
       if (genData.refilled) showToast(genData.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
       else showToast(genData.message || 'Gagal', 'error');
@@ -2214,17 +2103,13 @@ async function handleGenerateNetflix() {
       throw new Error(genData.message || 'Gagal');
     }
   } catch (err) {
-    if (statusText) statusText.innerText = '❌ Gagal';
-    if (logText) logText.innerText = err.message;
+    statusText.innerText = '❌ Gagal'; logText.innerText = err.message;
     if (!err.message.includes('dikembalikan')) showToast(err.message, 'error');
-    setTimeout(() => { if (loadingEl) loadingEl.classList.add('hide'); }, 3000);
-  } finally { 
-    if (btn) btn.disabled = false;
-    if (btnText) btnText.innerText = 'Generate Token'; 
-  }
+    setTimeout(() => loadingEl.classList.add('hide'), 3000);
+  } finally { btn.disabled = false; btnText.innerText = 'Generate Token'; }
 }
 
-function addNetflixResult(result) { netflixResults.unshift(result); renderNetflixResults(); const el = document.getElementById('netflix-results-container'); if (el) el.classList.remove('hide'); }
+function addNetflixResult(result) { netflixResults.unshift(result); renderNetflixResults(); document.getElementById('netflix-results-container').classList.remove('hide'); }
 
 function renderNetflixResults() {
   const container = document.getElementById('netflix-results-list');
@@ -2233,12 +2118,19 @@ function renderNetflixResults() {
   const NC = {US:'UNITED STATES',GB:'UNITED KINGDOM',DE:'GERMANY',FR:'FRANCE',JP:'JAPAN',KR:'SOUTH KOREA',IN:'INDIA',BR:'BRAZIL',CA:'CANADA',AU:'AUSTRALIA',ID:'INDONESIA',MY:'MALAYSIA',PH:'PHILIPPINES',SG:'SINGAPORE',TH:'THAILAND'};
   container.innerHTML = netflixResults.map((r, i) => {
     const countryName = NC[r.country] || r.country || 'Unknown';
-    return '<div class="hist-item" style="border-color:rgba(229,9,20,0.25);"><div style="display:flex; justify-content:space-between; margin-bottom:7px;"><span style="font-size:11.5px; font-weight:700; color:var(--err);">#' + (netflixResults.length - i) + ' • ' + escapeHtml((r.plan || selectedNetflixPlan).toUpperCase()) + '</span><span class="badge badge-err" style="font-size:9px;">' + escapeHtml(countryName) + '</span></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:7px;"><div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Quality</div><div style="font-size:11px; font-weight:600;">' + escapeHtml(r.quality || 'HD') + '</div></div><div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Expires</div><div style="font-size:11px; font-weight:600;">' + (r.expires ? new Date(r.expires).toLocaleDateString('id-ID') : '—') + '</div></div></div><div class="link-line" style="margin-bottom:6px;" onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.url) + '</div><button onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')" class="btn btn-netflix btn-sm" style="width:100%;">Copy Link</button></div>';
+    const activationLine = r.gmail ? '<div style="padding:7px 10px; background:var(--ok-soft); border:1px solid rgba(74,222,128,0.25); border-radius:7px; margin-bottom:7px;"><div style="font-size:9px; color:var(--ok); text-transform:uppercase; font-weight:700;">✅ Teraktivasi ke</div><div class="mono" style="font-size:11px; color:var(--ok); font-weight:700; word-break:break-all;">' + escapeHtml(r.gmail) + '</div></div>' : '';
+    return '<div class="hist-item" style="border-color:rgba(229,9,20,0.25);">' +
+      '<div style="display:flex; justify-content:space-between; margin-bottom:7px;"><span style="font-size:11.5px; font-weight:700; color:var(--err);">#' + (netflixResults.length - i) + ' • ' + escapeHtml((r.plan || selectedNetflixPlan).toUpperCase()) + '</span><span class="badge badge-err" style="font-size:9px;">' + escapeHtml(countryName) + '</span></div>' +
+      activationLine +
+      '<div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:7px;">' +
+      '<div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Quality</div><div style="font-size:11px; font-weight:600;">' + escapeHtml(r.quality || 'HD') + '</div></div>' +
+      '<div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Expires</div><div style="font-size:11px; font-weight:600;">' + (r.expires ? new Date(r.expires).toLocaleDateString('id-ID') : '—') + '</div></div></div>' +
+      '<div class="link-line" style="margin-bottom:6px;" data-link="' + escapeHtml(r.url) + '" onclick="safeCopy(this.getAttribute(\\'data-link\\'))">' + escapeHtml(r.url) + '</div>' +
+      '<button data-link="' + escapeHtml(r.url) + '" onclick="safeCopy(this.getAttribute(\\'data-link\\'))" class="btn btn-netflix btn-sm" style="width:100%;">Copy Link</button></div>';
   }).join('');
 }
 
-function copyNetflixLink(url) { navigator.clipboard.writeText(url).then(() => showToast('Tersalin!', 'netflix')).catch(() => showToast('Gagal', 'error')); }
-function clearNetflixResults() { netflixResults = []; renderNetflixResults(); const el = document.getElementById('netflix-results-container'); if (el) el.classList.add('hide'); }
+function clearNetflixResults() { netflixResults = []; renderNetflixResults(); document.getElementById('netflix-results-container').classList.add('hide'); }
 
 async function loadNetflixHistory(force = false) {
   if (!loggedInUsername) return;
@@ -2261,73 +2153,15 @@ function renderNetflixHistory(data) {
     const NC = {US:'UNITED STATES',GB:'UNITED KINGDOM',DE:'GERMANY',FR:'FRANCE',JP:'JAPAN',KR:'SOUTH KOREA',IN:'INDIA',BR:'BRAZIL',CA:'CANADA',AU:'AUSTRALIA',ID:'INDONESIA',MY:'MALAYSIA',PH:'PHILIPPINES',SG:'SINGAPORE',TH:'THAILAND'};
     container.innerHTML = data.results.map(r => {
       const countryName = NC[r.country] || r.country || 'Unknown';
-      return '<div class="hist-item" style="border-color:rgba(229,9,20,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--err);">' + escapeHtml(r.plan || 'premium').toUpperCase() + '</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div style="font-size:10px; color:var(--text-2);">' + escapeHtml(countryName) + ' • ' + escapeHtml(r.quality || 'HD') + '</div><div class="link-line" style="margin-top:6px; font-size:10px;" onclick="copyNetflixLink(\\'' + escapeHtml(r.url).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.url) + '</div></div>';
+      return '<div class="hist-item" style="border-color:rgba(229,9,20,0.2);">' +
+        '<div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--err);">' + escapeHtml(r.plan || 'premium').toUpperCase() + '</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div>' +
+        (r.gmail ? '<div style="font-size:10px; color:var(--ok); margin-bottom:2px;">✅ ' + escapeHtml(r.gmail) + '</div>' : '') +
+        '<div style="font-size:10px; color:var(--text-2);">' + escapeHtml(countryName) + ' • ' + escapeHtml(r.quality || 'HD') + '</div>' +
+        '<div class="link-line" style="margin-top:6px; font-size:10px;" data-link="' + escapeHtml(r.url) + '" onclick="safeCopy(this.getAttribute(\\'data-link\\'))">' + escapeHtml(r.url) + '</div></div>';
     }).join('');
   } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
 }
 
-// ====== NETFLIX GMAIL ACTIVATION (BARU) ======
-async function handleActivateNetflixGmail() {
-  if (!loggedInUsername) return showToast('Harus login!', 'error');
-  if (!guardServerOnline('Netflix Aktivasi')) return;
-  
-  const gmailInput = document.getElementById('netflix-gmail-input');
-  const email = gmailInput?.value?.trim();
-  if (!email || !email.includes('@') || !email.includes('.')) {
-    return showToast('Masukkan email Gmail yang valid!', 'error');
-  }
-  
-  const btn = document.getElementById('btn-activate-netflix');
-  const btnText = document.getElementById('activate-netflix-text');
-  const resultEl = document.getElementById('netflix-activation-result');
-  const contentEl = document.getElementById('netflix-activation-content');
-  
-  if (btn) btn.disabled = true;
-  if (btnText) btnText.innerText = 'Memproses aktivasi...';
-  if (resultEl) resultEl.classList.add('hide');
-  
-  try {
-    const res = await fetch('/api/netflix/activate-gmail', { 
-      method: 'POST', 
-      headers: {'Content-Type':'application/json'}, 
-      body: JSON.stringify({ username: loggedInUsername, email, plan: selectedNetflixPlan }) 
-    });
-    const data = await res.json();
-    
-    if (data.success && data.result) {
-      if (resultEl) resultEl.classList.remove('hide');
-      if (contentEl) {
-        contentEl.innerHTML = 
-          '<div style="margin-bottom:8px;"><strong>📧 Email:</strong> ' + escapeHtml(data.result.activationEmail) + '</div>' +
-          '<div style="margin-bottom:8px;"><strong>🎬 Plan:</strong> ' + escapeHtml(data.result.plan || selectedNetflixPlan).toUpperCase() + '</div>' +
-          '<div style="margin-bottom:8px;"><strong>🌍 Country:</strong> ' + escapeHtml(data.result.country || 'US') + '</div>' +
-          '<div style="margin-bottom:8px;"><strong>📺 Quality:</strong> ' + escapeHtml(data.result.quality || 'HD') + '</div>' +
-          '<div style="margin-bottom:8px;"><strong>🔗 Link:</strong></div>' +
-          '<div class="link-line" style="margin-bottom:8px;" onclick="copyNetflixLink(\\'' + escapeHtml(data.result.url).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(data.result.url) + '</div>' +
-          '<div style="margin-bottom:8px;"><strong>📋 Langkah Aktivasi:</strong></div>' +
-          (data.result.activationInstructions || []).map((step, idx) => 
-            '<div style="display:flex; gap:6px; margin-bottom:4px; font-size:11px;"><span style="color:var(--ok);">' + (idx+1) + '.</span><span>' + escapeHtml(step) + '</span></div>'
-          ).join('') +
-          '<button onclick="copyNetflixLink(\\'' + escapeHtml(data.result.url).replace(/'/g, "\\\\'") + '\\')" class="btn btn-ok btn-sm" style="margin-top:8px; width:100%;">Copy Link Aktivasi</button>';
-      }
-      if (data.quotaInfo) { userQuotaData.usedQuota = data.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(data.quotaInfo); updateNetflixQuotaDisplay(); }
-      if (data.orderId) showToast('✅ Order ID: ' + data.orderId, 'order', 5000);
-      showToast('✅ Aktivasi Netflix berhasil!', 'success');
-      loadNetflixHistory(true);
-    } else {
-      if (data.refilled) showToast(data.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
-      else showToast(data.message || 'Gagal aktivasi', 'error');
-      if (data.quotaInfo) { updateQuotaDisplay(data.quotaInfo); updateNetflixQuotaDisplay(); }
-    }
-  } catch (err) {
-    showToast('Kesalahan: ' + err.message, 'error');
-  } finally {
-    if (btn) btn.disabled = false;
-    if (btnText) btnText.innerText = 'Aktivasi Netflix Premium';
-  }
-}
-
-// ====== APK MOD ======
 function updateApkQuotaDisplay() {
   const el = document.getElementById('apk-quota-display');
   if (el) {
@@ -2350,7 +2184,7 @@ async function loadApkMods() {
       cachedApkMods = items;
       container.innerHTML = items.map(([id, item]) => {
         const isSelected = selectedApkId === id;
-        return '<div class="opt-row apk ' + (isSelected ? 'selected' : '') + '" data-apk-id="' + id + '" onclick="selectApkMod(\\'' + id + '\\')"><div><div style="font-weight:700; font-size:12.5px;">📱 ' + escapeHtml(item.name) + '</div><div style="font-size:10px; color:var(--text-2);">' + escapeHtml(item.description || 'APK MOD') + '</div></div><span style="font-size:11px; color:var(--ok); font-weight:700;">1 Q</span></div>';
+        return '<div class="opt-row apk ' + (isSelected ? 'selected' : '') + '" data-apk-id="' + escapeHtml(id) + '" onclick="selectApkMod(this.getAttribute(\\'data-apk-id\\'))"><div><div style="font-weight:700; font-size:12.5px;">📱 ' + escapeHtml(item.name) + '</div><div style="font-size:10px; color:var(--text-2);">' + escapeHtml(item.description || 'APK MOD') + '</div></div><span style="font-size:11px; color:var(--ok); font-weight:700;">1 Q</span></div>';
       }).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
@@ -2358,7 +2192,7 @@ async function loadApkMods() {
 
 function selectApkMod(apkId) {
   selectedApkId = apkId;
-  document.querySelectorAll('.opt-row[data-apk-id]').forEach(el => { el.classList.toggle('selected', el.dataset.apkId === apkId); });
+  document.querySelectorAll('.opt-row[data-apk-id]').forEach(el => { el.classList.toggle('selected', el.getAttribute('data-apk-id') === apkId); });
   const item = cachedApkMods.find(([id]) => id === apkId);
   if (item) showToast('Dipilih: ' + item[1].name, 'apk');
 }
@@ -2373,33 +2207,26 @@ async function handleGenerateApk() {
   const statusText = document.getElementById('apk-status-text');
   const logText = document.getElementById('apk-log-text');
   const progressFill = document.getElementById('apk-progress-fill');
-  if (btn) btn.disabled = true;
-  if (btnText) btnText.innerText = 'Memproses...';
-  if (loadingEl) loadingEl.classList.remove('hide');
-  if (progressFill) progressFill.style.width = '0%';
-  if (statusText) statusText.innerText = 'Cek kuota...';
-  if (logText) logText.innerText = 'Checking...';
+  btn.disabled = true; btnText.innerText = 'Memproses...';
+  loadingEl.classList.remove('hide'); progressFill.style.width = '0%';
+  statusText.innerText = 'Cek kuota...'; logText.innerText = 'Checking...';
   try {
     const quotaRes = await fetch('/api/apk/check-quota?username=' + encodeURIComponent(loggedInUsername));
     const quotaData = await quotaRes.json();
     if (!quotaData.success) throw new Error(quotaData.message || 'Gagal');
     if (!quotaData.allowed) throw new Error(quotaData.message || 'Quota habis!');
-    if (statusText) statusText.innerText = 'Ambil link...';
-    if (logText) logText.innerText = 'Fetching...';
-    if (progressFill) progressFill.style.width = '50%';
+    statusText.innerText = 'Ambil link...'; logText.innerText = 'Fetching...'; progressFill.style.width = '50%';
     const reqRes = await fetch('/api/apk/request', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, apkId: selectedApkId }) });
     const reqData = await reqRes.json();
-    if (progressFill) progressFill.style.width = '80%';
+    progressFill.style.width = '80%';
     if (reqData.success && reqData.result) {
-      if (progressFill) progressFill.style.width = '100%';
-      if (statusText) statusText.innerText = '✅ Berhasil!';
-      if (logText) logText.innerText = 'Success';
+      progressFill.style.width = '100%'; statusText.innerText = '✅ Berhasil!'; logText.innerText = 'Success';
       addApkResult(reqData.result);
       if (reqData.quotaInfo) { userQuotaData.usedQuota = reqData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(reqData.quotaInfo); updateApkQuotaDisplay(); }
       if (reqData.orderId) showToast('✅ Order ID: ' + reqData.orderId, 'order', 5000);
       else showToast('Link berhasil!', 'apk');
       loadApkHistory(true);
-      setTimeout(() => { if (loadingEl) loadingEl.classList.add('hide'); }, 2000);
+      setTimeout(() => loadingEl.classList.add('hide'), 2000);
     } else {
       if (reqData.refilled) showToast(reqData.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
       else showToast(reqData.message || 'Gagal', 'error');
@@ -2408,27 +2235,28 @@ async function handleGenerateApk() {
       throw new Error(reqData.message || 'Gagal');
     }
   } catch (err) {
-    if (statusText) statusText.innerText = '❌ Gagal';
-    if (logText) logText.innerText = err.message;
+    statusText.innerText = '❌ Gagal'; logText.innerText = err.message;
     if (!err.message.includes('dikembalikan')) showToast(err.message, 'error');
-    setTimeout(() => { if (loadingEl) loadingEl.classList.add('hide'); }, 3000);
-  } finally { 
-    if (btn) btn.disabled = false;
-    if (btnText) btnText.innerText = 'Dapatkan Link'; 
-  }
+    setTimeout(() => loadingEl.classList.add('hide'), 3000);
+  } finally { btn.disabled = false; btnText.innerText = 'Dapatkan Link'; }
 }
 
-function addApkResult(result) { apkResults.unshift(result); renderApkResults(); const el = document.getElementById('apk-results-container'); if (el) el.classList.remove('hide'); }
+function addApkResult(result) { apkResults.unshift(result); renderApkResults(); document.getElementById('apk-results-container').classList.remove('hide'); }
 
 function renderApkResults() {
   const container = document.getElementById('apk-results-list');
   if (!container) return;
   if (apkResults.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Belum ada</p>'; return; }
-  container.innerHTML = apkResults.map((r, i) => '<div class="hist-item" style="border-color:rgba(74,222,128,0.25);"><div style="display:flex; justify-content:space-between; margin-bottom:7px;"><span style="font-size:11.5px; font-weight:700; color:var(--ok);">#' + (apkResults.length - i) + ' • ' + escapeHtml(r.name) + '</span><span class="badge badge-ok" style="font-size:9px;">APK</span></div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700; margin-bottom:4px;">Link</div><div class="link-line" style="margin-bottom:6px;" onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.link) + '</div><button onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')" class="btn btn-apk btn-sm" style="width:100%;">Copy Link</button></div>').join('');
+  container.innerHTML = apkResults.map((r, i) =>
+    '<div class="hist-item" style="border-color:rgba(74,222,128,0.25);">' +
+    '<div style="display:flex; justify-content:space-between; margin-bottom:7px;"><span style="font-size:11.5px; font-weight:700; color:var(--ok);">#' + (apkResults.length - i) + ' • ' + escapeHtml(r.name) + '</span><span class="badge badge-ok" style="font-size:9px;">APK</span></div>' +
+    '<div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700; margin-bottom:4px;">Link</div>' +
+    '<div class="link-line" style="margin-bottom:6px;" data-link="' + escapeHtml(r.link) + '" onclick="safeCopy(this.getAttribute(\\'data-link\\'))">' + escapeHtml(r.link) + '</div>' +
+    '<button data-link="' + escapeHtml(r.link) + '" onclick="safeCopy(this.getAttribute(\\'data-link\\'))" class="btn btn-apk btn-sm" style="width:100%;">Copy Link</button></div>'
+  ).join('');
 }
 
-function copyApkLink(link) { navigator.clipboard.writeText(link).then(() => showToast('Tersalin!', 'apk')).catch(() => showToast('Gagal', 'error')); }
-function clearApkResults() { apkResults = []; renderApkResults(); const el = document.getElementById('apk-results-container'); if (el) el.classList.add('hide'); }
+function clearApkResults() { apkResults = []; renderApkResults(); document.getElementById('apk-results-container').classList.add('hide'); }
 
 async function loadApkHistory(force = false) {
   if (!loggedInUsername) return;
@@ -2448,7 +2276,11 @@ function renderApkHistory(data) {
   const container = document.getElementById('apk-history-list');
   if (!container) return;
   if (data.success && data.results && data.results.length > 0) {
-    container.innerHTML = data.results.map(r => '<div class="hist-item" style="border-color:rgba(74,222,128,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--ok);">' + escapeHtml(r.name) + '</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div class="link-line" style="margin-top:5px; font-size:10px;" onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.link) + '</div></div>').join('');
+    container.innerHTML = data.results.map(r =>
+      '<div class="hist-item" style="border-color:rgba(74,222,128,0.2);">' +
+      '<div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--ok);">' + escapeHtml(r.name) + '</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div>' +
+      '<div class="link-line" style="margin-top:5px; font-size:10px;" data-link="' + escapeHtml(r.link) + '" onclick="safeCopy(this.getAttribute(\\'data-link\\'))">' + escapeHtml(r.link) + '</div></div>'
+    ).join('');
   } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
 }
 
@@ -2462,17 +2294,44 @@ async function loadAdminApkList() {
     const data = await res.json();
     if (data.success && data.items && Object.keys(data.items).length > 0) {
       const items = Object.entries(data.items).sort((a,b) => (a[1].order||0) - (b[1].order||0));
-      container.innerHTML = items.map(([id, item]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700; color:var(--ok);">' + escapeHtml(item.name) + '</div><div style="font-size:9px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(item.link) + '</div></div><div style="display:flex; gap:3px; flex-shrink:0;"><button onclick="editApkMod(\\'' + id + '\\', \\'' + encodeURIComponent(item.name) + '\\', \\'' + encodeURIComponent(item.link) + '\\', \\'' + encodeURIComponent(item.description || '') + '\\')" class="btn btn-ghost btn-xs">E</button><button onclick="toggleApkMod(\\'' + id + '\\', ' + (item.active !== false) + ')" class="btn btn-ghost btn-xs">' + (item.active !== false ? 'O' : 'X') + '</button><button onclick="deleteApkMod(\\'' + id + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
+      container.innerHTML = items.map(([id, item]) =>
+        '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;">' +
+        '<div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700; color:var(--ok);">' + escapeHtml(item.name) + '</div><div style="font-size:9px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(item.link) + '</div></div>' +
+        '<div style="display:flex; gap:3px; flex-shrink:0;">' +
+        '<button data-id="' + escapeHtml(id) + '" data-name="' + escapeHtml(item.name) + '" data-link="' + escapeHtml(item.link) + '" data-desc="' + escapeHtml(item.description||'') + '" onclick="editApkModFromBtn(this)" class="btn btn-ghost btn-xs">E</button>' +
+        '<button data-id="' + escapeHtml(id) + '" data-active="' + (item.active !== false ? '1' : '0') + '" onclick="toggleApkModFromBtn(this)" class="btn btn-ghost btn-xs">' + (item.active !== false ? 'O' : 'X') + '</button>' +
+        '<button data-id="' + escapeHtml(id) + '" onclick="deleteApkModFromBtn(this)" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button>' +
+        '</div></div>'
+      ).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:6px;">Gagal</p>'; }
 }
 
+function editApkModFromBtn(btn) {
+  const id = btn.getAttribute('data-id');
+  const name = btn.getAttribute('data-name');
+  const link = btn.getAttribute('data-link');
+  const desc = btn.getAttribute('data-desc');
+  document.getElementById('apk-edit-id').value = id;
+  document.getElementById('apk-name-input').value = name;
+  document.getElementById('apk-link-input').value = link;
+  document.getElementById('apk-desc-input').value = desc;
+  document.getElementById('apk-submit-btn').innerText = 'Perbarui';
+  document.getElementById('apk-cancel-btn').classList.remove('hide');
+}
+function toggleApkModFromBtn(btn) {
+  const id = btn.getAttribute('data-id');
+  const active = btn.getAttribute('data-active') === '1';
+  toggleApkMod(id, active);
+}
+function deleteApkModFromBtn(btn) { deleteApkMod(btn.getAttribute('data-id')); }
+
 async function handleSaveApkMod() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
-  const editId = document.getElementById('apk-edit-id')?.value || '';
-  const name = document.getElementById('apk-name-input')?.value?.trim() || '';
-  const link = document.getElementById('apk-link-input')?.value?.trim() || '';
-  const description = document.getElementById('apk-desc-input')?.value?.trim() || '';
+  const editId = document.getElementById('apk-edit-id').value;
+  const name = document.getElementById('apk-name-input').value.trim();
+  const link = document.getElementById('apk-link-input').value.trim();
+  const description = document.getElementById('apk-desc-input').value.trim();
   if (!name || !link) return showToast('Lengkapi!', 'error');
   if (!link.startsWith('http://') && !link.startsWith('https://')) return showToast('Link harus http/https', 'error');
   try {
@@ -2483,34 +2342,13 @@ async function handleSaveApkMod() {
   } catch(e) { showToast('Gagal', 'error'); }
 }
 
-function editApkMod(id, encName, encLink, encDesc) {
-  const editId = document.getElementById('apk-edit-id');
-  const nameInput = document.getElementById('apk-name-input');
-  const linkInput = document.getElementById('apk-link-input');
-  const descInput = document.getElementById('apk-desc-input');
-  const submitBtn = document.getElementById('apk-submit-btn');
-  const cancelBtn = document.getElementById('apk-cancel-btn');
-  if (editId) editId.value = id;
-  if (nameInput) nameInput.value = decodeURIComponent(encName);
-  if (linkInput) linkInput.value = decodeURIComponent(encLink);
-  if (descInput) descInput.value = decodeURIComponent(encDesc || '');
-  if (submitBtn) submitBtn.innerText = 'Perbarui';
-  if (cancelBtn) cancelBtn.classList.remove('hide');
-}
-
 function resetApkForm() {
-  const editId = document.getElementById('apk-edit-id');
-  const nameInput = document.getElementById('apk-name-input');
-  const linkInput = document.getElementById('apk-link-input');
-  const descInput = document.getElementById('apk-desc-input');
-  const submitBtn = document.getElementById('apk-submit-btn');
-  const cancelBtn = document.getElementById('apk-cancel-btn');
-  if (editId) editId.value = '';
-  if (nameInput) nameInput.value = '';
-  if (linkInput) linkInput.value = '';
-  if (descInput) descInput.value = '';
-  if (submitBtn) submitBtn.innerText = 'Tambah APK';
-  if (cancelBtn) cancelBtn.classList.add('hide');
+  document.getElementById('apk-edit-id').value = '';
+  document.getElementById('apk-name-input').value = '';
+  document.getElementById('apk-link-input').value = '';
+  document.getElementById('apk-desc-input').value = '';
+  document.getElementById('apk-submit-btn').innerText = 'Tambah APK';
+  document.getElementById('apk-cancel-btn').classList.add('hide');
 }
 
 async function toggleApkMod(id, currentActive) {
@@ -2530,7 +2368,6 @@ async function deleteApkMod(id) {
   } catch(e) {}
 }
 
-// ====== SERVER STATUS ======
 async function fetchServerStatus(force = false) {
   if (!isPageVisible && !force) return;
   const now = Date.now();
@@ -2560,8 +2397,8 @@ function updateStatusUI(status) {
   const txt = document.getElementById('server-status-text');
   const banner = document.getElementById('offline-banner');
   if (!ind) return;
-  if (status === 'online') { ind.className = 'badge badge-ok'; if (dot) dot.className = 'online-dot'; if (txt) txt.innerText = 'Online'; if (banner) banner.classList.add('hide'); }
-  else { ind.className = 'badge badge-err'; if (dot) { dot.style.background = 'var(--err)'; dot.style.boxShadow = 'none'; dot.style.animation = 'none'; } if (txt) txt.innerText = 'Offline'; if (!isAdminUser && banner) banner.classList.remove('hide'); }
+  if (status === 'online') { ind.className = 'badge badge-ok'; dot.className = 'online-dot'; dot.style.background=''; dot.style.boxShadow=''; dot.style.animation=''; txt.innerText = 'Online'; if (banner) banner.classList.add('hide'); }
+  else { ind.className = 'badge badge-err'; dot.style.background = 'var(--err)'; dot.style.boxShadow = 'none'; dot.style.animation = 'none'; txt.innerText = 'Offline'; if (banner && !isAdminUser) banner.classList.remove('hide'); }
 }
 
 function startPolling() {
@@ -2571,7 +2408,11 @@ function startPolling() {
   videoPollInterval = setInterval(() => { if (isPageVisible) fetchFeaturedVideo(); }, CACHE_DURATION.video);
 }
 
-// ====== AUTH ======
+fetchServerStatus();
+fetchFeaturedVideo();
+startPolling();
+fetchOnlineCount();
+
 function switchAuthTab(mode) {
   currentAuthMode = mode;
   const loginBtn = document.getElementById('tab-login-btn');
@@ -2580,61 +2421,39 @@ function switchAuthTab(mode) {
   const emailField = document.getElementById('email-field-container');
   const btnText = document.getElementById('auth-btn-text');
   const formContainer = document.getElementById('auth-form-container');
-  
-  if (formContainer) {
-    formContainer.style.animation = 'none';
-    formContainer.offsetHeight;
-    formContainer.style.animation = 'fadeInScale 0.3s ease-out forwards';
-  }
-
+  formContainer.style.animation = 'none';
+  formContainer.offsetHeight;
+  formContainer.style.animation = 'fadeInScale 0.3s ease-out forwards';
   if (mode === 'login') {
-    if (ind) ind.style.transform = 'translateX(0%)';
-    if (loginBtn) loginBtn.style.color = 'white';
-    if (regBtn) regBtn.style.color = 'var(--text-1)';
-    if (emailField) emailField.classList.add('hide');
-    if (btnText) btnText.innerText = 'Masuk';
+    ind.style.transform = 'translateX(0%)'; loginBtn.style.color = 'white'; regBtn.style.color = 'var(--text-1)';
+    emailField.classList.add('hide'); btnText.innerText = 'Masuk';
   } else {
-    if (ind) ind.style.transform = 'translateX(100%)';
-    if (regBtn) regBtn.style.color = 'white';
-    if (loginBtn) loginBtn.style.color = 'var(--text-1)';
-    if (emailField) emailField.classList.remove('hide');
-    if (btnText) btnText.innerText = 'Daftar';
+    ind.style.transform = 'translateX(100%)'; regBtn.style.color = 'white'; loginBtn.style.color = 'var(--text-1)';
+    emailField.classList.remove('hide'); btnText.innerText = 'Daftar';
   }
 }
 
 async function handleAuthAction() {
-  const username = document.getElementById('auth-username')?.value?.trim();
-  const password = document.getElementById('auth-password')?.value?.trim();
-  const email = document.getElementById('auth-email')?.value?.trim();
+  const username = document.getElementById('auth-username').value.trim();
+  const password = document.getElementById('auth-password').value.trim();
+  const email = document.getElementById('auth-email').value.trim();
   const formContainer = document.getElementById('auth-form-container');
-  
   if (!username || !password) {
-    if (formContainer) {
-      formContainer.classList.add('shake-error');
-      setTimeout(() => formContainer.classList.remove('shake-error'), 500);
-    }
+    formContainer.classList.add('shake-error');
+    setTimeout(() => formContainer.classList.remove('shake-error'), 500);
     return showToast('Username dan password wajib!', 'error');
   }
-  
   let deviceToken = localStorage.getItem('am_device_token');
   if (currentAuthMode === 'register' && deviceToken) {
-    if (formContainer) {
-      formContainer.classList.add('shake-error');
-      setTimeout(() => formContainer.classList.remove('shake-error'), 500);
-    }
+    formContainer.classList.add('shake-error');
+    setTimeout(() => formContainer.classList.remove('shake-error'), 500);
     return showToast('Perangkat sudah terdaftar!', 'error');
   }
-  
   const btn = document.getElementById('auth-submit-btn');
-  const originalText = document.getElementById('auth-btn-text')?.innerText || 'Masuk';
-  
-  if (btn) {
-    btn.classList.add('btn-loading');
-    btn.disabled = true;
-  }
-  const btnText = document.getElementById('auth-btn-text');
-  if (btnText) btnText.innerText = '';
-  
+  const originalText = document.getElementById('auth-btn-text').innerText;
+  btn.classList.add('btn-loading');
+  btn.disabled = true;
+  document.getElementById('auth-btn-text').innerText = '';
   try {
     const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, email, deviceToken }) });
     const data = await res.json();
@@ -2642,33 +2461,26 @@ async function handleAuthAction() {
       if (currentAuthMode === 'register' && data.deviceToken) localStorage.setItem('am_device_token', data.deviceToken);
       if (data.token) { localStorage.setItem('authToken', data.token); localStorage.setItem('savedUsername', data.username); }
       showToast(data.message, 'success');
-      
-      const authView = document.getElementById('auth-view');
-      if (authView) {
-        authView.style.transition = 'opacity 0.3s';
-        authView.style.opacity = '0';
-        setTimeout(() => {
-          applySession(data);
-          authView.style.opacity = '1';
-        }, 300);
-      }
+      document.getElementById('auth-view').style.transition = 'opacity 0.3s';
+      document.getElementById('auth-view').style.opacity = '0';
+      setTimeout(() => {
+        applySession(data);
+        document.getElementById('auth-view').style.opacity = '1';
+      }, 300);
     } else {
-      if (formContainer) {
-        formContainer.classList.add('shake-error');
-        setTimeout(() => formContainer.classList.remove('shake-error'), 500);
-      }
-      showToast(data.message, 'error');
-    }
-  } catch (err) { 
-    if (formContainer) {
       formContainer.classList.add('shake-error');
       setTimeout(() => formContainer.classList.remove('shake-error'), 500);
+      showToast(data.message, 'error');
     }
-    showToast('Kesalahan koneksi', 'error'); 
+  } catch (err) {
+    formContainer.classList.add('shake-error');
+    setTimeout(() => formContainer.classList.remove('shake-error'), 500);
+    showToast('Kesalahan koneksi', 'error');
   }
-  finally { 
-    if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
-    if (btnText) btnText.innerText = originalText;
+  finally {
+    btn.classList.remove('btn-loading');
+    document.getElementById('auth-btn-text').innerText = originalText;
+    btn.disabled = false;
   }
 }
 
@@ -2676,63 +2488,36 @@ function applySession(data) {
   loggedInUsername = data.username;
   isAdminUser = data.isAdmin;
   isVipUser = data.isVip || false;
-  
-  const authView = document.getElementById('auth-view');
-  const terminalView = document.getElementById('terminal-view');
-  const menuBtn = document.getElementById('menu-btn');
-  const loggedUsername = document.getElementById('logged-username');
-  const userAvatar = document.getElementById('user-avatar');
-  const drawerAvatar = document.getElementById('drawer-avatar');
-  const drawerUsername = document.getElementById('drawer-username');
-  const drawerRole = document.getElementById('drawer-role');
-  const drawerLogoutBtn = document.getElementById('drawer-logout-btn');
-  const profileUname = document.getElementById('profile-uname');
-  const profileRole = document.getElementById('profile-role');
-  const profileQuota = document.getElementById('profile-quota');
-  const roleBadge = document.getElementById('role-badge');
-  const navAdminBtn = document.getElementById('nav-admin-btn');
-  
-  if (authView) authView.classList.add('hide');
-  if (terminalView) terminalView.classList.remove('hide');
-  if (menuBtn) menuBtn.classList.remove('hide');
-  if (loggedUsername) loggedUsername.innerText = data.username;
-  
-  if (userAvatar) userAvatar.innerText = data.username.charAt(0).toUpperCase();
-  if (drawerAvatar) drawerAvatar.innerText = data.username.charAt(0).toUpperCase();
-  
-  if (drawerUsername) drawerUsername.innerText = data.username;
-  if (drawerRole) drawerRole.innerText = data.isAdmin ? 'Admin' : (data.isVip ? 'VIP Member' : 'User');
-  if (drawerLogoutBtn) drawerLogoutBtn.classList.remove('hide');
-  if (profileUname) profileUname.innerText = data.username;
-  if (profileRole) profileRole.innerText = data.isAdmin ? 'Admin' : (data.isVip ? 'VIP Member' : 'Standard');
-  if (profileQuota) profileQuota.innerText = data.isAdmin || data.isVip ? 'Unlimited' : (BASE_QUOTA + (data.bonusQuota || 0) - data.usedQuota);
-  
+  document.getElementById('auth-view').classList.add('hide');
+  document.getElementById('terminal-view').classList.remove('hide');
+  document.getElementById('menu-btn').classList.remove('hide');
+  document.getElementById('logged-username').innerText = data.username;
+  document.getElementById('user-avatar').innerText = data.username.charAt(0).toUpperCase();
+  document.getElementById('drawer-avatar').innerText = data.username.charAt(0).toUpperCase();
+  document.getElementById('drawer-username').innerText = data.username;
+  document.getElementById('drawer-role').innerText = data.isAdmin ? 'Admin' : (data.isVip ? 'VIP Member' : 'User');
+  document.getElementById('drawer-logout-btn').classList.remove('hide');
+  document.getElementById('profile-uname').innerText = data.username;
+  document.getElementById('profile-role').innerText = data.isAdmin ? 'Admin' : (data.isVip ? 'VIP Member' : 'Standard');
+  document.getElementById('profile-quota').innerText = data.isAdmin || data.isVip ? 'Unlimited' : (BASE_QUOTA + (data.bonusQuota || 0) - data.usedQuota);
   updateQuotaDisplay(data);
   checkVipStatus(data);
   loadUserAnnouncements();
-  loadVerifiedEmails();
-  loadActiveRedeems();
+  loadVerifiedEmails(true);
+  loadActiveRedeems(true);
   updateStatusUI(data.serverStatus);
   fetchFeaturedVideo(true);
   updateNetflixQuotaDisplay();
   updateApkQuotaDisplay();
   updateMailQuotaDisplay();
   startOnlineTracking();
-  
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   loadGlobalChat();
   chatRefreshInterval = setInterval(() => { if (!isPageVisible) return; if (currentView !== 'chat') checkNewChatMessages(); else loadGlobalChat(); }, CACHE_DURATION.chat);
-  
-  if (data.isAdmin) { 
-    if (roleBadge) { roleBadge.className = 'badge badge-warn'; roleBadge.innerText = '👑 Admin'; }
-    if (navAdminBtn) navAdminBtn.classList.remove('hide'); 
-  }
-  else if (data.isVip) { 
-    if (roleBadge) { roleBadge.className = 'badge badge-accent'; roleBadge.innerText = '⭐ VIP'; }
-  }
-  else { 
-    if (roleBadge) { roleBadge.className = 'badge badge-muted'; roleBadge.innerText = 'User'; }
-  }
+  const roleBadge = document.getElementById('role-badge');
+  if (data.isAdmin) { roleBadge.className = 'badge badge-warn'; roleBadge.innerText = '👑 Admin'; document.getElementById('nav-admin-btn').classList.remove('hide'); }
+  else if (data.isVip) { roleBadge.className = 'badge badge-accent'; roleBadge.innerText = '⭐ VIP'; }
+  else { roleBadge.className = 'badge badge-muted'; roleBadge.innerText = 'User'; }
 }
 
 async function checkSavedSession() {
@@ -2745,18 +2530,17 @@ async function checkSavedSession() {
     if (data.success) applySession(data);
   } catch (e) {}
 }
+checkSavedSession();
 
-// ====== REDEEM ======
 async function handleRedeemCodeMain() {
-  const input = document.getElementById('redeem-code-input-main');
-  const code = input?.value?.trim()?.toUpperCase();
+  const code = document.getElementById('redeem-code-input-main').value.trim().toUpperCase();
   if (!code) return showToast('Masukkan kode!', 'error');
   try {
     const res = await fetch('/api/redeem', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, code }) });
     const data = await res.json();
     if (data.success) {
       showToast(data.message, 'success');
-      if (input) input.value = '';
+      document.getElementById('redeem-code-input-main').value = '';
       updateQuotaDisplay(data); updateNetflixQuotaDisplay(); updateApkQuotaDisplay(); updateMailQuotaDisplay();
       loadVerifiedEmails(true); loadActiveRedeems(true);
     } else showToast(data.message, 'error');
@@ -2789,19 +2573,34 @@ function renderActiveRedeems(payload) {
       const quotaPerUser = val.quotaPerUser || 1;
       const hasClaimed = claimedRedeemCodes[code] === true;
       if (remainingClaims <= 0) return '';
-      const buttonHtml = hasClaimed ? '<span class="badge badge-ok">✓ Sudah</span>' : '<button onclick="quickClaimRedeem(\\'' + escapeHtml(code) + '\\')" class="btn btn-info btn-xs">Klaim</button>';
-      return '<div style="padding:9px 11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div class="mono" style="font-size:11.5px; font-weight:700; color:var(--info);">' + escapeHtml(code) + '</div><div style="font-size:9.5px; color:var(--text-2);">' + quotaPerUser + ' kuota • ' + remainingClaims + '/' + val.maxClaims + ' sisa</div></div>' + buttonHtml + '</div><div class="prog" style="height:4px;"><div class="prog-fill" style="width:' + Math.round((val.claimedCount / val.maxClaims) * 100) + '%; background:var(--info);"></div></div></div>';
+      const buttonHtml = hasClaimed
+        ? '<span class="badge badge-ok">✓ Sudah</span>'
+        : '<button data-code="' + escapeHtml(code) + '" onclick="claimRedeemBtn(this)" class="btn btn-info btn-xs">Klaim</button>';
+      return '<div style="padding:9px 11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px;">' +
+        '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;">' +
+        '<div style="flex:1; min-width:0;"><div class="mono" style="font-size:11.5px; font-weight:700; color:var(--info);">' + escapeHtml(code) + '</div><div style="font-size:9.5px; color:var(--text-2);">' + quotaPerUser + ' kuota • ' + remainingClaims + '/' + val.maxClaims + ' sisa</div></div>' + buttonHtml +
+        '</div><div class="prog" style="height:4px;"><div class="prog-fill" style="width:' + Math.round((val.claimedCount / val.maxClaims) * 100) + '%; background:var(--info);"></div></div></div>';
     }).filter(Boolean).join('') || '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Tidak ada</p>';
   } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Tidak ada kode aktif</p>';
 }
 
-function quickClaimRedeem(code) {
-  const input = document.getElementById('redeem-code-input-main');
-  if (input) { input.value = code; input.focus(); }
-  showToast('Kode siap diklaim', 'info');
+// Klaim redeem langsung dari tombol (fix: tidak sekadar isi input)
+async function claimRedeemBtn(btn) {
+  const code = btn.getAttribute('data-code');
+  if (!code) return;
+  if (!loggedInUsername) return showToast('Harus login!', 'error');
+  btn.disabled = true; btn.innerText = '...';
+  try {
+    const res = await fetch('/api/redeem', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, code }) });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success');
+      updateQuotaDisplay(data); updateNetflixQuotaDisplay(); updateApkQuotaDisplay(); updateMailQuotaDisplay();
+      loadVerifiedEmails(true); loadActiveRedeems(true);
+    } else { showToast(data.message, 'error'); btn.disabled = false; btn.innerText = 'Klaim'; }
+  } catch(e) { showToast('Gagal', 'error'); btn.disabled = false; btn.innerText = 'Klaim'; }
 }
 
-// ====== VIP SHOP ======
 async function loadVipShopItems() {
   const container = document.getElementById('vip-shop-list');
   if (!container) return;
@@ -2814,70 +2613,56 @@ async function loadVipShopItems() {
       cachedVipShopItems = items;
       container.innerHTML = items.map(([id, item]) => {
         const priceFormatted = 'Rp ' + Number(item.price).toLocaleString('id-ID');
-        return '<div class="shop-item" onclick="selectVipItem(\\'' + escapeHtml(id) + '\\')"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:7px;"><div style="display:flex; align-items:center; gap:10px;"><div style="width:34px; height:34px; border-radius:9px; background:var(--warn-soft); display:flex; align-items:center; justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div><div><div style="font-weight:700; font-size:13px;">' + escapeHtml(item.name) + '</div><div style="font-size:10.5px; color:var(--warn);">⭐ ' + item.days + ' hari</div></div></div><div class="mono" style="font-size:14px; font-weight:800; color:var(--warn);">' + priceFormatted + '</div></div><button class="btn btn-warn btn-sm" style="width:100%;">Pilih & Bayar</button></div>';
+        return '<div class="shop-item" data-vip-id="' + escapeHtml(id) + '" onclick="selectVipItemFromBtn(this)"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:7px;"><div style="display:flex; align-items:center; gap:10px;"><div style="width:34px; height:34px; border-radius:9px; background:var(--warn-soft); display:flex; align-items:center; justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div><div><div style="font-weight:700; font-size:13px;">' + escapeHtml(item.name) + '</div><div style="font-size:10.5px; color:var(--warn);">⭐ ' + item.days + ' hari</div></div></div><div class="mono" style="font-size:14px; font-weight:800; color:var(--warn);">' + priceFormatted + '</div></div><button class="btn btn-warn btn-sm" style="width:100%;">Pilih & Bayar</button></div>';
       }).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
 }
 
+function selectVipItemFromBtn(el) { selectVipItem(el.getAttribute('data-vip-id')); }
+
 function selectVipItem(itemId) {
   const item = cachedVipShopItems.find(([id]) => id === itemId);
   if (!item) return showToast('Tidak ditemukan', 'error');
   const [id, data] = item;
-  const fields = {
-    'selected-vip-id': id,
-    'selected-vip-price': data.price,
-    'selected-vip-days': data.days,
-    'selected-vip-name': data.name
-  };
-  Object.entries(fields).forEach(([fid, val]) => { const el = document.getElementById(fid); if (el) el.value = val; });
-  const display = document.getElementById('selected-vip-display');
-  const priceDisplay = document.getElementById('selected-vip-price-display');
-  const danaNum = document.getElementById('dana-number-display');
-  const danaOwner = document.getElementById('dana-owner-display');
-  const purchaseForm = document.getElementById('vip-purchase-form');
-  const proofSection = document.getElementById('payment-proof-section');
-  const statusBox = document.getElementById('transaction-status-box');
-  const topupId = document.getElementById('topup-id-display');
-  const topupStatus = document.getElementById('topup-status-display');
-  
-  if (display) display.innerText = data.name + ' (' + data.days + ' hari)';
-  if (priceDisplay) priceDisplay.innerText = 'Rp ' + Number(data.price).toLocaleString('id-ID');
-  if (danaNum) danaNum.innerText = DANA_ADMIN_NUMBER;
-  if (danaOwner) danaOwner.innerText = 'a.n. ' + DANA_ADMIN_NAME;
-  if (purchaseForm) purchaseForm.classList.remove('hide');
-  if (proofSection) proofSection.classList.add('hide');
-  if (statusBox) statusBox.classList.add('hide');
-  if (topupId) topupId.innerText = '-';
-  if (topupStatus) topupStatus.innerHTML = '<span class="badge badge-warn">Menunggu</span>';
-  if (purchaseForm) purchaseForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('selected-vip-id').value = id;
+  document.getElementById('selected-vip-price').value = data.price;
+  document.getElementById('selected-vip-days').value = data.days;
+  document.getElementById('selected-vip-name').value = data.name;
+  document.getElementById('selected-vip-display').innerText = data.name + ' (' + data.days + ' hari)';
+  document.getElementById('selected-vip-price-display').innerText = 'Rp ' + Number(data.price).toLocaleString('id-ID');
+  document.getElementById('dana-number-display').innerText = DANA_ADMIN_NUMBER;
+  document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
+  document.getElementById('vip-purchase-form').classList.remove('hide');
+  document.getElementById('payment-proof-section').classList.add('hide');
+  document.getElementById('transaction-status-box').classList.add('hide');
+  document.getElementById('topup-id-display').innerText = '-';
+  document.getElementById('topup-status-display').innerHTML = '<span class="badge badge-warn">Menunggu</span>';
+  document.getElementById('vip-purchase-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
   showToast('Dipilih: ' + data.name, 'info');
 }
 
 async function handleCreatePayment() {
-  const vipId = document.getElementById('selected-vip-id')?.value;
-  const vipName = document.getElementById('selected-vip-name')?.value;
-  const vipPrice = document.getElementById('selected-vip-price')?.value;
-  const vipDays = document.getElementById('selected-vip-days')?.value;
+  const vipId = document.getElementById('selected-vip-id').value;
+  const vipName = document.getElementById('selected-vip-name').value;
+  const vipPrice = document.getElementById('selected-vip-price').value;
+  const vipDays = document.getElementById('selected-vip-days').value;
   if (!vipId) return showToast('Pilih layanan dulu!', 'error');
   const btn = document.getElementById('btn-create-payment');
-  if (btn) { btn.disabled = true; btn.innerText = 'Memproses...'; }
+  btn.disabled = true; btn.innerText = 'Memproses...';
   try {
     const res = await fetch('/api/transaction/create', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, vipId, vipName, vipPrice: parseInt(vipPrice), vipDays: parseInt(vipDays) }) });
     const data = await res.json();
     if (data.success) {
       currentTransactionId = data.transactionId;
-      const topupId = document.getElementById('topup-id-display');
-      const topupStatus = document.getElementById('topup-status-display');
-      const proofSection = document.getElementById('payment-proof-section');
-      if (topupId) topupId.innerText = data.transactionId;
-      if (topupStatus) topupStatus.innerHTML = '<span class="badge badge-warn">Menunggu</span>';
-      if (proofSection) proofSection.classList.remove('hide');
+      document.getElementById('topup-id-display').innerText = data.transactionId;
+      document.getElementById('topup-status-display').innerHTML = '<span class="badge badge-warn">Menunggu</span>';
+      document.getElementById('payment-proof-section').classList.remove('hide');
       showToast('Pesanan dibuat! Transfer via DANA & upload bukti.', 'success');
       loadUserTransactions();
     } else showToast(data.message || 'Gagal', 'error');
   } catch(e) { showToast('Kesalahan koneksi', 'error'); }
-  finally { if (btn) { btn.disabled = false; btn.innerHTML = '💳 Buat Pesanan & Bayar'; } }
+  finally { btn.disabled = false; btn.innerHTML = '💳 Buat Pesanan & Bayar'; }
 }
 
 function handlePaymentProofSelect(event) {
@@ -2886,10 +2671,8 @@ function handlePaymentProofSelect(event) {
   if (!file.type.startsWith('image/')) return showToast('Harus gambar!', 'error');
   if (file.size > 5 * 1024 * 1024) return showToast('Max 5MB', 'error');
   selectedPaymentProofFile = file;
-  const proofInfo = document.getElementById('proof-file-info');
-  const btnUpload = document.getElementById('btn-upload-proof');
-  if (proofInfo) proofInfo.innerText = '📎 ' + file.name + ' (' + (file.size/1024).toFixed(0) + ' KB)';
-  if (btnUpload) btnUpload.disabled = false;
+  document.getElementById('proof-file-info').innerText = '📎 ' + file.name + ' (' + (file.size/1024).toFixed(0) + ' KB)';
+  document.getElementById('btn-upload-proof').disabled = false;
   showToast('Siap upload', 'info');
 }
 
@@ -2897,7 +2680,7 @@ async function handleUploadProof() {
   if (!currentTransactionId) return showToast('Buat pesanan dulu!', 'error');
   if (!selectedPaymentProofFile) return showToast('Pilih bukti!', 'error');
   const btn = document.getElementById('btn-upload-proof');
-  if (btn) { btn.disabled = true; btn.innerText = 'Mengirim...'; }
+  btn.disabled = true; btn.innerText = 'Mengirim...';
   try {
     const reader = new FileReader();
     reader.onload = async () => {
@@ -2906,23 +2689,18 @@ async function handleUploadProof() {
       const data = await res.json();
       if (data.success) {
         showToast('Bukti terkirim!', 'success');
-        const proofSection = document.getElementById('payment-proof-section');
-        const statusBox = document.getElementById('transaction-status-box');
-        const statusContent = document.getElementById('transaction-status-content');
-        if (proofSection) proofSection.classList.add('hide');
-        if (statusBox) statusBox.classList.remove('hide');
-        if (statusContent) statusContent.innerHTML = '<div style="display:flex; align-items:center; gap:7px;"><span class="badge badge-info">Diproses</span><span style="font-size:11px; color:var(--text-1);">Menunggu verifikasi</span></div>';
+        document.getElementById('payment-proof-section').classList.add('hide');
+        document.getElementById('transaction-status-box').classList.remove('hide');
+        document.getElementById('transaction-status-content').innerHTML = '<div style="display:flex; align-items:center; gap:7px;"><span class="badge badge-info">Diproses</span><span style="font-size:11px; color:var(--text-1);">Menunggu verifikasi</span></div>';
         selectedPaymentProofFile = null;
-        const fileInput = document.getElementById('payment-proof-file');
-        const proofInfo = document.getElementById('proof-file-info');
-        if (fileInput) fileInput.value = '';
-        if (proofInfo) proofInfo.innerText = 'Klik untuk upload';
+        document.getElementById('payment-proof-file').value = '';
+        document.getElementById('proof-file-info').innerText = 'Klik untuk upload';
         loadUserTransactions();
       } else showToast(data.message || 'Gagal', 'error');
-      if (btn) { btn.disabled = false; btn.innerText = 'Kirim Bukti'; }
+      btn.disabled = false; btn.innerText = 'Kirim Bukti';
     };
     reader.readAsDataURL(selectedPaymentProofFile);
-  } catch(e) { showToast('Gagal', 'error'); if (btn) { btn.disabled = false; btn.innerText = 'Kirim Bukti'; } }
+  } catch(e) { showToast('Gagal', 'error'); btn.disabled = false; btn.innerText = 'Kirim Bukti'; }
 }
 
 async function loadUserTransactions() {
@@ -2944,10 +2722,9 @@ async function loadUserTransactions() {
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
 }
 
-// ====== FEATURE REQUESTS ======
 async function handleSubmitFeatureRequest() {
-  const title = document.getElementById('feature-request-title')?.value?.trim();
-  const description = document.getElementById('feature-request-desc')?.value?.trim();
+  const title = document.getElementById('feature-request-title').value.trim();
+  const description = document.getElementById('feature-request-desc').value.trim();
   if (!title || !description) return showToast('Lengkapi!', 'error');
   if (title.length < 3) return showToast('Judul min 3!', 'error');
   if (description.length < 10) return showToast('Deskripsi min 10!', 'error');
@@ -2956,10 +2733,8 @@ async function handleSubmitFeatureRequest() {
     const data = await res.json();
     if (data.success) {
       showToast('Request terkirim!', 'success');
-      const titleInput = document.getElementById('feature-request-title');
-      const descInput = document.getElementById('feature-request-desc');
-      if (titleInput) titleInput.value = '';
-      if (descInput) descInput.value = '';
+      document.getElementById('feature-request-title').value = '';
+      document.getElementById('feature-request-desc').value = '';
       loadUserFeatureRequests();
     } else showToast(data.message || 'Gagal', 'error');
   } catch(e) { showToast('Kesalahan koneksi', 'error'); }
@@ -2998,11 +2773,16 @@ async function loadAdminFeatureRequests() {
       container.innerHTML = sorted.map(req => {
         const statusBadge = req.status === 'approved' ? 'badge-ok' : req.status === 'rejected' ? 'badge-err' : 'badge-warn';
         const statusText = req.status === 'approved' ? 'Disetujui' : req.status === 'rejected' ? 'Ditolak' : 'Menunggu';
-        return '<div class="hist-item" style="border-color:rgba(74,222,128,0.2);"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11.5px; font-weight:700; color:var(--ok);">' + escapeHtml(req.title) + '</div><div style="font-size:9px; color:var(--text-2);">Dari: ' + escapeHtml(req.username) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="font-size:10.5px; color:var(--text-1); margin-bottom:5px;">' + escapeHtml(req.description) + '</div>' + (req.adminNote ? '<div style="font-size:9px; color:var(--warn); margin-bottom:5px;">Catatan: ' + escapeHtml(req.adminNote) + '</div>' : '') + '<div style="display:flex; gap:4px; margin-top:5px; padding-top:5px; border-top:1px solid var(--line);"><input type="text" id="admin-note-' + req.id + '" placeholder="Catatan..." class="inp" style="flex:1; padding:5px 8px; font-size:10.5px;"><button onclick="updateFeatureRequestStatus(\\'' + req.id + '\\', \\'approved\\')" class="btn btn-ok btn-xs">✓</button><button onclick="updateFeatureRequestStatus(\\'' + req.id + '\\', \\'rejected\\')" class="btn btn-err btn-xs">✗</button><button onclick="deleteFeatureRequest(\\'' + req.id + '\\')" class="btn btn-ghost btn-xs">🗑</button></div></div>';
+        return '<div class="hist-item" style="border-color:rgba(74,222,128,0.2);"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11.5px; font-weight:700; color:var(--ok);">' + escapeHtml(req.title) + '</div><div style="font-size:9px; color:var(--text-2);">Dari: ' + escapeHtml(req.username) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="font-size:10.5px; color:var(--text-1); margin-bottom:5px;">' + escapeHtml(req.description) + '</div>' + (req.adminNote ? '<div style="font-size:9px; color:var(--warn); margin-bottom:5px;">Catatan: ' + escapeHtml(req.adminNote) + '</div>' : '') + '<div style="display:flex; gap:4px; margin-top:5px; padding-top:5px; border-top:1px solid var(--line);"><input type="text" id="admin-note-' + escapeHtml(req.id) + '" placeholder="Catatan..." class="inp" style="flex:1; padding:5px 8px; font-size:10.5px;"><button data-reqid="' + escapeHtml(req.id) + '" data-status="approved" onclick="updateFeatureReqFromBtn(this)" class="btn btn-ok btn-xs">✓</button><button data-reqid="' + escapeHtml(req.id) + '" data-status="rejected" onclick="updateFeatureReqFromBtn(this)" class="btn btn-err btn-xs">✗</button><button data-reqid="' + escapeHtml(req.id) + '" onclick="deleteFeatureReqFromBtn(this)" class="btn btn-ghost btn-xs">🗑</button></div></div>';
       }).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
 }
+
+function updateFeatureReqFromBtn(btn) {
+  updateFeatureRequestStatus(btn.getAttribute('data-reqid'), btn.getAttribute('data-status'));
+}
+function deleteFeatureReqFromBtn(btn) { deleteFeatureRequest(btn.getAttribute('data-reqid')); }
 
 async function updateFeatureRequestStatus(reqId, status) {
   const noteInput = document.getElementById('admin-note-' + reqId);
@@ -3024,7 +2804,6 @@ async function deleteFeatureRequest(reqId) {
   } catch(e) {}
 }
 
-// ====== VIP SHOP ADMIN ======
 async function loadAdminVipShop() {
   if (!isAdminUser) return;
   const container = document.getElementById('admin-vip-shop-list');
@@ -3035,17 +2814,36 @@ async function loadAdminVipShop() {
     const data = await res.json();
     if (data.success && data.items && Object.keys(data.items).length > 0) {
       const items = Object.entries(data.items).sort((a,b) => (a[1].order||0) - (b[1].order||0));
-      container.innerHTML = items.map(([id, item]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700; color:var(--warn);">' + escapeHtml(item.name) + '</div><div style="font-size:9px; color:var(--text-2);">' + item.days + 'd • Rp ' + Number(item.price).toLocaleString('id-ID') + ' • ' + (item.active !== false ? '✅' : '❌') + '</div></div><div style="display:flex; gap:3px; flex-shrink:0;"><button onclick="editVipShopItem(\\'' + id + '\\', \\'' + encodeURIComponent(item.name) + '\\', ' + item.price + ', ' + item.days + ')" class="btn btn-ghost btn-xs">E</button><button onclick="toggleVipShopItem(\\'' + id + '\\', ' + (item.active !== false) + ')" class="btn btn-ghost btn-xs">' + (item.active !== false ? 'O' : 'X') + '</button><button onclick="deleteVipShopItem(\\'' + id + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
+      container.innerHTML = items.map(([id, item]) =>
+        '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;">' +
+        '<div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700; color:var(--warn);">' + escapeHtml(item.name) + '</div><div style="font-size:9px; color:var(--text-2);">' + item.days + 'd • Rp ' + Number(item.price).toLocaleString('id-ID') + ' • ' + (item.active !== false ? '✅' : '❌') + '</div></div>' +
+        '<div style="display:flex; gap:3px; flex-shrink:0;">' +
+        '<button data-id="' + escapeHtml(id) + '" data-name="' + escapeHtml(item.name) + '" data-price="' + item.price + '" data-days="' + item.days + '" onclick="editVipShopFromBtn(this)" class="btn btn-ghost btn-xs">E</button>' +
+        '<button data-id="' + escapeHtml(id) + '" data-active="' + (item.active !== false ? '1':'0') + '" onclick="toggleVipShopFromBtn(this)" class="btn btn-ghost btn-xs">' + (item.active !== false ? 'O' : 'X') + '</button>' +
+        '<button data-id="' + escapeHtml(id) + '" onclick="deleteVipShopFromBtn(this)" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button>' +
+        '</div></div>'
+      ).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:6px;">Gagal</p>'; }
 }
 
+function editVipShopFromBtn(btn) {
+  document.getElementById('vip-shop-edit-id').value = btn.getAttribute('data-id');
+  document.getElementById('vip-shop-name').value = btn.getAttribute('data-name');
+  document.getElementById('vip-shop-price').value = btn.getAttribute('data-price');
+  document.getElementById('vip-shop-days').value = btn.getAttribute('data-days');
+  document.getElementById('vip-shop-submit-btn').innerText = 'Perbarui';
+  document.getElementById('vip-shop-cancel-btn').classList.remove('hide');
+}
+function toggleVipShopFromBtn(btn) { toggleVipShopItem(btn.getAttribute('data-id'), btn.getAttribute('data-active') === '1'); }
+function deleteVipShopFromBtn(btn) { deleteVipShopItem(btn.getAttribute('data-id')); }
+
 async function handleSaveVipShop() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
-  const editId = document.getElementById('vip-shop-edit-id')?.value || '';
-  const name = document.getElementById('vip-shop-name')?.value?.trim() || '';
-  const price = parseInt(document.getElementById('vip-shop-price')?.value);
-  const days = parseInt(document.getElementById('vip-shop-days')?.value);
+  const editId = document.getElementById('vip-shop-edit-id').value;
+  const name = document.getElementById('vip-shop-name').value.trim();
+  const price = parseInt(document.getElementById('vip-shop-price').value);
+  const days = parseInt(document.getElementById('vip-shop-days').value);
   if (!name || isNaN(price) || isNaN(days)) return showToast('Lengkapi!', 'error');
   if (price < 1000) return showToast('Min Rp 1.000', 'error');
   if (days < 1) return showToast('Min 1 hari', 'error');
@@ -3057,28 +2855,13 @@ async function handleSaveVipShop() {
   } catch(e) { showToast('Gagal', 'error'); }
 }
 
-function editVipShopItem(id, encName, price, days) {
-  const editId = document.getElementById('vip-shop-edit-id');
-  const nameInput = document.getElementById('vip-shop-name');
-  const priceInput = document.getElementById('vip-shop-price');
-  const daysInput = document.getElementById('vip-shop-days');
-  const submitBtn = document.getElementById('vip-shop-submit-btn');
-  const cancelBtn = document.getElementById('vip-shop-cancel-btn');
-  if (editId) editId.value = id;
-  if (nameInput) nameInput.value = decodeURIComponent(encName);
-  if (priceInput) priceInput.value = price;
-  if (daysInput) daysInput.value = days;
-  if (submitBtn) submitBtn.innerText = 'Perbarui';
-  if (cancelBtn) cancelBtn.classList.remove('hide');
-}
-
 function resetVipShopForm() {
-  const fields = ['vip-shop-edit-id', 'vip-shop-name', 'vip-shop-price', 'vip-shop-days'];
-  fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  const submitBtn = document.getElementById('vip-shop-submit-btn');
-  const cancelBtn = document.getElementById('vip-shop-cancel-btn');
-  if (submitBtn) submitBtn.innerText = 'Tambah Layanan';
-  if (cancelBtn) cancelBtn.classList.add('hide');
+  document.getElementById('vip-shop-edit-id').value = '';
+  document.getElementById('vip-shop-name').value = '';
+  document.getElementById('vip-shop-price').value = '';
+  document.getElementById('vip-shop-days').value = '';
+  document.getElementById('vip-shop-submit-btn').innerText = 'Tambah Layanan';
+  document.getElementById('vip-shop-cancel-btn').classList.add('hide');
 }
 
 async function toggleVipShopItem(id, currentActive) {
@@ -3098,7 +2881,6 @@ async function deleteVipShopItem(id) {
   } catch(e) {}
 }
 
-// ====== ADMIN TRANSACTIONS ======
 async function loadAdminTransactions() {
   if (!isAdminUser) return;
   const container = document.getElementById('admin-transactions-list');
@@ -3115,11 +2897,20 @@ async function loadAdminTransactions() {
         const statusBadge = t.status === 'success' ? 'badge-ok' : t.status === 'failed' ? 'badge-err' : t.status === 'process' ? 'badge-info' : 'badge-warn';
         const statusText = t.status === 'success' ? '✓ Sukses' : t.status === 'failed' ? '✗ Gagal' : t.status === 'process' ? '⚙ Diproses' : '⏳ Menunggu';
         const priceFormatted = 'Rp ' + Number(t.vipPrice).toLocaleString('id-ID');
-        return '<div class="hist-item"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700;">' + escapeHtml(t.vipName) + ' <span style="font-size:9px; color:var(--text-2);">oleh ' + escapeHtml(t.username) + '</span></div><div class="mono" style="font-size:9px; color:var(--text-2);">' + escapeHtml(t.transactionId) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; margin-top:4px;"><span style="color:var(--warn); font-weight:700;">' + priceFormatted + '</span><span style="color:var(--text-2);">' + new Date(t.createdAt).toLocaleDateString('id-ID') + '</span></div>' + (t.proofImage ? '<img src="' + t.proofImage + '" alt="Bukti" style="max-width:100%; max-height:100px; border-radius:6px; margin-top:6px; cursor:pointer;" onclick="window.open(this.src)">' : '<div style="font-size:9px; color:var(--err); margin-top:4px;">Belum upload bukti</div>') + '<div style="display:flex; gap:4px; margin-top:6px; padding-top:6px; border-top:1px solid var(--line);">' + ((t.status === 'pending' || t.status === 'process') ? '<button onclick="confirmTransaction(\\'' + t.transactionId + '\\', \\'success\\')" class="btn btn-ok btn-xs" style="flex:1;">✓ Konfirmasi</button><button onclick="confirmTransaction(\\'' + t.transactionId + '\\', \\'failed\\')" class="btn btn-err btn-xs" style="flex:1;">✗ Tolak</button>' : '') + '<button onclick="deleteTransaction(\\'' + t.transactionId + '\\')" class="btn btn-ghost btn-xs">🗑</button></div></div>';
+        const proofHtml = t.proofImage
+          ? '<img src="' + t.proofImage + '" alt="Bukti" style="max-width:100%; max-height:100px; border-radius:6px; margin-top:6px; cursor:pointer;" onclick="window.open(this.src)">'
+          : '<div style="font-size:9px; color:var(--err); margin-top:4px;">Belum upload bukti</div>';
+        const actionHtml = (t.status === 'pending' || t.status === 'process')
+          ? '<button data-tid="' + escapeHtml(t.transactionId) + '" data-status="success" onclick="confirmTrxFromBtn(this)" class="btn btn-ok btn-xs" style="flex:1;">✓ Konfirmasi</button><button data-tid="' + escapeHtml(t.transactionId) + '" data-status="failed" onclick="confirmTrxFromBtn(this)" class="btn btn-err btn-xs" style="flex:1;">✗ Tolak</button>'
+          : '';
+        return '<div class="hist-item"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700;">' + escapeHtml(t.vipName) + ' <span style="font-size:9px; color:var(--text-2);">oleh ' + escapeHtml(t.username) + '</span></div><div class="mono" style="font-size:9px; color:var(--text-2);">' + escapeHtml(t.transactionId) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; margin-top:4px;"><span style="color:var(--warn); font-weight:700;">' + priceFormatted + '</span><span style="color:var(--text-2);">' + new Date(t.createdAt).toLocaleDateString('id-ID') + '</span></div>' + proofHtml + '<div style="display:flex; gap:4px; margin-top:6px; padding-top:6px; border-top:1px solid var(--line);">' + actionHtml + '<button data-tid="' + escapeHtml(t.transactionId) + '" onclick="deleteTrxFromBtn(this)" class="btn btn-ghost btn-xs">🗑</button></div></div>';
       }).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
 }
+
+function confirmTrxFromBtn(btn) { confirmTransaction(btn.getAttribute('data-tid'), btn.getAttribute('data-status')); }
+function deleteTrxFromBtn(btn) { deleteTransaction(btn.getAttribute('data-tid')); }
 
 async function confirmTransaction(transactionId, status) {
   const note = prompt('Catatan admin (opsional):') || '';
@@ -3140,11 +2931,10 @@ async function deleteTransaction(transactionId) {
   } catch(e) {}
 }
 
-// ====== PASSWORD CHANGE ======
 async function handleChangePassword() {
-  const oldPassword = document.getElementById('old-password-input')?.value;
-  const newPassword = document.getElementById('new-password-input')?.value;
-  const confirmPassword = document.getElementById('confirm-password-input')?.value;
+  const oldPassword = document.getElementById('old-password-input').value;
+  const newPassword = document.getElementById('new-password-input').value;
+  const confirmPassword = document.getElementById('confirm-password-input').value;
   if (!oldPassword || !newPassword || !confirmPassword) return showToast('Semua field wajib!', 'error');
   if (newPassword.length < 4) return showToast('Min 4 karakter!', 'error');
   if (newPassword !== confirmPassword) return showToast('Konfirmasi tidak cocok!', 'error');
@@ -3153,14 +2943,15 @@ async function handleChangePassword() {
     const data = await res.json();
     if (data.success) {
       showToast('Password diubah!', 'success');
-      const fields = ['old-password-input', 'new-password-input', 'confirm-password-input'];
-      fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      document.getElementById('old-password-input').value = '';
+      document.getElementById('new-password-input').value = '';
+      document.getElementById('confirm-password-input').value = '';
     } else showToast(data.message || 'Gagal', 'error');
   } catch(e) { showToast('Kesalahan koneksi', 'error'); }
 }
 
 async function triggerUpdateUsername() {
-  const newUsername = document.getElementById('new-username-input')?.value?.trim();
+  const newUsername = document.getElementById('new-username-input').value.trim();
   if (!newUsername) return showToast('Masukkan username baru!', 'error');
   try {
     const response = await fetch('/api/user/username', { method:'PUT', headers:{'Content-Type':'application/json', 'Authorization': 'Bearer ' + (localStorage.getItem('authToken') || '')}, body: JSON.stringify({ currentUsername: loggedInUsername, newUsername }) });
@@ -3169,19 +2960,14 @@ async function triggerUpdateUsername() {
       showToast('Username diubah!', 'success');
       loggedInUsername = result.newUsername;
       localStorage.setItem('savedUsername', loggedInUsername);
-      const loggedUname = document.getElementById('logged-username');
-      const profileUname = document.getElementById('profile-uname');
-      const drawerUsername = document.getElementById('drawer-username');
-      const newInput = document.getElementById('new-username-input');
-      if (loggedUname) loggedUname.innerText = loggedInUsername;
-      if (profileUname) profileUname.innerText = loggedInUsername;
-      if (drawerUsername) drawerUsername.innerText = loggedInUsername;
-      if (newInput) newInput.value = '';
+      document.getElementById('logged-username').innerText = loggedInUsername;
+      document.getElementById('profile-uname').innerText = loggedInUsername;
+      document.getElementById('drawer-username').innerText = loggedInUsername;
+      document.getElementById('new-username-input').value = '';
     } else showToast(result.message || 'Gagal', 'error');
   } catch (e) { showToast('Kesalahan jaringan', 'error'); }
 }
 
-// ====== VERIFIED EMAILS ======
 async function loadVerifiedEmails(force = false) {
   if (!loggedInUsername) return;
   const now = Date.now();
@@ -3210,8 +2996,7 @@ function renderVerifiedEmails(data) {
   }
   container.innerHTML = emails.map((email, idx) => {
     const isLatest = idx === emails.length - 1;
-    const safeEmail = email.replace(/'/g, "\\\\'");
-    return '<div style="padding:8px 11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px; display:flex; align-items:center; justify-content:space-between; gap:8px;"><div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;"><div style="width:28px; height:28px; border-radius:7px; background:rgba(96,165,250,0.15); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div><div style="min-width:0; flex:1;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(email) + '</div><div style="display:flex; align-items:center; gap:4px; margin-top:2px;"><span style="font-size:9px; color:var(--ok); font-weight:700;">●</span><span style="font-size:9px; color:var(--ok); font-weight:700;">Terverifikasi</span>' + (isLatest ? '<span style="font-size:9px; color:var(--warn); font-weight:700;">• Terbaru</span>' : '') + '</div></div></div><button onclick="copyEmail(\\'' + safeEmail + '\\')" class="btn btn-ghost btn-xs" style="flex-shrink:0;">Copy</button></div>';
+    return '<div style="padding:8px 11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px; display:flex; align-items:center; justify-content:space-between; gap:8px;"><div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;"><div style="width:28px; height:28px; border-radius:7px; background:rgba(96,165,250,0.15); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div><div style="min-width:0; flex:1;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(email) + '</div><div style="display:flex; align-items:center; gap:4px; margin-top:2px;"><span style="font-size:9px; color:var(--ok); font-weight:700;">●</span><span style="font-size:9px; color:var(--ok); font-weight:700;">Terverifikasi</span>' + (isLatest ? '<span style="font-size:9px; color:var(--warn); font-weight:700;">• Terbaru</span>' : '') + '</div></div></div><button data-email="' + escapeHtml(email) + '" onclick="safeCopy(this.getAttribute(\\'data-email\\'))" class="btn btn-ghost btn-xs" style="flex-shrink:0;">Copy</button></div>';
   }).join('');
 }
 
@@ -3219,15 +3004,11 @@ function updateQuotaStatusCard(data) {
   const total = data.totalQuota || BASE_QUOTA;
   const used = data.usedQuota || 0;
   const remain = Math.max(0, total - used);
-  const usedEl = document.getElementById('quota-used-display');
-  const remainEl = document.getElementById('quota-remain-display');
-  const totalEl = document.getElementById('quota-total-display');
-  if (usedEl) usedEl.innerText = used;
-  if (remainEl) remainEl.innerText = (data.isAdmin || data.isVip) ? '∞' : remain;
-  if (totalEl) totalEl.innerText = (data.isAdmin || data.isVip) ? '∞' : total;
+  document.getElementById('quota-used-display').innerText = used;
+  document.getElementById('quota-remain-display').innerText = (data.isAdmin || data.isVip) ? '∞' : remain;
+  document.getElementById('quota-total-display').innerText = (data.isAdmin || data.isVip) ? '∞' : total;
   const card = document.getElementById('quota-status-card');
   const badge = document.getElementById('quota-status-badge');
-  if (!card || !badge) return;
   if (data.isAdmin || data.isVip) { card.style.background = 'var(--accent-soft)'; card.style.borderColor = 'rgba(139,124,246,0.3)'; badge.className = 'badge badge-accent'; badge.innerText = data.isAdmin ? '👑 Admin' : '⭐ VIP'; }
   else if (remain <= 0) { card.style.background = 'var(--err-soft)'; card.style.borderColor = 'rgba(248,113,113,0.3)'; badge.className = 'badge badge-err'; badge.innerText = '✗ Habis'; }
   else if (remain <= 1) { card.style.background = 'var(--warn-soft)'; card.style.borderColor = 'rgba(251,191,36,0.3)'; badge.className = 'badge badge-warn'; badge.innerText = '⚠ Terbatas'; }
@@ -3255,6 +3036,7 @@ function handleCountdown(data) {
   const timeStr = nextResetDate.toLocaleString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
   const nextResetEl = document.getElementById('next-reset-time');
   if (nextResetEl) nextResetEl.innerText = timeStr;
+  const totalDuration = data.nextResetTime - data.lastResetTime;
   function tick() {
     if (!isPageVisible) return;
     const now = Date.now();
@@ -3272,6 +3054,10 @@ function handleCountdown(data) {
     ['countdown-hours','cd-hours-main'].forEach(id => { const el = document.getElementById(id); if (el) el.innerText = hh; });
     ['countdown-minutes','cd-minutes-main'].forEach(id => { const el = document.getElementById(id); if (el) el.innerText = mm; });
     ['countdown-seconds','cd-seconds-main'].forEach(id => { const el = document.getElementById(id); if (el) el.innerText = ss; });
+    const elapsed = totalDuration - msLeft;
+    const percent = Math.min(100, Math.max(0, (elapsed / totalDuration) * 100));
+    const pf = document.getElementById('reset-progress-fill');
+    if (pf) pf.style.width = percent + '%';
   }
   tick(); quotaCountdownInterval = setInterval(tick, 1000);
 }
@@ -3297,9 +3083,6 @@ function updateResetTimerDisplay(data) {
   updateStatCard(); globalCountdownInterval = setInterval(updateStatCard, 60000);
 }
 
-function copyEmail(email) { navigator.clipboard.writeText(email).then(() => showToast('Tersalin!', 'success')).catch(() => showToast('Gagal', 'error')); }
-
-// ====== FILE DROP ======
 function initFileDrop() {
   const dropZone = document.getElementById('file-drop-zone');
   const fileInput = document.getElementById('admin-video-file');
@@ -3318,8 +3101,8 @@ function handleFileSelect(file) {
   if (file.size > 200 * 1024 * 1024) return showToast('Max 200MB', 'error');
   selectedVideoFile = file;
   const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-  if (info) { info.innerText = '📁 ' + file.name + ' (' + sizeMB + ' MB)'; info.classList.remove('hide'); }
-  if (btn) btn.disabled = false;
+  info.innerText = '📁 ' + file.name + ' (' + sizeMB + ' MB)';
+  info.classList.remove('hide'); btn.disabled = false;
   showToast('Video siap: ' + sizeMB + 'MB', 'info');
 }
 
@@ -3337,13 +3120,11 @@ async function handleUploadVideo() {
   const speedText = document.getElementById('upload-speed');
   const btn = document.getElementById('btn-upload-video');
   const btnText = document.getElementById('btn-upload-text');
-  if (progressContainer) progressContainer.classList.remove('hide');
-  if (btn) btn.disabled = true;
-  if (btnText) btnText.innerText = 'Mengunggah...';
+  progressContainer.classList.remove('hide'); btn.disabled = true; btnText.innerText = 'Mengunggah...';
   const startTime = Date.now();
   let uploadedBytes = 0;
   try {
-    if (statusText) statusText.innerText = 'Memulai...';
+    statusText.innerText = 'Memulai...';
     const initRes = await fetch('/api/admin/upload-init', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, uploadId, filename: file.name, totalChunks, fileSize: file.size, fileType: file.type }) });
     const initData = await initRes.json();
     if (!initData.success) throw new Error(initData.message || 'Gagal init');
@@ -3352,42 +3133,34 @@ async function handleUploadVideo() {
       const end = Math.min(start + CHUNK_SIZE, file.size);
       const chunk = file.slice(start, end);
       const chunkBase64 = await blobToBase64(chunk);
-      if (statusText) statusText.innerText = 'Chunk ' + (i+1) + '/' + totalChunks;
+      statusText.innerText = 'Chunk ' + (i+1) + '/' + totalChunks;
       const chunkRes = await fetch('/api/admin/upload-chunk', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, uploadId, chunkIndex: i, chunkData: chunkBase64 }) });
       const chunkData = await chunkRes.json();
       if (!chunkData.success) throw new Error(chunkData.message || 'Gagal chunk ' + i);
       uploadedBytes += chunk.size;
       const percent = Math.round((uploadedBytes / file.size) * 100);
-      if (progressFill) progressFill.style.width = percent + '%';
-      if (percentText) percentText.innerText = percent + '%';
+      progressFill.style.width = percent + '%';
+      percentText.innerText = percent + '%';
       const elapsed = (Date.now() - startTime) / 1000;
       const speed = (uploadedBytes / 1024 / 1024) / elapsed;
-      if (speedText) speedText.innerText = '⚡ ' + speed.toFixed(2) + ' MB/s • ' + (uploadedBytes/1024/1024).toFixed(2) + '/' + (file.size/1024/1024).toFixed(2) + ' MB';
+      speedText.innerText = '⚡ ' + speed.toFixed(2) + ' MB/s • ' + (uploadedBytes/1024/1024).toFixed(2) + '/' + (file.size/1024/1024).toFixed(2) + ' MB';
     }
-    if (statusText) statusText.innerText = 'Finalizing...';
+    statusText.innerText = 'Finalizing...';
     const finalRes = await fetch('/api/admin/upload-finalize', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, uploadId }) });
     const finalData = await finalRes.json();
     if (!finalData.success) throw new Error(finalData.message || 'Gagal finalize');
-    if (progressFill) progressFill.style.width = '100%';
-    if (percentText) percentText.innerText = '100%';
-    if (statusText) statusText.innerText = '✓ Berhasil!';
-    if (speedText) speedText.innerText = 'Waktu: ' + ((Date.now() - startTime) / 1000).toFixed(1) + 's';
+    progressFill.style.width = '100%'; percentText.innerText = '100%';
+    statusText.innerText = '✓ Berhasil!'; speedText.innerText = 'Waktu: ' + ((Date.now() - startTime) / 1000).toFixed(1) + 's';
     showToast('Video diperbarui!', 'success');
     selectedVideoFile = null;
-    const fileInput = document.getElementById('admin-video-file');
-    const info = document.getElementById('file-info');
-    if (fileInput) fileInput.value = '';
-    if (info) info.classList.add('hide');
+    document.getElementById('admin-video-file').value = '';
+    document.getElementById('file-info').classList.add('hide');
     fetchFeaturedVideo(true);
-    setTimeout(() => { if (progressContainer) progressContainer.classList.add('hide'); if (progressFill) progressFill.style.width = '0%'; }, 2500);
+    setTimeout(() => { progressContainer.classList.add('hide'); progressFill.style.width = '0%'; }, 2500);
   } catch (err) {
     showToast('Upload gagal: ' + err.message, 'error');
-    if (statusText) statusText.innerText = '✗ Gagal';
-    if (progressFill) progressFill.style.background = 'var(--err)';
-  } finally { 
-    if (btn) btn.disabled = false;
-    if (btnText) btnText.innerText = 'Upload Video'; 
-  }
+    statusText.innerText = '✗ Gagal'; progressFill.style.background = 'var(--err)';
+  } finally { btn.disabled = false; btnText.innerText = 'Upload Video'; }
 }
 
 function blobToBase64(blob) {
@@ -3400,17 +3173,12 @@ function blobToBase64(blob) {
 }
 
 function updateQuotaDisplay(data) {
-  const el = document.getElementById('quota-display');
-  if (!el) return;
-  if (data.isAdmin || data.isVip) el.innerText = '∞';
-  else { const total = data.totalQuota || BASE_QUOTA + (data.bonusQuota || 0); el.innerText = (data.usedQuota || 0) + '/' + total; }
+  if (data.isAdmin || data.isVip) document.getElementById('quota-display').innerText = '∞';
+  else { const total = data.totalQuota || BASE_QUOTA + (data.bonusQuota || 0); document.getElementById('quota-display').innerText = (data.usedQuota || 0) + '/' + total; }
 }
-
 function checkVipStatus(data) {
   const banner = document.getElementById('vip-status-banner');
-  const expiryText = document.getElementById('vip-expiry-text');
-  if (!banner) return;
-  if (data.isVip && !data.isAdmin) { banner.classList.remove('hide'); if (expiryText) expiryText.innerText = 'Aktif hingga: ' + new Date(data.vipUntil).toLocaleString('id-ID'); }
+  if (data.isVip && !data.isAdmin) { banner.classList.remove('hide'); document.getElementById('vip-expiry-text').innerText = 'Aktif hingga: ' + new Date(data.vipUntil).toLocaleString('id-ID'); }
   else banner.classList.add('hide');
 }
 
@@ -3423,16 +3191,15 @@ async function changeServerState(newState) {
   } catch(e) { showToast('Gagal', 'error'); }
 }
 
-// ====== ADMIN VIP ======
 async function handleSetVip() {
   if (!isAdminUser) return;
-  const targetUser = document.getElementById('vip-target-user')?.value?.trim();
-  const days = parseInt(document.getElementById('vip-duration-days')?.value);
+  const targetUser = document.getElementById('vip-target-user').value.trim();
+  const days = parseInt(document.getElementById('vip-duration-days').value);
   if (!targetUser || isNaN(days)) return showToast('Lengkapi!', 'error');
   try {
     const res = await fetch('/api/admin/set-vip', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, targetUser, days }) });
     const data = await res.json();
-    if (data.success) { showToast(data.message, 'success'); const tu = document.getElementById('vip-target-user'); const dd = document.getElementById('vip-duration-days'); if (tu) tu.value = ''; if (dd) dd.value = ''; loadAdminVipList(); loadAllUsers(); }
+    if (data.success) { showToast(data.message, 'success'); document.getElementById('vip-target-user').value = ''; document.getElementById('vip-duration-days').value = ''; loadAdminVipList(); loadAllUsers(); }
     else showToast(data.message, 'error');
   } catch(e) { showToast('Gagal', 'error'); }
 }
@@ -3443,12 +3210,15 @@ async function loadAdminVipList() {
     const res = await fetch('/api/admin/get-vip-list?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
     const container = document.getElementById('admin-vip-list');
-    if (!container) return;
     if (data.success && Object.keys(data.vipUsers).length > 0) {
-      container.innerHTML = Object.entries(data.vipUsers).map(([uname, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div><span style="color:var(--warn); font-weight:700;">' + uname + '</span><span style="color:var(--text-2); display:block; font-size:9px;">Exp: ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span></div><button onclick="handleRemoveVip(\\'' + uname + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">Hapus</button></div>').join('');
+      container.innerHTML = Object.entries(data.vipUsers).map(([uname, val]) =>
+        '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div><span style="color:var(--warn); font-weight:700;">' + escapeHtml(uname) + '</span><span style="color:var(--text-2); display:block; font-size:9px;">Exp: ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span></div><button data-user="' + escapeHtml(uname) + '" onclick="removeVipFromBtn(this)" class="btn btn-ghost btn-xs" style="color:var(--err);">Hapus</button></div>'
+      ).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Tidak ada</p>';
   } catch(e) {}
 }
+
+function removeVipFromBtn(btn) { handleRemoveVip(btn.getAttribute('data-user')); }
 
 async function handleRemoveVip(targetUser) {
   if (!confirm('Cabut VIP untuk ' + targetUser + '?')) return;
@@ -3461,9 +3231,9 @@ async function handleRemoveVip(targetUser) {
 
 async function handleCreateVipAccount() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
-  const vipUsername = document.getElementById('vip-create-username')?.value?.trim()?.toLowerCase();
-  const vipPassword = document.getElementById('vip-create-password')?.value?.trim();
-  const vipDays = parseInt(document.getElementById('vip-create-days')?.value);
+  const vipUsername = document.getElementById('vip-create-username').value.trim().toLowerCase();
+  const vipPassword = document.getElementById('vip-create-password').value.trim();
+  const vipDays = parseInt(document.getElementById('vip-create-days').value);
   if (!vipUsername || !vipPassword || isNaN(vipDays)) return showToast('Lengkapi!', 'error');
   if (vipPassword.length < 4) return showToast('Pass min 4!', 'error');
   if (vipDays < 1) return showToast('Min 1 hari!', 'error');
@@ -3472,7 +3242,9 @@ async function handleCreateVipAccount() {
     const data = await res.json();
     if (data.success) {
       showToast(data.message, 'success');
-      ['vip-create-username','vip-create-password','vip-create-days'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      document.getElementById('vip-create-username').value = '';
+      document.getElementById('vip-create-password').value = '';
+      document.getElementById('vip-create-days').value = '';
       loadVipAccounts(); loadAllUsers();
     } else showToast(data.message, 'error');
   } catch(e) { showToast('Gagal', 'error'); }
@@ -3484,21 +3256,21 @@ async function loadVipAccounts() {
     const res = await fetch('/api/admin/get-vip-accounts?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
     const container = document.getElementById('vip-accounts-list');
-    if (!container) return;
     if (data.success && Object.keys(data.vipAccounts).length > 0) {
       const now = Date.now();
       container.innerHTML = Object.entries(data.vipAccounts).map(([uname, val]) => {
         const isActive = val.vipUntil > now;
-        return '<div style="padding:9px 11px; background:linear-gradient(135deg,var(--warn-soft),var(--accent-soft)); border:1px solid rgba(251,191,36,0.3); border-radius:8px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(uname) + '</div><div class="mono" style="font-size:10px; color:var(--text-2);">Pwd: ' + escapeHtml(val.password) + '</div></div><span class="badge ' + (isActive ? 'badge-ok' : 'badge-err') + '">' + (isActive ? 'AKTIF' : 'EXPIRED') + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px;"><span style="color:var(--warn);">⭐ s/d ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span><div style="display:flex; gap:3px;"><button onclick="copyVipCredentials(\\'' + escapeHtml(uname) + '\\', \\'' + escapeHtml(val.password) + '\\')" class="btn btn-ghost btn-xs">📋</button><button onclick="deleteVipAccount(\\'' + escapeHtml(uname) + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">🗑</button></div></div></div>';
+        return '<div style="padding:9px 11px; background:linear-gradient(135deg,var(--warn-soft),var(--accent-soft)); border:1px solid rgba(251,191,36,0.3); border-radius:8px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(uname) + '</div><div class="mono" style="font-size:10px; color:var(--text-2);">Pwd: ' + escapeHtml(val.password) + '</div></div><span class="badge ' + (isActive ? 'badge-ok' : 'badge-err') + '">' + (isActive ? 'AKTIF' : 'EXPIRED') + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px;"><span style="color:var(--warn);">⭐ s/d ' + new Date(val.vipUntil).toLocaleDateString('id-ID') + '</span><div style="display:flex; gap:3px;"><button data-user="' + escapeHtml(uname) + '" data-pass="' + escapeHtml(val.password) + '" onclick="copyVipCredFromBtn(this)" class="btn btn-ghost btn-xs">📋</button><button data-user="' + escapeHtml(uname) + '" onclick="deleteVipAccFromBtn(this)" class="btn btn-ghost btn-xs" style="color:var(--err);">🗑</button></div></div></div>';
       }).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Belum ada</p>';
   } catch(e) {}
 }
 
-function copyVipCredentials(username, password) {
-  const text = 'Username: ' + username + '\\nPassword: ' + password;
-  navigator.clipboard.writeText(text).then(() => showToast('Tersalin!', 'success'));
+function copyVipCredFromBtn(btn) {
+  const u = btn.getAttribute('data-user'); const p = btn.getAttribute('data-pass');
+  safeCopy('Username: ' + u + '\nPassword: ' + p);
 }
+function deleteVipAccFromBtn(btn) { deleteVipAccount(btn.getAttribute('data-user')); }
 
 async function deleteVipAccount(vipUsername) {
   if (!confirm('Hapus akun VIP ' + vipUsername + '?')) return;
@@ -3510,25 +3282,19 @@ async function deleteVipAccount(vipUsername) {
   } catch(e) { showToast('Gagal', 'error'); }
 }
 
-// ====== ADMIN USERS ======
 async function loadAllUsers() {
   if (!isAdminUser) return showToast('Akses ditolak!', 'error');
   const container = document.getElementById('all-users-list');
-  if (!container) return;
   container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">⏳ Memuat...</p>';
   try {
     const res = await fetch('/api/admin/get-all-users?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
     if (!data.success) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal: ' + (data.message || 'Error') + '</p>'; return; }
     cachedUserList = data.users || [];
-    const statTotal = document.getElementById('stat-total');
-    const statAdmins = document.getElementById('stat-admins');
-    const statVips = document.getElementById('stat-vips');
-    const statReset = document.getElementById('stat-reset');
-    if (statTotal) statTotal.innerText = data.stats.total;
-    if (statAdmins) statAdmins.innerText = data.stats.admins;
-    if (statVips) statVips.innerText = data.stats.vips;
-    if (statReset) statReset.innerText = data.stats.resetDue;
+    document.getElementById('stat-total').innerText = data.stats.total;
+    document.getElementById('stat-admins').innerText = data.stats.admins;
+    document.getElementById('stat-vips').innerText = data.stats.vips;
+    document.getElementById('stat-reset').innerText = data.stats.resetDue;
     renderUserList();
     showToast('Loaded ' + data.stats.total + ' user', 'success');
   } catch (e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Kesalahan koneksi</p>'; }
@@ -3548,9 +3314,7 @@ function filterUserList() { renderUserList(); }
 
 function renderUserList() {
   const container = document.getElementById('all-users-list');
-  if (!container) return;
-  const searchInput = document.getElementById('user-search-input');
-  const search = (searchInput?.value || '').toLowerCase().trim();
+  const search = (document.getElementById('user-search-input').value || '').toLowerCase().trim();
   let filtered = cachedUserList.filter(u => {
     if (currentUserFilter === 'admin' && !u.isAdmin) return false;
     if (currentUserFilter === 'vip' && !u.isVip) return false;
@@ -3575,13 +3339,15 @@ function renderUserList() {
     else resetText = '✓ Baru direset';
     let vipText = '';
     if (u.isVip && u.vipUntil) vipText = '⭐ VIP s/d ' + new Date(u.vipUntil).toLocaleDateString('id-ID');
-    const safeUser = u.username.replace(/'/g, "\\\\'");
-    return '<div style="padding:8px 10px; background:var(--bg-0); border:1px solid ' + borderColor + '; border-radius:7px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;"><span class="mono" style="font-weight:700; color:var(--text-0); font-size:11.5px;">' + escapeHtml(u.username) + '</span><span class="badge ' + badgeClass + '" style="font-size:9px;">' + badgeText + '</span></div><div style="font-size:9.5px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:1px;">📧 ' + escapeHtml(u.email) + '</div></div></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:5px; font-size:9.5px;"><div style="padding:5px; background:var(--info-soft); border-radius:5px;"><div style="color:var(--text-2); font-size:8px; text-transform:uppercase; font-weight:700;">Kuota</div><div class="mono" style="color:' + quotaColor + '; font-weight:700;">' + quotaText + '</div></div><div style="padding:5px; background:var(--accent-soft); border-radius:5px;"><div style="color:var(--text-2); font-size:8px; text-transform:uppercase; font-weight:700;">Reset</div><div class="mono" style="color:var(--accent); font-weight:700;">' + resetText + '</div></div></div>' + (vipText ? '<div style="font-size:9.5px; color:var(--warn); margin-top:5px; font-weight:600;">' + vipText + '</div>' : '') + (u.activatedEmails && u.activatedEmails.length > 0 ? '<details style="margin-top:5px;"><summary style="font-size:9.5px; color:var(--info); cursor:pointer;">📨 ' + u.activatedEmails.length + ' email</summary><div style="margin-top:3px; padding-left:6px;">' + u.activatedEmails.slice(0, 10).map(e => '<div class="mono" style="font-size:9px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">• ' + escapeHtml(e) + '</div>').join('') + (u.activatedEmails.length > 10 ? '<div style="font-size:9px; color:var(--text-2); font-style:italic;">... +' + (u.activatedEmails.length - 10) + '</div>' : '') + '</div></details>' : '') + '<div style="display:flex; gap:4px; margin-top:6px; padding-top:6px; border-top:1px solid var(--line);"><button onclick="quickSetVip(\\'' + safeUser + '\\')" class="btn btn-ghost btn-xs" style="flex:1;">⭐ VIP</button><button onclick="copyUsername(\\'' + safeUser + '\\')" class="btn btn-ghost btn-xs" style="flex:1;">📋 Copy</button>' + (u.isAdmin && u.username === loggedInUsername ? '' : '<button onclick="deleteUserAccount(\\'' + safeUser + '\\', ' + (u.isAdmin ? 'true' : 'false') + ')" class="btn btn-ghost btn-xs" style="flex:1; color:var(--err);">🗑 Hapus</button>') + '</div></div>';
+    return '<div style="padding:8px 10px; background:var(--bg-0); border:1px solid ' + borderColor + '; border-radius:7px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;"><span class="mono" style="font-weight:700; color:var(--text-0); font-size:11.5px;">' + escapeHtml(u.username) + '</span><span class="badge ' + badgeClass + '" style="font-size:9px;">' + badgeText + '</span></div><div style="font-size:9.5px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:1px;">📧 ' + escapeHtml(u.email) + '</div></div></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:5px; font-size:9.5px;"><div style="padding:5px; background:var(--info-soft); border-radius:5px;"><div style="color:var(--text-2); font-size:8px; text-transform:uppercase; font-weight:700;">Kuota</div><div class="mono" style="color:' + quotaColor + '; font-weight:700;">' + quotaText + '</div></div><div style="padding:5px; background:var(--accent-soft); border-radius:5px;"><div style="color:var(--text-2); font-size:8px; text-transform:uppercase; font-weight:700;">Reset</div><div class="mono" style="color:var(--accent); font-weight:700;">' + resetText + '</div></div></div>' + (vipText ? '<div style="font-size:9.5px; color:var(--warn); margin-top:5px; font-weight:600;">' + vipText + '</div>' : '') + (u.activatedEmails && u.activatedEmails.length > 0 ? '<details style="margin-top:5px;"><summary style="font-size:9.5px; color:var(--info); cursor:pointer;">📨 ' + u.activatedEmails.length + ' email</summary><div style="margin-top:3px; padding-left:6px;">' + u.activatedEmails.slice(0, 10).map(e => '<div class="mono" style="font-size:9px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">• ' + escapeHtml(e) + '</div>').join('') + (u.activatedEmails.length > 10 ? '<div style="font-size:9px; color:var(--text-2); font-style:italic;">... +' + (u.activatedEmails.length - 10) + '</div>' : '') + '</div></details>' : '') + '<div style="display:flex; gap:4px; margin-top:6px; padding-top:6px; border-top:1px solid var(--line);"><button data-user="' + escapeHtml(u.username) + '" onclick="quickSetVipFromBtn(this)" class="btn btn-ghost btn-xs" style="flex:1;">⭐ VIP</button><button data-user="' + escapeHtml(u.username) + '" onclick="safeCopy(this.getAttribute(\\'data-user\\'))" class="btn btn-ghost btn-xs" style="flex:1;">📋 Copy</button>' + (u.isAdmin && u.username === loggedInUsername ? '' : '<button data-user="' + escapeHtml(u.username) + '" data-isadmin="' + (u.isAdmin?'1':'0') + '" onclick="deleteUserFromBtn(this)" class="btn btn-ghost btn-xs" style="flex:1; color:var(--err);">🗑 Hapus</button>') + '</div></div>';
   }).join('');
 }
 
+function quickSetVipFromBtn(btn) { quickSetVip(btn.getAttribute('data-user')); }
+function deleteUserFromBtn(btn) { deleteUserAccount(btn.getAttribute('data-user'), btn.getAttribute('data-isadmin') === '1'); }
+
 async function deleteUserAccount(targetUsername, isTargetAdmin) {
-  const confirmText = isTargetAdmin ? '⚠️ HAPUS ADMIN "' + targetUsername + '"?\\n\\nPermanen!' : 'Hapus akun "' + targetUsername + '"?';
+  const confirmText = isTargetAdmin ? '⚠️ HAPUS ADMIN "' + targetUsername + '"?\n\nPermanen!' : 'Hapus akun "' + targetUsername + '"?';
   if (!confirm(confirmText)) return;
   if (isTargetAdmin) { const second = prompt('Ketik "HAPUS" untuk konfirmasi:'); if (second !== 'HAPUS') { showToast('Dibatalkan', 'info'); return; } }
   try {
@@ -3593,20 +3359,14 @@ async function deleteUserAccount(targetUsername, isTargetAdmin) {
 }
 
 function quickSetVip(username) {
-  const tu = document.getElementById('vip-target-user');
-  const dd = document.getElementById('vip-duration-days');
-  if (tu) tu.value = username;
-  if (dd) dd.focus();
+  document.getElementById('vip-target-user').value = username;
+  document.getElementById('vip-duration-days').focus();
   showToast('Username siap: ' + username, 'info');
-  if (tu) tu.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  document.getElementById('vip-target-user').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
-function copyUsername(username) { navigator.clipboard.writeText(username).then(() => showToast('Tersalin!', 'success')); }
-
-// ====== CHAT ======
 function updateChatBadge() {
   const badge = document.getElementById('chat-unread-badge');
-  if (!badge) return;
   if (unreadChatCount > 0) { badge.textContent = unreadChatCount > 99 ? '99+' : unreadChatCount; badge.classList.remove('hide'); }
   else badge.classList.add('hide');
 }
@@ -3638,7 +3398,7 @@ async function loadGlobalChat(force = false) {
     const res = await fetch('/api/chat/messages');
     const data = await res.json();
     lastChatFetch = now; setCache('globalChat', data, CACHE_DURATION.chat); renderGlobalChat(data);
-  } catch(e) { if (container) container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
+  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
 }
 
 function renderGlobalChat(data) {
@@ -3659,17 +3419,18 @@ function renderGlobalChat(data) {
     const date = new Date(msg.timestamp).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
     const isToday = new Date(msg.timestamp).toDateString() === new Date().toDateString();
     const timeStr = isToday ? time : date + ' ' + time;
-    const deleteBtn = isAdminUser ? ' <button onclick="deleteChatMessage(\\'' + id + '\\')" style="background:none; border:none; font-size:9px; opacity:0.5; cursor:pointer; margin-left:2px;">🗑</button>' : '';
+    const deleteBtn = isAdminUser ? ' <button data-mid="' + escapeHtml(id) + '" onclick="deleteChatFromBtn(this)" style="background:none; border:none; font-size:9px; opacity:0.5; cursor:pointer; margin-left:2px;">🗑</button>' : '';
     return '<div class="chat-msg ' + bubbleClass + '"><div class="chat-msg-header">' + roleIcon + '<span>' + escapeHtml(msg.username) + '</span>' + (isAdmin ? ' · ADMIN' : '') + (isVip && !isAdmin ? ' · VIP' : '') + deleteBtn + '</div><div>' + escapeHtml(msg.message) + '</div><div class="chat-time">' + timeStr + '</div></div>';
   }).join('');
   if (wasAtBottom || container.scrollTop === 0) container.scrollTop = container.scrollHeight;
   updateOnlineCount(onlineUsersCount);
 }
 
+function deleteChatFromBtn(btn) { deleteChatMessage(btn.getAttribute('data-mid')); }
+
 async function sendChatMessage() {
   if (!loggedInUsername) return showToast('Harus login!', 'error');
   const input = document.getElementById('chat-input');
-  if (!input) return;
   const message = input.value.trim();
   if (!message) return;
   input.value = '';
@@ -3691,7 +3452,6 @@ async function deleteChatMessage(messageId) {
   } catch(e) {}
 }
 
-// ====== ANNOUNCEMENTS ======
 async function loadUserAnnouncements(force = false) {
   const now = Date.now();
   if (!force && now - lastAnnouncementsFetch < CACHE_DURATION.announcements) { const cached = getCached('userAnnouncements'); if (cached) { renderUserAnnouncements(cached); return; } }
@@ -3717,19 +3477,29 @@ async function loadAdminAnnouncements() {
     const res = await fetch('/api/announcements');
     const data = await res.json();
     const container = document.getElementById('admin-info-list');
-    if (!container) return;
     if (data.success && Object.keys(data.announcements).length > 0) {
       const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
-      container.innerHTML = entries.map(([id, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div style="flex:1; min-width:0;"><span style="color:var(--warn); font-weight:700; font-size:10.5px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(val.title) + '</span></div><div style="display:flex; gap:2px; flex-shrink:0;"><button onclick="editAnnouncement(\\'' + id + '\\', \\'' + encodeURIComponent(val.title) + '\\', \\'' + encodeURIComponent(val.content) + '\\')" class="btn btn-ghost btn-xs">E</button><button onclick="deleteAnnouncement(\\'' + id + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
+      container.innerHTML = entries.map(([id, val]) =>
+        '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div style="flex:1; min-width:0;"><span style="color:var(--warn); font-weight:700; font-size:10.5px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(val.title) + '</span></div><div style="display:flex; gap:2px; flex-shrink:0;"><button data-id="' + escapeHtml(id) + '" data-title="' + escapeHtml(val.title) + '" data-content="' + escapeHtml(val.content) + '" onclick="editAnnouncementFromBtn(this)" class="btn btn-ghost btn-xs">E</button><button data-id="' + escapeHtml(id) + '" onclick="deleteAnnouncementFromBtn(this)" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>'
+      ).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Belum ada</p>';
   } catch(e) {}
 }
 
+function editAnnouncementFromBtn(btn) {
+  document.getElementById('info-edit-id').value = btn.getAttribute('data-id');
+  document.getElementById('info-title').value = btn.getAttribute('data-title');
+  document.getElementById('info-content').value = btn.getAttribute('data-content');
+  document.getElementById('info-submit-btn').innerText = 'Perbarui';
+  document.getElementById('info-cancel-btn').classList.remove('hide');
+}
+function deleteAnnouncementFromBtn(btn) { deleteAnnouncement(btn.getAttribute('data-id')); }
+
 async function handleSaveAnnouncement() {
   if (!isAdminUser) return;
-  const id = document.getElementById('info-edit-id')?.value || '';
-  const title = document.getElementById('info-title')?.value?.trim() || '';
-  const content = document.getElementById('info-content')?.value?.trim() || '';
+  const id = document.getElementById('info-edit-id').value;
+  const title = document.getElementById('info-title').value.trim();
+  const content = document.getElementById('info-content').value.trim();
   if (!title || !content) return showToast('Lengkapi!', 'error');
   const endpoint = id ? '/api/admin/update-announcement' : '/api/admin/create-announcement';
   try {
@@ -3743,30 +3513,12 @@ async function handleSaveAnnouncement() {
   } catch(e) { showToast('Gagal', 'error'); }
 }
 
-function editAnnouncement(id, encTitle, encContent) {
-  const editId = document.getElementById('info-edit-id');
-  const titleInput = document.getElementById('info-title');
-  const contentInput = document.getElementById('info-content');
-  const submitBtn = document.getElementById('info-submit-btn');
-  const cancelBtn = document.getElementById('info-cancel-btn');
-  if (editId) editId.value = id;
-  if (titleInput) titleInput.value = decodeURIComponent(encTitle);
-  if (contentInput) contentInput.value = decodeURIComponent(encContent);
-  if (submitBtn) submitBtn.innerText = 'Perbarui';
-  if (cancelBtn) cancelBtn.classList.remove('hide');
-}
-
 function resetInfoForm() {
-  const editId = document.getElementById('info-edit-id');
-  const titleInput = document.getElementById('info-title');
-  const contentInput = document.getElementById('info-content');
-  const submitBtn = document.getElementById('info-submit-btn');
-  const cancelBtn = document.getElementById('info-cancel-btn');
-  if (editId) editId.value = '';
-  if (titleInput) titleInput.value = '';
-  if (contentInput) contentInput.value = '';
-  if (submitBtn) submitBtn.innerText = 'Publikasikan';
-  if (cancelBtn) cancelBtn.classList.add('hide');
+  document.getElementById('info-edit-id').value = '';
+  document.getElementById('info-title').value = '';
+  document.getElementById('info-content').value = '';
+  document.getElementById('info-submit-btn').innerText = 'Publikasikan';
+  document.getElementById('info-cancel-btn').classList.add('hide');
 }
 
 async function deleteAnnouncement(id) {
@@ -3778,12 +3530,11 @@ async function deleteAnnouncement(id) {
   } catch(e) {}
 }
 
-// ====== REDEEM ADMIN ======
 async function handleCreateRedeem() {
   if (!isAdminUser) return;
-  const code = document.getElementById('gen-code')?.value?.trim()?.toUpperCase();
-  const quotaPerUser = parseInt(document.getElementById('gen-quota-per-user')?.value);
-  const maxClaims = parseInt(document.getElementById('gen-max-claims')?.value);
+  const code = document.getElementById('gen-code').value.trim().toUpperCase();
+  const quotaPerUser = parseInt(document.getElementById('gen-quota-per-user').value);
+  const maxClaims = parseInt(document.getElementById('gen-max-claims').value);
   if (!code || isNaN(quotaPerUser) || isNaN(maxClaims)) return showToast('Lengkapi!', 'error');
   if (quotaPerUser < 1) return showToast('Min 1!', 'error');
   if (maxClaims < 1) return showToast('Min 1!', 'error');
@@ -3792,7 +3543,9 @@ async function handleCreateRedeem() {
     const data = await res.json();
     if (data.success) {
       showToast(data.message, 'success');
-      ['gen-code','gen-quota-per-user','gen-max-claims'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      document.getElementById('gen-code').value = '';
+      document.getElementById('gen-quota-per-user').value = '';
+      document.getElementById('gen-max-claims').value = '';
       loadAdminRedeems(); lastRedeemsFetch = 0; loadActiveRedeems(true);
     } else showToast(data.message, 'error');
   } catch(e) {}
@@ -3804,12 +3557,15 @@ async function loadAdminRedeems() {
     const res = await fetch('/api/admin/get-redeems?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
     const container = document.getElementById('admin-redeem-list');
-    if (!container) return;
     if (data.success && Object.keys(data.redeems).length > 0) {
-      container.innerHTML = Object.entries(data.redeems).map(([code, val]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div><span class="mono" style="color:var(--warn); font-weight:700; font-size:10.5px;">' + code + '</span><span style="color:var(--text-2); display:block; font-size:9px;">' + (val.quotaPerUser || 1) + '/user • ' + val.claimedCount + '/' + val.maxClaims + '</span></div><button onclick="handleDeleteRedeem(\\'' + code + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div>').join('');
+      container.innerHTML = Object.entries(data.redeems).map(([code, val]) =>
+        '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--bg-0); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div><span class="mono" style="color:var(--warn); font-weight:700; font-size:10.5px;">' + escapeHtml(code) + '</span><span style="color:var(--text-2); display:block; font-size:9px;">' + (val.quotaPerUser || 1) + '/user • ' + val.claimedCount + '/' + val.maxClaims + '</span></div><button data-code="' + escapeHtml(code) + '" onclick="deleteRedeemFromBtn(this)" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div>'
+      ).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Belum ada</p>';
   } catch(e) {}
 }
+
+function deleteRedeemFromBtn(btn) { handleDeleteRedeem(btn.getAttribute('data-code')); }
 
 async function handleDeleteRedeem(code) {
   if (!confirm('Hapus kode ' + code + '?')) return;
@@ -3820,79 +3576,71 @@ async function handleDeleteRedeem(code) {
   } catch(e) {}
 }
 
-// ====== AM ======
 async function handleSendEmail() {
-  const email = document.getElementById('target-email')?.value?.trim();
+  const email = document.getElementById('target-email').value.trim();
   if (!email) return showToast('Masukkan email!', 'error');
   if (!guardServerOnline('Alight Motion')) return;
   const btn = document.getElementById('btn-send');
   const sendText = document.getElementById('send-text');
-  if (btn) btn.disabled = true;
-  if (sendText) sendText.innerText = 'Mengirim...';
+  btn.disabled = true; sendText.innerText = 'Mengirim...';
   const resultBox = document.getElementById('result-box');
   const resultText = document.getElementById('result-text');
-  if (resultBox) resultBox.classList.remove('hide');
-  if (resultText) resultText.innerText = '⏳ Memproses...';
+  resultBox.classList.remove('hide'); resultText.innerText = '⏳ Memproses...';
   try {
     const res = await fetch('/api/magiclink', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, email }) });
     const data = await res.json();
     if (data.success) {
-      if (sendText) sendText.innerText = 'Kirim Magic Link';
+      sendText.innerText = 'Kirim Magic Link';
       currentResultText = JSON.stringify(data.result, null, 2);
-      if (resultText) resultText.innerText = currentResultText;
+      resultText.innerText = currentResultText;
       if (data.orderId) showToast('✅ Order ID: ' + data.orderId, 'order', 5000);
       else showToast('Magic link terkirim!', 'success');
       if (!isAdminUser && data.quotaInfo) updateQuotaDisplay(data.quotaInfo);
       loadVerifiedEmails(true);
     } else {
-      if (sendText) sendText.innerText = 'Kirim Magic Link';
+      sendText.innerText = 'Kirim Magic Link';
       currentResultText = 'Error: ' + data.message;
-      if (resultText) resultText.innerText = currentResultText;
+      resultText.innerText = currentResultText;
       if (data.refilled) showToast(data.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
       else showToast(data.message, 'error');
       if (data.quotaInfo) updateQuotaDisplay(data.quotaInfo);
       loadVerifiedEmails(true);
     }
   } catch (err) {
-    if (sendText) sendText.innerText = 'Kirim Magic Link';
+    sendText.innerText = 'Kirim Magic Link';
     currentResultText = 'Error: ' + err.message;
-    if (resultText) resultText.innerText = currentResultText;
+    resultText.innerText = currentResultText;
     showToast('Gagal kirim', 'error');
-  } finally { if (btn) btn.disabled = false; }
+  } finally { btn.disabled = false; }
 }
 
 async function handleActivate() {
-  const email = document.getElementById('target-email')?.value;
-  const magicUrl = document.getElementById('magic-url')?.value;
+  const email = document.getElementById('target-email').value;
+  const magicUrl = document.getElementById('magic-url').value;
   if (!email || !magicUrl) return showToast('Email & URL wajib!', 'error');
   if (!guardServerOnline('Alight Motion Verifikasi')) return;
   const resultBox = document.getElementById('result-box');
   const resultText = document.getElementById('result-text');
-  if (resultBox) resultBox.classList.remove('hide');
-  if (resultText) resultText.innerText = '⏳ Memverifikasi...';
+  resultBox.classList.remove('hide'); resultText.innerText = '⏳ Memverifikasi...';
   try {
     const res = await fetch('/api/verif', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, url: magicUrl, username: loggedInUsername }) });
     const data = await res.json();
     currentResultText = JSON.stringify(data, null, 2);
-    if (resultText) resultText.innerText = currentResultText;
-    if (data.success || !data.error) showToast('Verifikasi selesai!', 'success');
-    else showToast(data.error || 'Gagal', 'error');
+    resultText.innerText = currentResultText;
+    if (data.success || !data.error) {
+      showToast('Verifikasi selesai!', 'success');
+      loadVerifiedEmails(true); // fix: reload kuota setelah verifikasi
+    } else showToast(data.error || 'Gagal', 'error');
   } catch (err) {
     currentResultText = 'Error: ' + err.message;
-    if (resultText) resultText.innerText = currentResultText;
+    resultText.innerText = currentResultText;
     showToast('Gagal verifikasi', 'error');
   }
 }
 
 function copyResult() {
   if (!currentResultText) return;
-  navigator.clipboard.writeText(currentResultText).then(() => showToast('Tersalin!', 'success'));
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text || '';
-  return div.innerHTML;
+  safeCopy(currentResultText);
 }
 
 async function handleLogout() {
@@ -3910,13 +3658,7 @@ async function handleLogout() {
   location.reload();
 }
 
-// ====== INIT ======
 initFileDrop();
-fetchServerStatus();
-fetchFeaturedVideo();
-startPolling();
-fetchOnlineCount();
-checkSavedSession();
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
@@ -4280,28 +4022,16 @@ const server = http.createServer(async (req, res) => {
       await saveNetflixResultToDb(historyId, { id: historyId, orderId, username: cleanUser, plan: genResult.plan, quality: genResult.quality, country: genResult.country, url: genResult.url, expires: genResult.expires, pool: genResult.pool, timestamp: now });
       jsonResponse(res, 200, { success: true, orderId, result: genResult, quotaInfo: { usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
 
-    } else if (parsedUrl.pathname === '/api/netflix/history' && req.method === 'GET') {
-      const username = parsedUrl.searchParams.get('username');
-      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-      const cleanUser = username.toLowerCase();
-      const allResults = await getNetflixResultsFromDb();
-      const myResults = Object.values(allResults).filter(r => r.username === cleanUser).sort((a, b) => b.timestamp - a.timestamp).slice(0, 20);
-      jsonResponse(res, 200, { success: true, results: myResults });
-
-    // ====== NETFLIX GMAIL ACTIVATION (BARU) ======
+    // === FITUR BARU: AKTIVASI GMAIL LANGSUNG ===
     } else if (parsedUrl.pathname === '/api/netflix/activate-gmail' && req.method === 'POST') {
       const body = await readBody(req);
-      const { username, email, plan } = JSON.parse(body);
+      const { username, plan, gmail } = JSON.parse(body);
       const cleanUser = username ? username.toLowerCase() : '';
       await checkAndExpireBonusQuota(cleanUser);
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
       if (currentServerStatus !== 'online' && !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Server offline!' });
-      
-      if (!email || !email.includes('@') || !email.includes('.')) {
-        return jsonResponse(res, 400, { success: false, message: 'Email tidak valid!' });
-      }
-      
+      if (!gmail || !gmail.includes('@') || !gmail.includes('.')) return jsonResponse(res, 400, { success: false, message: 'Gmail tidak valid!' });
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
       if (now - (userObj.lastResetTime || now) >= twentyFourHours) { userObj.activatedEmails = []; userObj.lastResetTime = now; }
@@ -4309,47 +4039,52 @@ const server = http.createServer(async (req, res) => {
       const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
       const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
       if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) return jsonResponse(res, 403, { success: false, message: 'Quota habis!' });
-      
-      const quotaEntry = 'netflix_gmail_' + now + '_' + Math.random().toString(36).substring(2, 6);
+      const quotaEntry = 'netflix_act_' + now + '_' + Math.random().toString(36).substring(2, 6);
       if (!userObj.isAdmin && !isVipActive) {
         if (!userObj.activatedEmails) userObj.activatedEmails = [];
         userObj.activatedEmails.push(quotaEntry);
         if (userObj.bonusQuota > 0) { userObj.lastBonusActivity = now; userObj.bonusGrantedAt = userObj.bonusGrantedAt || now; }
         await saveUserToDb(cleanUser, userObj);
       }
-      
       try {
-        const result = await activateNetflixWithGmail(email, plan || 'premium');
-        if (!result.success) {
-          let refilled = false;
-          if (!userObj.isAdmin && !isVipActive) refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
-          const refreshedUser = await getUserFromDb(cleanUser);
-          const refreshedUsed = refreshedUser.activatedEmails ? refreshedUser.activatedEmails.length : 0;
-          return jsonResponse(res, 500, { success: false, refilled, message: refilled ? 'Aktivasi gagal! Kuota dikembalikan.' : (result.error || 'Gagal aktivasi'), quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
-        }
-        
-        const orderId = generateOrderId('NFLX-GM');
-        await saveOrderToDb(orderId, { orderId, username: cleanUser, type: 'netflix', detail: 'Aktivasi Gmail: ' + email + ' • ' + (plan || 'premium').toUpperCase(), result: result.url, timestamp: now, quotaEntry });
-        
-        const historyId = 'nfgm_' + now + '_' + Math.random().toString(36).substring(2, 8);
-        await saveNetflixResultToDb(historyId, { id: historyId, orderId, username: cleanUser, plan: result.plan, quality: result.quality, country: result.country, url: result.url, expires: result.expires, pool: result.pool, activationEmail: email, timestamp: now, isGmailActivation: true });
-        
-        jsonResponse(res, 200, { 
-          success: true, 
-          orderId, 
+        const actResult = await activateNetflixForGmail(gmail, plan || 'premium');
+        const orderId = generateOrderId('NFLX');
+        const detailStr = (plan || 'premium').toUpperCase() + ' • Aktivasi ' + gmail;
+        await saveOrderToDb(orderId, { orderId, username: cleanUser, type: 'netflix', detail: detailStr, result: actResult.activationLink, timestamp: now, quotaEntry, gmail });
+        const historyId = 'nf_' + now + '_' + Math.random().toString(36).substring(2, 8);
+        await saveNetflixResultToDb(historyId, { id: historyId, orderId, username: cleanUser, plan: actResult.plan, quality: actResult.quality, country: actResult.country, url: actResult.activationLink, expires: actResult.expires, pool: actResult.pool, gmail, timestamp: now, isActivation: true });
+        const actId = 'act_' + now + '_' + Math.random().toString(36).substring(2, 8);
+        await saveNetflixActivationToDb(actId, { id: actId, orderId, username: cleanUser, gmail, plan: actResult.plan, quality: actResult.quality, country: actResult.country, activationLink: actResult.activationLink, expires: actResult.expires, createdAt: now });
+        jsonResponse(res, 200, {
+          success: true,
+          orderId,
           result: {
-            ...result,
-            activationEmail: email
-          }, 
-          quotaInfo: { usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } 
+            gmail,
+            plan: actResult.plan,
+            quality: actResult.quality,
+            country: actResult.country,
+            url: actResult.activationLink,
+            activationLink: actResult.activationLink,
+            expires: actResult.expires,
+            pool: actResult.pool,
+            instructions: actResult.instructions
+          },
+          quotaInfo: { usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive }
         });
-      } catch (err) {
-        let refilled = false;
-        if (!userObj.isAdmin && !isVipActive) refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
+      } catch (apiErr) {
+        const refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
         const refreshedUser = await getUserFromDb(cleanUser);
         const refreshedUsed = refreshedUser.activatedEmails ? refreshedUser.activatedEmails.length : 0;
-        jsonResponse(res, 500, { success: false, refilled, message: refilled ? 'Aktivasi gagal: ' + err.message + '. Kuota dikembalikan.' : 'Aktivasi gagal: ' + err.message, quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+        jsonResponse(res, 500, { success: false, refilled, message: refilled ? 'Aktivasi gagal: ' + apiErr.message + '. Kuota dikembalikan.' : 'Aktivasi gagal: ' + apiErr.message, quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
       }
+
+    } else if (parsedUrl.pathname === '/api/netflix/history' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+      const cleanUser = username.toLowerCase();
+      const allResults = await getNetflixResultsFromDb();
+      const myResults = Object.values(allResults).filter(r => r.username === cleanUser).sort((a, b) => b.timestamp - a.timestamp).slice(0, 20);
+      jsonResponse(res, 200, { success: true, results: myResults });
 
     // ====== TRANSACTIONS ======
     } else if (parsedUrl.pathname === '/api/transaction/create' && req.method === 'POST') {
@@ -4936,10 +4671,9 @@ server.listen(PORT, () => {
   console.log('║  💳 DANA Admin: ' + DANA_ADMIN_NUMBER + '                     ║');
   console.log('║  ──────────────────────────────────────────────────────────  ║');
   console.log('║  ✨ UPDATE v7.2:                                             ║');
-  console.log('║  ✅ FIX: Button tidak berfungsi (currentView undefined)      ║');
-  console.log('║  ✅ FIX: Semua onclick handler berfungsi normal              ║');
-  console.log('║  🆕 FEAT: Netflix aktivasi langsung ke Gmail                 ║');
-  console.log('║  🆕 FEAT: Bonus quota expired 2 hari → reset ke 2 kuota      ║');
-  console.log('║  🆕 FEAT: Netflix Premium instant activation                 ║');
+  console.log('║  🔧 FIX semua button yang tidak berfungsi                    ║');
+  console.log('║  🎬 Netflix AKTIVASI LANGSUNG ke Gmail (fitur baru)         ║');
+  console.log('║  ⏱ Bonus quota EXPIRED 2 hari → reset ke 2 kuota awal      ║');
+  console.log('║  🛡️ Safe copy via data-attribute (anti quote rusak)         ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
