@@ -6,6 +6,8 @@ const os = require('os');
 const tls = require('tls');
 const crypto = require('crypto');
 const Go = require('@xof/fetch');
+const axios = require('axios');
+const FormData = require('form-data');
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, get, set, child, remove } = require('firebase/database');
 
@@ -216,6 +218,13 @@ async function getTempMailsFromDb() {
   return snapshot.exists() ? snapshot.val() : {};
 }
 
+// ====== HD PHOTO HELPERS ======
+async function getHdPhotoResultsFromDb() {
+  const snapshot = await get(child(ref(db), `hdPhotos`));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+async function saveHdPhotoResultToDb(id, data) { await set(ref(db, `hdPhotos/${id}`), data); }
+
 // ====== ONLINE TRACKING HELPERS ======
 async function getOnlineUsersFromDb() {
   const snapshot = await get(child(ref(db), `onlineUsers`));
@@ -367,6 +376,59 @@ const am = {
     return data;
   }
 };
+
+// ====== HD PHOTO UPSCALE ======
+async function upscaleImage(input) {
+  try {
+    let buffer;
+    let contentType = 'image/jpeg';
+    let filename = 'image.jpg';
+
+    if (Buffer.isBuffer(input)) {
+      buffer = input;
+    } else if (typeof input === 'string') {
+      const imageResponse = await axios.get(input, { responseType: 'arraybuffer', timeout: 30000 });
+      buffer = Buffer.from(imageResponse.data);
+      contentType = imageResponse.headers['content-type'] || 'image/jpeg';
+      const ext = contentType.split('/')[1] || 'jpg';
+      filename = 'image.' + (ext === 'jpeg' ? 'jpg' : ext);
+    } else {
+      throw new Error('Input harus berupa URL (string) atau Buffer.');
+    }
+
+    if (buffer.length > 15 * 1024 * 1024) {
+      throw new Error('Ukuran gambar terlalu besar (max 15MB).');
+    }
+
+    const form = new FormData();
+    form.append('file', buffer, {
+      filename: filename,
+      contentType: contentType
+    });
+
+    const uploadResponse = await axios.post('https://app.kyzznekoo.my.id/api/imgbb/upscale-image', form, {
+      responseType: 'arraybuffer',
+      timeout: 120000,
+      maxContentLength: 50 * 1024 * 1024,
+      maxBodyLength: 50 * 1024 * 1024,
+      headers: {
+        ...form.getHeaders(),
+        'X-apikey': config.kyzznekooApiKey
+      }
+    });
+
+    return {
+      buffer: Buffer.from(uploadResponse.data),
+      contentType: uploadResponse.headers['content-type'] || 'image/png'
+    };
+  } catch (error) {
+    throw new Error(
+      error.response && error.response.data
+        ? Buffer.from(error.response.data).toString().substring(0, 500)
+        : error.message
+    );
+  }
+}
 
 // ====== TEMP MAIL FUNCTIONS ======
 function tempMailApiRequest(sessionState, path, params = {}) {
@@ -557,7 +619,7 @@ const htmlTemplate = `<!DOCTYPE html>
     --warn: #fbbf24; --warn-soft: rgba(251,191,36,0.12);
     --err: #f87171; --err-soft: rgba(248,113,113,0.12);
     --info: #60a5fa; --info-soft: rgba(96,165,250,0.12);
-    --netflix: #e50914; --apk: #4ade80; --mail: #60a5fa;
+    --netflix: #e50914; --apk: #4ade80; --mail: #60a5fa; --hd: #f472b6;
   }
   * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
   html, body { width:100%; max-width:100%; overflow-x:hidden; margin:0; padding:0; background:var(--bg-0); color:var(--text-0); font-family:'Inter',system-ui,sans-serif; font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased; }
@@ -594,6 +656,8 @@ const htmlTemplate = `<!DOCTYPE html>
   .btn-apk:hover:not(:disabled) { background:#3ecf70; }
   .btn-mail { background:var(--mail); }
   .btn-mail:hover:not(:disabled) { background:#4a90e2; }
+  .btn-hd { background:var(--hd); }
+  .btn-hd:hover:not(:disabled) { background:#ec4899; }
   .btn-warn { background:var(--warn); color:#3a2800; }
   .btn-warn:hover:not(:disabled) { background:#e6ac1e; }
   .btn-info { background:var(--info); }
@@ -605,6 +669,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .badge-info { background:var(--info-soft); color:var(--info); border:1px solid rgba(96,165,250,0.25); }
   .badge-accent { background:var(--accent-soft); color:var(--accent); border:1px solid rgba(139,124,246,0.25); }
   .badge-muted { background:var(--bg-2); color:var(--text-1); border:1px solid var(--line-2); }
+  .badge-hd { background:rgba(244,114,182,0.12); color:var(--hd); border:1px solid rgba(244,114,182,0.25); }
   #nav-drawer { position:fixed; top:0; bottom:0; right:0; width:86%; max-width:340px; background:var(--bg-1); border-left:1px solid var(--line-2); z-index:50; transform:translateX(105%); transition:transform 0.25s cubic-bezier(0.32,0.72,0,1); display:flex; flex-direction:column; padding:16px; overflow-y:auto; }
   #nav-drawer.open { transform:translateX(0); }
   .nav-link { display:flex; align-items:center; gap:10px; width:100%; padding:10px 12px; border-radius:9px; background:transparent; color:var(--text-1); font-size:13px; font-weight:500; border:1px solid transparent; cursor:pointer; text-align:left; font-family:inherit; transition:background 0.12s, color 0.12s, border-color 0.12s; }
@@ -613,6 +678,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .nav-link.netflix-nav.active { background:rgba(229,9,20,0.12); color:#ff6b6b; border-color:rgba(229,9,20,0.3); }
   .nav-link.apk-nav.active { background:var(--ok-soft); color:var(--ok); border-color:rgba(74,222,128,0.3); }
   .nav-link.mail-nav.active { background:var(--info-soft); color:var(--info); border-color:rgba(96,165,250,0.3); }
+  .nav-link.hd-nav.active { background:rgba(244,114,182,0.12); color:var(--hd); border-color:rgba(244,114,182,0.3); }
   .nav-link.orders-nav.active { background:rgba(96,165,250,0.12); color:#7dd3fc; border-color:rgba(96,165,250,0.3); }
   .nav-section-label { font-size:10px; font-weight:700; color:var(--text-2); text-transform:uppercase; letter-spacing:0.1em; padding:14px 12px 6px 12px; }
   .stat { background:var(--bg-2); border:1px solid var(--line-2); border-radius:10px; padding:11px 13px; display:flex; align-items:center; justify-content:space-between; }
@@ -628,11 +694,12 @@ const htmlTemplate = `<!DOCTYPE html>
   .toast-netflix { background:#3a0a0c; color:#fecaca; border:1px solid #5f0a0d; }
   .toast-apk { background:#1a3a26; color:#a7f3c8; border:1px solid #2d5f3f; }
   .toast-mail { background:#0a1f3a; color:#bfdbfe; border:1px solid #0a3d5f; }
+  .toast-hd { background:#3a0a2a; color:#fbcfe8; border:1px solid #5f0a4d; }
   .toast-order { background:#0a2a3a; color:#bae6fd; border:1px solid #0a4a5f; }
   .prog { height:6px; background:var(--bg-0); border-radius:999px; overflow:hidden; }
   .prog-fill { height:100%; background:var(--accent); border-radius:999px; transition:width 0.25s; width:0%; }
   .dropzone { border:1.5px dashed var(--line-2); border-radius:10px; padding:20px 12px; text-align:center; cursor:pointer; transition:border-color 0.15s, background 0.15s; }
-  .dropzone:hover, .dropzone.dragover { border-color:var(--accent); background:var(--accent-soft); }
+  .dropzone:hover, .dropzone.dragover { border-color:var(--hd); background:rgba(244,114,182,0.12); }
   .chat-wrap { height:400px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; display:flex; flex-direction:column; overflow:hidden; }
   .chat-stream { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; }
   .chat-msg { max-width:82%; padding:8px 11px; border-radius:10px; font-size:12.5px; line-height:1.45; word-wrap:break-word; animation:fadeUp 0.25s; }
@@ -677,7 +744,6 @@ const htmlTemplate = `<!DOCTYPE html>
   ::-webkit-scrollbar-thumb:hover { background:var(--text-2); }
   .hide { display:none !important; }
 
-  /* ====== ANIMASI LOGIN & REGISTER ====== */
   @keyframes shake {
     0%, 100% { transform: translateX(0); }
     25% { transform: translateX(-5px); }
@@ -713,7 +779,6 @@ const htmlTemplate = `<!DOCTYPE html>
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ====== ANIMASI INBOX TEMP MAIL ====== */
   @keyframes slideInRight {
     from { opacity: 0; transform: translateX(20px); }
     to { opacity: 1; transform: translateX(0); }
@@ -730,6 +795,47 @@ const htmlTemplate = `<!DOCTYPE html>
     70% { box-shadow: 0 0 0 10px rgba(96,165,250,0); }
     100% { box-shadow: 0 0 0 0 rgba(96,165,250,0); }
   }
+
+  .hd-preview-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .hd-preview-cell {
+    position: relative;
+    background: var(--bg-0);
+    border: 1px solid var(--line-2);
+    border-radius: 10px;
+    overflow: hidden;
+    aspect-ratio: 1;
+  }
+  .hd-preview-cell img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+  .hd-preview-label {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    backdrop-filter: blur(4px);
+    z-index: 1;
+  }
+  .hd-label-before { background: rgba(248,113,113,0.85); color: white; }
+  .hd-label-after { background: rgba(74,222,128,0.85); color: #032a17; }
+  .hd-compare-hint {
+    font-size: 10px;
+    color: var(--text-2);
+    text-align: center;
+    margin-top: 6px;
+  }
 </style>
 </head>
 <body>
@@ -737,7 +843,6 @@ const htmlTemplate = `<!DOCTYPE html>
 <div class="app-shell">
   <div class="topbar">
     <div style="display:flex; align-items:center; gap:10px;">
-      <!-- Mengganti simbol petir dengan logo SVG rapi -->
       <div class="brand-mark">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
@@ -775,6 +880,7 @@ const htmlTemplate = `<!DOCTYPE html>
     <button onclick="switchView('generator')" data-nav="generator" class="nav-link active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Alight Motion</button>
     <button onclick="switchView('netflix')" data-nav="netflix" class="nav-link netflix-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/></svg>Netflix Token</button>
     <button onclick="switchView('apkmod')" data-nav="apkmod" class="nav-link apk-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>APK MOD</button>
+    <button onclick="switchView('hdphoto')" data-nav="hdphoto" class="nav-link hd-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>HD Photo<span class="badge badge-hd" style="margin-left:auto; font-size:9px; padding:1px 6px;">NEW</span></button>
     <button onclick="switchView('tempmail')" data-nav="tempmail" class="nav-link mail-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>Temp Mail<span class="badge badge-info" style="margin-left:auto; font-size:9px; padding:1px 6px;">NEW</span></button>
     <button onclick="switchView('orders')" data-nav="orders" class="nav-link orders-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>Orderan Saya</button>
     <div class="nav-section-label">Akun</div>
@@ -801,10 +907,8 @@ const htmlTemplate = `<!DOCTYPE html>
   <div style="flex:1; display:flex; flex-direction:column; justify-content:center; padding:8px 0; gap:12px;">
     <div id="offline-banner" class="card hide" style="background:var(--err-soft); border-color:rgba(248,113,113,0.3); padding:10px 13px; font-size:12px; color:var(--err); text-align:center;">⚠ Server offline — fitur generator dinonaktifkan</div>
 
-    <!-- AUTH VIEW DENGAN ANIMASI BARU -->
     <div id="auth-view" class="card-elevated" style="display:flex; flex-direction:column; gap:16px;">
       <div style="text-align:center; padding:8px 0 4px;">
-        <!-- Logo diganti menjadi SVG bersih, tanpa huruf A -->
         <div style="width:54px; height:54px; border-radius:14px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:inline-flex; align-items:center; justify-content:center; box-shadow:0 8px 24px rgba(109,92,230,0.4); margin-bottom:10px;">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
@@ -813,15 +917,11 @@ const htmlTemplate = `<!DOCTYPE html>
         <h1 class="display-font" style="font-size:22px; font-weight:800; margin:0 0 4px; color:var(--text-0);">Selamat datang</h1>
         <p style="font-size:12.5px; color:var(--text-2); margin:0;">Login atau daftar untuk mulai menggunakan layanan</p>
       </div>
-      
-      <!-- Tab Switch dengan indikator geser -->
       <div style="display:flex; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; padding:3px; position:relative;">
         <div id="tab-indicator" style="position:absolute; top:3px; bottom:3px; left:3px; width:calc(50% - 3px); background:var(--accent); border-radius:7px; transition:transform 0.25s cubic-bezier(0.32,0.72,0,1);"></div>
         <button onclick="switchAuthTab('login')" id="tab-login-btn" style="position:relative; z-index:1; flex:1; padding:8px; background:transparent; border:none; font-weight:600; font-size:12.5px; cursor:pointer; color:white; font-family:inherit; border-radius:7px;">Login</button>
         <button onclick="switchAuthTab('register')" id="tab-reg-btn" style="position:relative; z-index:1; flex:1; padding:8px; background:transparent; border:none; font-weight:600; font-size:12.5px; cursor:pointer; color:var(--text-1); font-family:inherit; border-radius:7px;">Daftar</button>
       </div>
-      
-      <!-- Form container dengan efek transisi -->
       <div id="auth-form-container" class="auth-tab-content" style="display:flex; flex-direction:column; gap:12px;">
         <div><label class="field-label">Username</label><input type="text" id="auth-username" placeholder="username_kamu" class="inp mono"></div>
         <div><label class="field-label">Password</label><input type="password" id="auth-password" placeholder="••••••••" class="inp"></div>
@@ -840,7 +940,6 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
       <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between;">
         <div style="display:flex; align-items:center; gap:10px; min-width:0;">
-          <!-- Avatar inisial, bukan huruf A hardcode -->
           <div class="brand-mark" style="width:34px; height:34px; font-size:14px; background:var(--bg-2); border:1px solid var(--line-2); box-shadow:none;"><span id="user-avatar" style="color:var(--accent);">U</span></div>
           <div style="min-width:0;">
             <div id="logged-username" style="font-weight:700; font-size:13px; overflow:hidden; text-overflow:ellipsis;">-</div>
@@ -927,6 +1026,72 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- ============ HD PHOTO SECTION ============ -->
+    <div id="section-hdphoto" class="hide" style="display:flex; flex-direction:column; gap:10px;">
+      <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between; border-color:rgba(244,114,182,0.3);">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,var(--hd),#ec4899); display:flex; align-items:center; justify-content:center; font-weight:900; color:white; font-size:13px;">HD</div>
+          <div><div style="font-weight:700; font-size:13px;">HD Photo Upscale</div><div style="font-size:10.5px; color:var(--hd);">Tingkatkan kualitas foto</div></div>
+        </div>
+        <span class="badge badge-ok"><span class="online-dot"></span>Ready</span>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="stat" style="border-color:rgba(244,114,182,0.3);"><div><div class="stat-label">Kuota</div><div id="hd-quota-display" class="stat-value">0</div></div></div>
+        <div class="stat" style="border-color:rgba(244,114,182,0.3);"><div><div class="stat-label">Reset</div><div id="hd-reset-display" class="stat-value">24 Jam</div></div></div>
+      </div>
+      <div style="padding:10px 12px; background:rgba(244,114,182,0.12); border:1px solid rgba(244,114,182,0.25); border-radius:10px; font-size:11px; color:var(--hd); display:flex; gap:6px; align-items:flex-start;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-top:1px; flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span><strong>Quota sama</strong> dengan fitur lain — setiap upscale = -1 quota</span>
+      </div>
+      <div class="card" style="border-color:rgba(244,114,182,0.3); display:flex; flex-direction:column; gap:12px;">
+        <div class="section-head" style="color:var(--hd);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>Upload Foto</div>
+        <div id="hd-drop-zone" class="dropzone" onclick="document.getElementById('hd-file-input').click()">
+          <input type="file" id="hd-file-input" accept="image/*" class="hide" onchange="handleHdFileSelect(event)">
+          <div style="font-size:12px; font-weight:600;">Klik atau drop gambar</div>
+          <div style="font-size:10.5px; color:var(--text-2); margin-top:3px;">JPG, PNG, WebP • max 15MB</div>
+          <div id="hd-file-info" class="mono hide" style="font-size:10px; color:var(--hd); margin-top:6px;"></div>
+        </div>
+        <div id="hd-preview-container" class="hide">
+          <div class="hd-preview-grid">
+            <div class="hd-preview-cell">
+              <span class="hd-preview-label hd-label-before">Before</span>
+              <img id="hd-preview-before" src="" alt="Sebelum">
+            </div>
+            <div class="hd-preview-cell" id="hd-preview-after-cell">
+              <span class="hd-preview-label hd-label-after">After</span>
+              <img id="hd-preview-after" src="" alt="Sesudah">
+            </div>
+          </div>
+          <p class="hd-compare-hint">👆 Bandingkan sebelum & sesudah</p>
+        </div>
+        <button id="btn-hd-upscale" onclick="handleHdUpscale()" class="btn btn-hd" disabled><span id="hd-btn-text">✨ Upscale Sekarang</span></button>
+        <button id="btn-hd-download" onclick="downloadHdResult()" class="btn btn-ok hide"><span>⬇ Download Hasil HD</span></button>
+      </div>
+      <div id="hd-loading" class="hide card" style="border-color:rgba(244,114,182,0.3);">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+          <div style="width:34px; height:34px; border-radius:9px; background:rgba(244,114,182,0.15); display:flex; align-items:center; justify-content:center;">
+            <svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--hd)" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
+          </div>
+          <div><div style="font-weight:700; font-size:12px;">Memproses...</div><div id="hd-status-text" style="font-size:10.5px; color:var(--text-2);">Mengunggah gambar</div></div>
+        </div>
+        <div class="prog"><div id="hd-progress-fill" class="prog-fill" style="background:var(--hd);"></div></div>
+        <p id="hd-log-text" class="mono" style="font-size:10px; color:var(--text-2); margin-top:8px; text-align:center;">Initializing...</p>
+      </div>
+      <div id="hd-error-box" class="hide" style="padding:11px; background:var(--err-soft); border:1px solid rgba(248,113,113,0.25); border-radius:9px; font-size:11px; color:var(--err);">
+        <div style="font-weight:700; margin-bottom:4px;">❌ Upscale Gagal</div>
+        <div id="hd-error-text" class="mono" style="font-size:10px; word-break:break-all;"></div>
+      </div>
+      <div class="card" style="border-color:rgba(244,114,182,0.2);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--hd); letter-spacing:0.06em;">Riwayat HD Photo</div>
+          <button onclick="loadHdHistory()" class="btn btn-ghost btn-xs">Refresh</button>
+        </div>
+        <div id="hd-history-list" style="display:flex; flex-direction:column; gap:7px; max-height:220px; overflow-y:auto;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
+        </div>
+      </div>
+    </div>
+
     <div id="section-tempmail" class="hide" style="display:flex; flex-direction:column; gap:10px;">
       <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between; border-color:rgba(96,165,250,0.3);">
         <div style="display:flex; align-items:center; gap:10px;">
@@ -993,10 +1158,11 @@ const htmlTemplate = `<!DOCTYPE html>
         <div class="section-head" style="margin:0; color:var(--info);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>Orderan Saya</div>
         <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
       </div>
-      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px;">
+      <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:5px;">
         <div style="padding:8px 4px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--info); font-weight:700; text-transform:uppercase;">Total</div><div id="my-orders-total" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
         <div style="padding:8px 4px; background:var(--accent-soft); border:1px solid rgba(139,124,246,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--accent); font-weight:700; text-transform:uppercase;">AM</div><div id="my-orders-am" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
         <div style="padding:8px 4px; background:var(--err-soft); border:1px solid rgba(248,113,113,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--err); font-weight:700; text-transform:uppercase;">NFLX</div><div id="my-orders-netflix" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
+        <div style="padding:8px 4px; background:rgba(244,114,182,0.12); border:1px solid rgba(244,114,182,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--hd); font-weight:700; text-transform:uppercase;">HD</div><div id="my-orders-hd" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
         <div style="padding:8px 4px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--info); font-weight:700; text-transform:uppercase;">Mail</div><div id="my-orders-mail" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
       </div>
       <div style="display:flex; gap:7px;">
@@ -1126,6 +1292,7 @@ const htmlTemplate = `<!DOCTYPE html>
           <div>✦ Generate Netflix tanpa batas</div>
           <div>✦ Request APK MOD tanpa batas</div>
           <div>✦ Generate Temp Mail tanpa batas</div>
+          <div>✦ HD Photo Upscale tanpa batas</div>
           <div>✦ Kuota unlimited</div>
           <div>✦ Badge VIP eksklusif</div>
         </div>
@@ -1367,6 +1534,7 @@ const htmlTemplate = `<!DOCTYPE html>
           <button onclick="setAdminOrderFilter('all')" data-afilter="all" class="admin-order-filter btn btn-xs" style="background:var(--info); color:white;">Semua</button>
           <button onclick="setAdminOrderFilter('am')" data-afilter="am" class="admin-order-filter btn btn-ghost btn-xs">AM</button>
           <button onclick="setAdminOrderFilter('netflix')" data-afilter="netflix" class="admin-order-filter btn btn-ghost btn-xs">NFLX</button>
+          <button onclick="setAdminOrderFilter('hd')" data-afilter="hd" class="admin-order-filter btn btn-ghost btn-xs">HD</button>
           <button onclick="setAdminOrderFilter('apk')" data-afilter="apk" class="admin-order-filter btn btn-ghost btn-xs">APK</button>
           <button onclick="setAdminOrderFilter('mail')" data-afilter="mail" class="admin-order-filter btn btn-ghost btn-xs">Mail</button>
         </div>
@@ -1476,10 +1644,11 @@ const htmlTemplate = `<!DOCTYPE html>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">1</div><div style="font-size:12px; color:var(--text-1);">Login/daftar dulu dengan akunmu</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">2</div><div style="font-size:12px; color:var(--text-1);"><strong>Alight Motion:</strong> Masukkan email target, kirim magic link, copy URL, verifikasi</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--netflix); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">3</div><div style="font-size:12px; color:var(--text-1);"><strong>Netflix:</strong> Pilih plan, klik Generate, tunggu proses</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--ok); color:#032a17; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">4</div><div style="font-size:12px; color:var(--text-1);"><strong>APK MOD:</strong> Pilih APK, klik Dapatkan Link</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">5</div><div style="font-size:12px; color:var(--text-1);"><strong>Temp Mail:</strong> Generate email, copy, cek inbox (Otomatis Terbuka)</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">7</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai.</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--hd); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">4</div><div style="font-size:12px; color:var(--text-1);"><strong>HD Photo:</strong> Upload foto, klik Upscale, lihat before/after, download hasil</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--ok); color:#032a17; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">5</div><div style="font-size:12px; color:var(--text-1);"><strong>APK MOD:</strong> Pilih APK, klik Dapatkan Link</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>Temp Mail:</strong> Generate email, copy, cek inbox (Otomatis Terbuka)</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">7</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">8</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai.</div></div>
       </div>
     </div>
 
@@ -1570,12 +1739,19 @@ let lastApkHistoryFetch = 0;
 let lastMailHistoryFetch = 0;
 let lastMyOrdersFetch = 0;
 let lastAdminOrdersFetch = 0;
+let lastHdHistoryFetch = 0;
 
-// Variabel untuk Auto Refresh Temp Mail
 let mailAutoRefreshInterval = null;
 let lastMailMessageCount = 0;
 
-const CACHE_DURATION = { status:30000, video:60000, chat:15000, emails:30000, redeems:60000, announcements:60000, netflixHistory:30000, apkHistory:30000, mailHistory:30000, myOrders:15000, adminOrders:15000, onlineUsers:15000 };
+// HD Photo state
+let selectedHdFile = null;
+let hdBeforeUrl = null;
+let hdAfterUrl = null;
+let hdAfterBlob = null;
+let hdAfterContentType = 'image/png';
+
+const CACHE_DURATION = { status:30000, video:60000, chat:15000, emails:30000, redeems:60000, announcements:60000, netflixHistory:30000, apkHistory:30000, mailHistory:30000, myOrders:15000, adminOrders:15000, onlineUsers:15000, hdHistory:30000 };
 const memoryCache = {};
 
 function getCached(key) {
@@ -1595,6 +1771,7 @@ document.addEventListener('visibilitychange', () => {
     if (currentView === 'vipshop') loadUserTransactions();
     if (currentView === 'netflix') loadNetflixHistory(true);
     if (currentView === 'apkmod') loadApkHistory(true);
+    if (currentView === 'hdphoto') loadHdHistory(true);
     if (currentView === 'tempmail') { loadTempMailHistory(true); if(tempMailSession) startMailAutoRefresh(); }
     if (currentView === 'orders') loadMyOrders(true);
   } else {
@@ -1675,16 +1852,17 @@ function switchView(viewName) {
   currentView = viewName;
   document.querySelectorAll('[data-nav]').forEach(el => { el.classList.toggle('active', el.dataset.nav === viewName); });
   toggleMenu();
-  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-apkmod','section-tempmail','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
+  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-apkmod','section-tempmail','section-orders','section-hdphoto'].forEach(id => { document.getElementById(id).classList.add('hide'); });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hide');
   else if (viewName === 'orders') { document.getElementById('section-orders').classList.remove('hide'); loadMyOrders(); }
   else if (viewName === 'netflix') { document.getElementById('section-netflix').classList.remove('hide'); loadNetflixHistory(); updateNetflixQuotaDisplay(); }
   else if (viewName === 'apkmod') { document.getElementById('section-apkmod').classList.remove('hide'); loadApkMods(); loadApkHistory(); updateApkQuotaDisplay(); }
-  else if (viewName === 'tempmail') { 
-    document.getElementById('section-tempmail').classList.remove('hide'); 
-    loadTempMailHistory(); 
-    updateMailQuotaDisplay(); 
-    if (tempMailSession) startMailAutoRefresh(); 
+  else if (viewName === 'hdphoto') { document.getElementById('section-hdphoto').classList.remove('hide'); loadHdHistory(); updateHdQuotaDisplay(); }
+  else if (viewName === 'tempmail') {
+    document.getElementById('section-tempmail').classList.remove('hide');
+    loadTempMailHistory();
+    updateMailQuotaDisplay();
+    if (tempMailSession) startMailAutoRefresh();
   }
   else if (viewName === 'vipshop') {
     document.getElementById('section-vipshop').classList.remove('hide');
@@ -1702,8 +1880,6 @@ function switchView(viewName) {
     document.getElementById('section-admin').classList.remove('hide');
     loadAdminRedeems(); loadAdminAnnouncements(); loadAdminVipList(); loadAllUsers(); loadVipAccounts(); loadAdminFeatureRequests(); loadAdminVipShop(); loadAdminTransactions(); loadAdminApkList(); loadAdminOrders();
   }
-  
-  // Matikan auto refresh jika pindah dari view tempmail
   if (viewName !== 'tempmail') {
     stopMailAutoRefresh();
   }
@@ -1718,6 +1894,237 @@ function guardServerOnline(featureName) {
   showToast('Server offline — ' + featureName + ' tidak tersedia.', 'error', 4000);
   return false;
 }
+
+// ====== HD PHOTO FUNCTIONS ======
+function updateHdQuotaDisplay() {
+  const el = document.getElementById('hd-quota-display');
+  if (el) {
+    if (isAdminUser || isVipUser) { el.innerText = '∞'; el.style.color = 'var(--hd)'; }
+    else { const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota); el.innerText = remain; el.style.color = remain > 0 ? 'white' : 'var(--err)'; }
+  }
+  const resetEl = document.getElementById('hd-reset-display');
+  if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
+}
+
+function handleHdFileSelect(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    showToast('File harus berupa gambar!', 'error');
+    event.target.value = '';
+    return;
+  }
+  if (file.size > 15 * 1024 * 1024) {
+    showToast('Ukuran gambar max 15MB', 'error');
+    event.target.value = '';
+    return;
+  }
+  selectedHdFile = file;
+  hdAfterBlob = null;
+  hdAfterUrl = null;
+  if (hdBeforeUrl) URL.revokeObjectURL(hdBeforeUrl);
+  hdBeforeUrl = URL.createObjectURL(file);
+  const info = document.getElementById('hd-file-info');
+  info.innerText = '📁 ' + file.name + ' (' + (file.size/1024).toFixed(0) + ' KB)';
+  info.classList.remove('hide');
+  document.getElementById('hd-preview-before').src = hdBeforeUrl;
+  document.getElementById('hd-preview-after').src = '';
+  document.getElementById('hd-preview-container').classList.remove('hide');
+  document.getElementById('btn-hd-upscale').disabled = false;
+  document.getElementById('btn-hd-download').classList.add('hide');
+  document.getElementById('hd-error-box').classList.add('hide');
+  document.getElementById('hd-preview-after-cell').style.opacity = '0.4';
+  showToast('Foto siap di-upscale', 'hd');
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleHdUpscale() {
+  if (!loggedInUsername) return showToast('Harus login!', 'error');
+  if (!selectedHdFile) return showToast('Pilih foto dulu!', 'error');
+  if (!guardServerOnline('HD Photo')) return;
+
+  const btn = document.getElementById('btn-hd-upscale');
+  const btnText = document.getElementById('hd-btn-text');
+  const loadingEl = document.getElementById('hd-loading');
+  const statusText = document.getElementById('hd-status-text');
+  const logText = document.getElementById('hd-log-text');
+  const progressFill = document.getElementById('hd-progress-fill');
+  const errorBox = document.getElementById('hd-error-box');
+  const errorText = document.getElementById('hd-error-text');
+
+  btn.disabled = true; btnText.innerText = 'Memproses...';
+  loadingEl.classList.remove('hide');
+  errorBox.classList.add('hide');
+  progressFill.style.width = '0%';
+  progressFill.style.background = 'var(--hd)';
+  statusText.innerText = 'Mengecek kuota...';
+  logText.innerText = 'Checking quota...';
+  document.getElementById('btn-hd-download').classList.add('hide');
+  document.getElementById('hd-preview-after-cell').style.opacity = '0.4';
+  document.getElementById('hd-preview-after').src = '';
+  if (hdAfterUrl) { URL.revokeObjectURL(hdAfterUrl); hdAfterUrl = null; }
+  hdAfterBlob = null;
+
+  try {
+    const quotaRes = await fetch('/api/hd/check-quota?username=' + encodeURIComponent(loggedInUsername));
+    const quotaData = await quotaRes.json();
+    if (!quotaData.success) throw new Error(quotaData.message || 'Gagal cek kuota');
+    if (!quotaData.allowed) throw new Error(quotaData.message || 'Kuota habis!');
+
+    statusText.innerText = 'Mengunggah gambar...';
+    logText.innerText = 'Uploading image...';
+    progressFill.style.width = '20%';
+
+    const base64 = await fileToBase64(selectedHdFile);
+
+    statusText.innerText = 'Memproses upscale...';
+    logText.innerText = 'Upscaling in progress...';
+    progressFill.style.width = '45%';
+
+    const res = await fetch('/api/hd/upscale', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: loggedInUsername,
+        imageBase64: base64,
+        fileName: selectedHdFile.name,
+        mimeType: selectedHdFile.type
+      })
+    });
+
+    progressFill.style.width = '85%';
+    statusText.innerText = 'Menyelesaikan...';
+    logText.innerText = 'Finalizing...';
+
+    const data = await res.json();
+    progressFill.style.width = '100%';
+
+    if (data.success && data.resultImage) {
+      statusText.innerText = '✅ Berhasil!';
+      logText.innerText = 'Success!';
+      progressFill.style.background = 'var(--ok)';
+
+      const resultBase64 = data.resultImage;
+      const contentType = data.contentType || 'image/png';
+
+      const byteCharacters = atob(resultBase64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      hdAfterBlob = new Blob([byteArray], { type: contentType });
+      hdAfterContentType = contentType;
+      hdAfterUrl = URL.createObjectURL(hdAfterBlob);
+
+      document.getElementById('hd-preview-after').src = hdAfterUrl;
+      document.getElementById('hd-preview-after-cell').style.opacity = '1';
+      document.getElementById('btn-hd-download').classList.remove('hide');
+
+      if (data.quotaInfo) {
+        userQuotaData.usedQuota = data.quotaInfo.usedQuota || userQuotaData.usedQuota;
+        updateQuotaDisplay(data.quotaInfo);
+        updateHdQuotaDisplay();
+      }
+      if (data.orderId) showToast('✅ Order ID: ' + data.orderId, 'order', 5000);
+      else showToast('Foto berhasil di-upscale!', 'hd');
+      loadHdHistory(true);
+      setTimeout(() => loadingEl.classList.add('hide'), 2000);
+    } else {
+      if (data.refilled) {
+        showToast(data.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
+      } else {
+        showToast(data.message || 'Gagal upscale', 'error');
+      }
+      if (data.quotaInfo) { updateQuotaDisplay(data.quotaInfo); updateHdQuotaDisplay(); }
+      else loadVerifiedEmails(true);
+      errorText.innerText = data.message || 'Upscale gagal';
+      errorBox.classList.remove('hide');
+      statusText.innerText = '❌ Gagal';
+      logText.innerText = data.message || 'Failed';
+      progressFill.style.background = 'var(--err)';
+      setTimeout(() => loadingEl.classList.add('hide'), 3000);
+    }
+  } catch (err) {
+    statusText.innerText = '❌ Gagal';
+    logText.innerText = err.message;
+    progressFill.style.background = 'var(--err)';
+    errorText.innerText = err.message;
+    errorBox.classList.remove('hide');
+    showToast(err.message, 'error');
+    setTimeout(() => loadingEl.classList.add('hide'), 3000);
+  } finally {
+    btn.disabled = false;
+    btnText.innerText = '✨ Upscale Sekarang';
+  }
+}
+
+function downloadHdResult() {
+  if (!hdAfterBlob) return showToast('Belum ada hasil!', 'error');
+  const ext = hdAfterContentType.split('/')[1] || 'png';
+  const fileName = 'hd-upscaled-' + Date.now() + '.' + (ext === 'jpeg' ? 'jpg' : ext);
+  const link = document.createElement('a');
+  link.href = hdAfterUrl;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  showToast('Download dimulai!', 'hd');
+}
+
+async function loadHdHistory(force = false) {
+  if (!loggedInUsername) return;
+  const now = Date.now();
+  if (!force && now - lastHdHistoryFetch < CACHE_DURATION.hdHistory) {
+    const cached = getCached('hdHistory');
+    if (cached) { renderHdHistory(cached); return; }
+  }
+  const container = document.getElementById('hd-history-list');
+  if (!container) return;
+  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Memuat...</p>';
+  try {
+    const res = await fetch('/api/hd/history?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+    lastHdHistoryFetch = now; setCache('hdHistory', data, CACHE_DURATION.hdHistory);
+    renderHdHistory(data);
+  } catch(e) {
+    container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>';
+  }
+}
+
+function renderHdHistory(data) {
+  const container = document.getElementById('hd-history-list');
+  if (!container) return;
+  if (data.success && data.results && data.results.length > 0) {
+    container.innerHTML = data.results.map(r => (
+      '<div class="hist-item" style="border-color:rgba(244,114,182,0.25);">' +
+        '<div style="display:flex; justify-content:space-between; margin-bottom:3px;">' +
+          '<span style="font-size:11px; font-weight:700; color:var(--hd);">🖼️ HD Photo</span>' +
+          '<span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span>' +
+        '</div>' +
+        '<div style="font-size:10px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' +
+          escapeHtml(r.fileName || 'foto') +
+        '</div>' +
+        '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px;">' +
+          '<span style="font-size:9px; color:var(--text-2);">' + escapeHtml(r.orderId || '-') + '</span>' +
+          '<span class="badge badge-hd" style="font-size:9px;">✓ Selesai</span>' +
+        '</div>' +
+      '</div>'
+    )).join('');
+  } else {
+    container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
+  }
+}
+
+// ====== END HD PHOTO ======
 
 async function loadMyOrders(force = false) {
   if (!loggedInUsername) return;
@@ -1747,12 +2154,13 @@ function renderMyOrders() {
   document.getElementById('my-orders-total').innerText = myOrders.length;
   document.getElementById('my-orders-am').innerText = myOrders.filter(o => o.type === 'am').length;
   document.getElementById('my-orders-netflix').innerText = myOrders.filter(o => o.type === 'netflix').length;
+  document.getElementById('my-orders-hd').innerText = myOrders.filter(o => o.type === 'hd').length;
   document.getElementById('my-orders-mail').innerText = myOrders.filter(o => o.type === 'mail').length;
   if (filtered.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">' + (search ? 'Tidak cocok' : 'Belum ada') + '</p>'; return; }
   container.innerHTML = filtered.map(o => {
-    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'mail' ? '📧' : '📱';
-    const typeLabel = o.type === 'am' ? 'Alight Motion' : o.type === 'netflix' ? 'Netflix' : o.type === 'mail' ? 'Temp Mail' : 'APK MOD';
-    const typeBadge = o.type === 'am' ? 'badge-accent' : o.type === 'netflix' ? 'badge-err' : o.type === 'mail' ? 'badge-info' : 'badge-ok';
+    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'hd' ? '🖼️' : o.type === 'mail' ? '📧' : '📱';
+    const typeLabel = o.type === 'am' ? 'Alight Motion' : o.type === 'netflix' ? 'Netflix' : o.type === 'hd' ? 'HD Photo' : o.type === 'mail' ? 'Temp Mail' : 'APK MOD';
+    const typeBadge = o.type === 'am' ? 'badge-accent' : o.type === 'netflix' ? 'badge-err' : o.type === 'hd' ? 'badge-hd' : o.type === 'mail' ? 'badge-info' : 'badge-ok';
     const timeStr = new Date(o.timestamp).toLocaleString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
     return '<div class="hist-item">' +
       '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">' +
@@ -1804,7 +2212,7 @@ function renderAdminOrders() {
   if (search) filtered = filtered.filter(o => (o.orderId||'').toLowerCase().includes(search) || (o.username||'').toLowerCase().includes(search) || (o.detail||'').toLowerCase().includes(search));
   if (filtered.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Tidak ada</p>'; return; }
   container.innerHTML = filtered.slice(0, 100).map(o => {
-    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'mail' ? '📧' : '📱';
+    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'hd' ? '🖼️' : o.type === 'mail' ? '📧' : '📱';
     const timeStr = new Date(o.timestamp).toLocaleString('id-ID', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
     return '<div style="padding:8px 10px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:7px;">' +
       '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:4px;">' +
@@ -1827,40 +2235,29 @@ function updateMailQuotaDisplay() {
   if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
 }
 
-// FUNGSI BARU: Auto Refresh Temp Mail
 function startMailAutoRefresh() {
   if (mailAutoRefreshInterval) clearInterval(mailAutoRefreshInterval);
   mailAutoRefreshInterval = setInterval(async () => {
     if (!isPageVisible || !tempMailSession || currentView !== 'tempmail') return;
-    
     try {
-      // Menggunakan endpoint check yang sudah ada
-      const res = await fetch('/api/tempmail/check', { 
-        method:'POST', 
-        headers:{'Content-Type':'application/json'}, 
-        body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession }) 
+      const res = await fetch('/api/tempmail/check', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession })
       });
       const data = await res.json();
-      
       if (data.success && data.messages) {
-        // Cek apakah ada pesan baru berdasarkan jumlah
         if (data.messages.length > lastMailMessageCount) {
           showToast('📧 Pesan baru masuk!', 'mail');
           lastMailMessageCount = data.messages.length;
-          
-          // Update list inbox
           document.getElementById('mail-message-count').innerText = data.messages.length + ' pesan';
-          
-          // Render ulang dengan animasi
           const inboxList = document.getElementById('mail-inbox-list');
           if (data.messages.length > 0) {
             inboxList.innerHTML = data.messages.map((msg, idx) => {
-              const isNew = idx === 0; // Asumsi pesan terbaru ada di index 0
+              const isNew = idx === 0;
               const animClass = isNew ? 'mail-new' : '';
-              
-              const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
+              const linksHtml = msg.extracted_links && msg.extracted_links.length > 0
                 ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
-              
               return '<div class="hist-item ' + animClass + '" style="border-color:rgba(96,165,250,0.25);"><div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div><div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' + linksHtml + '</div>';
             }).join('');
           } else {
@@ -1868,10 +2265,8 @@ function startMailAutoRefresh() {
           }
         }
       }
-    } catch (e) {
-      // Abaikan error silent agar tidak spam
-    }
-  }, 5000); // Cek setiap 5 detik
+    } catch (e) {}
+  }, 5000);
 }
 
 function stopMailAutoRefresh() {
@@ -1891,11 +2286,8 @@ async function handleGenerateTempMail() {
   const logText = document.getElementById('mail-log-text');
   const progressFill = document.getElementById('mail-progress-fill');
   const resultContainer = document.getElementById('mail-result-container');
-  
-  // Reset state auto refresh
   stopMailAutoRefresh();
   lastMailMessageCount = 0;
-  
   btn.disabled = true; btnText.innerText = 'Memproses...';
   loadingEl.classList.remove('hide'); progressFill.style.width = '0%';
   statusText.innerText = 'Menyiapkan'; logText.innerText = 'Initializing...';
@@ -1915,10 +2307,7 @@ async function handleGenerateTempMail() {
       resultContainer.classList.remove('hide');
       document.getElementById('mail-inbox-list').innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Menunggu email (Auto-Refresh Aktif)...</p>';
       document.getElementById('mail-message-count').innerText = '0 pesan';
-      
-      // Memulai Auto refresh
       startMailAutoRefresh();
-      
       if (genData.quotaInfo) { userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(genData.quotaInfo); updateMailQuotaDisplay(); }
       if (genData.orderId) showToast('✅ Order ID: ' + genData.orderId, 'order', 5000);
       else showToast('Email berhasil!', 'mail');
@@ -1948,10 +2337,10 @@ async function checkTempMailInbox() {
     const res = await fetch('/api/tempmail/check', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession }) });
     const data = await res.json();
     if (data.success) {
-      if (data.messages && data.messages.length > 0) { 
-        messageCount.innerText = data.messages.length + ' pesan'; 
-        renderTempMailInbox(data.messages); 
-        showToast('📧 ' + data.messages.length + ' pesan!', 'mail'); 
+      if (data.messages && data.messages.length > 0) {
+        messageCount.innerText = data.messages.length + ' pesan';
+        renderTempMailInbox(data.messages);
+        showToast('📧 ' + data.messages.length + ' pesan!', 'mail');
         lastMailMessageCount = data.messages.length;
       }
       else { inboxList.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada email</p>'; messageCount.innerText = '0 pesan'; }
@@ -1964,9 +2353,9 @@ function renderTempMailInbox(messages) {
   if (!container) return;
   if (!messages || messages.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px;">Tidak ada</p>'; return; }
   container.innerHTML = messages.map((msg, idx) => {
-    const isNew = idx === 0; 
+    const isNew = idx === 0;
     const animClass = isNew ? 'mail-new' : '';
-    const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
+    const linksHtml = msg.extracted_links && msg.extracted_links.length > 0
       ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
     return '<div class="hist-item ' + animClass + '" style="border-color:rgba(96,165,250,0.25);"><div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div><div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' + linksHtml + '</div>';
   }).join('');
@@ -2332,12 +2721,9 @@ function switchAuthTab(mode) {
   const emailField = document.getElementById('email-field-container');
   const btnText = document.getElementById('auth-btn-text');
   const formContainer = document.getElementById('auth-form-container');
-  
-  // Animasi form fade
   formContainer.style.animation = 'none';
-  formContainer.offsetHeight; // trigger reflow
+  formContainer.offsetHeight;
   formContainer.style.animation = 'fadeInScale 0.3s ease-out forwards';
-
   if (mode === 'login') {
     ind.style.transform = 'translateX(0%)'; loginBtn.style.color = 'white'; regBtn.style.color = 'var(--text-1)';
     emailField.classList.add('hide'); btnText.innerText = 'Masuk';
@@ -2352,28 +2738,22 @@ async function handleAuthAction() {
   const password = document.getElementById('auth-password').value.trim();
   const email = document.getElementById('auth-email').value.trim();
   const formContainer = document.getElementById('auth-form-container');
-  
   if (!username || !password) {
     formContainer.classList.add('shake-error');
     setTimeout(() => formContainer.classList.remove('shake-error'), 500);
     return showToast('Username dan password wajib!', 'error');
   }
-  
   let deviceToken = localStorage.getItem('am_device_token');
   if (currentAuthMode === 'register' && deviceToken) {
     formContainer.classList.add('shake-error');
     setTimeout(() => formContainer.classList.remove('shake-error'), 500);
     return showToast('Perangkat sudah terdaftar!', 'error');
   }
-  
   const btn = document.getElementById('auth-submit-btn');
   const originalText = document.getElementById('auth-btn-text').innerText;
-  
-  // Efek loading pada tombol
   btn.classList.add('btn-loading');
   btn.disabled = true;
   document.getElementById('auth-btn-text').innerText = '';
-  
   try {
     const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, email, deviceToken }) });
     const data = await res.json();
@@ -2381,29 +2761,26 @@ async function handleAuthAction() {
       if (currentAuthMode === 'register' && data.deviceToken) localStorage.setItem('am_device_token', data.deviceToken);
       if (data.token) { localStorage.setItem('authToken', data.token); localStorage.setItem('savedUsername', data.username); }
       showToast(data.message, 'success');
-      
-      // Animasi fade out sebelum masuk
       document.getElementById('auth-view').style.transition = 'opacity 0.3s';
       document.getElementById('auth-view').style.opacity = '0';
       setTimeout(() => {
         applySession(data);
         document.getElementById('auth-view').style.opacity = '1';
       }, 300);
-      
     } else {
       formContainer.classList.add('shake-error');
       setTimeout(() => formContainer.classList.remove('shake-error'), 500);
       showToast(data.message, 'error');
     }
-  } catch (err) { 
+  } catch (err) {
     formContainer.classList.add('shake-error');
     setTimeout(() => formContainer.classList.remove('shake-error'), 500);
-    showToast('Kesalahan koneksi', 'error'); 
+    showToast('Kesalahan koneksi', 'error');
   }
-  finally { 
+  finally {
     btn.classList.remove('btn-loading');
-    document.getElementById('auth-btn-text').innerText = originalText; 
-    btn.disabled = false; 
+    document.getElementById('auth-btn-text').innerText = originalText;
+    btn.disabled = false;
   }
 }
 
@@ -2415,11 +2792,8 @@ function applySession(data) {
   document.getElementById('terminal-view').classList.remove('hide');
   document.getElementById('menu-btn').classList.remove('hide');
   document.getElementById('logged-username').innerText = data.username;
-  
-  // Set avatar huruf depan, bukan hardcode 'A'
   document.getElementById('user-avatar').innerText = data.username.charAt(0).toUpperCase();
   document.getElementById('drawer-avatar').innerText = data.username.charAt(0).toUpperCase();
-  
   document.getElementById('drawer-username').innerText = data.username;
   document.getElementById('drawer-role').innerText = data.isAdmin ? 'Admin' : (data.isVip ? 'VIP Member' : 'User');
   document.getElementById('drawer-logout-btn').classList.remove('hide');
@@ -2436,6 +2810,7 @@ function applySession(data) {
   updateNetflixQuotaDisplay();
   updateApkQuotaDisplay();
   updateMailQuotaDisplay();
+  updateHdQuotaDisplay();
   startOnlineTracking();
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   loadGlobalChat();
@@ -2467,7 +2842,7 @@ async function handleRedeemCodeMain() {
     if (data.success) {
       showToast(data.message, 'success');
       document.getElementById('redeem-code-input-main').value = '';
-      updateQuotaDisplay(data); updateNetflixQuotaDisplay(); updateApkQuotaDisplay(); updateMailQuotaDisplay();
+      updateQuotaDisplay(data); updateNetflixQuotaDisplay(); updateApkQuotaDisplay(); updateMailQuotaDisplay(); updateHdQuotaDisplay();
       loadVerifiedEmails(true); loadActiveRedeems(true);
     } else showToast(data.message, 'error');
   } catch(e) { showToast('Gagal', 'error'); }
@@ -2872,7 +3247,7 @@ function renderVerifiedEmails(data) {
   if (!container) return;
   updateQuotaStatusCard(data);
   handleCountdown(data);
-  updateNetflixQuotaDisplay(); updateApkQuotaDisplay(); updateMailQuotaDisplay();
+  updateNetflixQuotaDisplay(); updateApkQuotaDisplay(); updateMailQuotaDisplay(); updateHdQuotaDisplay();
   const emails = data.activatedEmails || [];
   if (emails.length === 0) {
     container.innerHTML = '<div style="padding:11px; text-align:center; background:var(--bg-2); border:1px dashed var(--line-2); border-radius:9px;"><div style="font-size:11.5px; color:var(--text-1); font-weight:600;">Belum ada Gmail</div><div style="font-size:10px; color:var(--text-2); margin-top:2px;">Gmail yang terverifikasi akan muncul di sini</div></div>';
@@ -3543,6 +3918,23 @@ document.addEventListener('keydown', (e) => {
     if (drawer.classList.contains('open')) toggleMenu();
   }
 });
+
+// ====== HD PHOTO DRAG & DROP INIT ======
+(function initHdDropZone() {
+  const dz = document.getElementById('hd-drop-zone');
+  const fi = document.getElementById('hd-file-input');
+  if (!dz || !fi) return;
+  dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('dragover'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+  dz.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dz.classList.remove('dragover');
+    if (e.dataTransfer.files.length) {
+      fi.files = e.dataTransfer.files;
+      handleHdFileSelect({ target: { files: e.dataTransfer.files, value: '' } });
+    }
+  });
+})();
 </script>
 </body>
 </html>`;
@@ -3644,6 +4036,93 @@ const server = http.createServer(async (req, res) => {
         else await removeOnlineUserFromDb(u);
       }
       jsonResponse(res, 200, { success: true, count: active.length, users: active });
+
+    // ====== HD PHOTO ======
+    } else if (parsedUrl.pathname === '/api/hd/check-quota' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+      const cleanUser = username.toLowerCase();
+      await checkAndExpireBonusQuota(cleanUser);
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) {
+        userObj.activatedEmails = []; userObj.lastResetTime = now;
+        await saveUserToDb(cleanUser, userObj);
+      }
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
+      const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
+      if (userObj.isAdmin || isVipActive) return jsonResponse(res, 200, { success: true, allowed: true, message: 'Unlimited', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+      if (usedQuota >= totalQuota) return jsonResponse(res, 200, { success: true, allowed: false, message: 'Quota habis!', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+      jsonResponse(res, 200, { success: true, allowed: true, message: 'Quota tersedia', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+
+    } else if (parsedUrl.pathname === '/api/hd/upscale' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, imageBase64, fileName, mimeType } = JSON.parse(body);
+      const cleanUser = username ? username.toLowerCase() : '';
+      await checkAndExpireBonusQuota(cleanUser);
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
+      if (currentServerStatus !== 'online' && !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Server offline!' });
+      if (!imageBase64) return jsonResponse(res, 400, { success: false, message: 'Gambar wajib diunggah' });
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) { userObj.activatedEmails = []; userObj.lastResetTime = now; }
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
+      const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
+      if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) return jsonResponse(res, 403, { success: false, message: 'Quota habis!' });
+      const quotaEntry = 'hd_' + now + '_' + Math.random().toString(36).substring(2, 6);
+      if (!userObj.isAdmin && !isVipActive) {
+        if (!userObj.activatedEmails) userObj.activatedEmails = [];
+        userObj.activatedEmails.push(quotaEntry);
+        if (userObj.bonusQuota > 0) { userObj.lastBonusActivity = now; userObj.bonusGrantedAt = userObj.bonusGrantedAt || now; }
+        await saveUserToDb(cleanUser, userObj);
+      }
+      try {
+        const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+        const buffer = Buffer.from(base64Data, 'base64');
+        const result = await upscaleImage(buffer);
+        const resultBase64 = result.buffer.toString('base64');
+        const contentType = result.contentType || 'image/png';
+        const orderId = generateOrderId('HD');
+        await saveOrderToDb(orderId, { orderId, username: cleanUser, type: 'hd', detail: (fileName || 'foto') + ' • ' + (buffer.length/1024).toFixed(0) + ' KB', result: 'Upscaled (' + (result.buffer.length/1024).toFixed(0) + ' KB)', timestamp: now, quotaEntry });
+        const hdId = 'hd_' + now + '_' + Math.random().toString(36).substring(2, 8);
+        await saveHdPhotoResultToDb(hdId, { id: hdId, orderId, username: cleanUser, fileName: fileName || 'foto', originalSize: buffer.length, resultSize: result.buffer.length, contentType, timestamp: now });
+        jsonResponse(res, 200, {
+          success: true,
+          orderId,
+          resultImage: resultBase64,
+          contentType,
+          quotaInfo: {
+            usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1,
+            bonusQuota: userObj.bonusQuota || 0,
+            totalQuota,
+            isAdmin: userObj.isAdmin,
+            isVip: isVipActive
+          }
+        });
+      } catch (apiErr) {
+        const refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
+        const refreshedUser = await getUserFromDb(cleanUser);
+        const refreshedUsed = refreshedUser.activatedEmails ? refreshedUser.activatedEmails.length : 0;
+        jsonResponse(res, 500, {
+          success: false,
+          refilled,
+          message: refilled ? 'Upscale gagal: ' + apiErr.message + '. Kuota dikembalikan.' : 'Upscale gagal: ' + apiErr.message,
+          quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0, totalQuota: (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0) }
+        });
+      }
+
+    } else if (parsedUrl.pathname === '/api/hd/history' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+      const cleanUser = username.toLowerCase();
+      const allHd = await getHdPhotoResultsFromDb();
+      const myHd = Object.values(allHd).filter(r => r.username === cleanUser).sort((a, b) => b.timestamp - a.timestamp).slice(0, 20);
+      jsonResponse(res, 200, { success: true, results: myHd });
 
     // ====== TEMP MAIL ======
     } else if (parsedUrl.pathname === '/api/tempmail/check-quota' && req.method === 'GET') {
@@ -4487,13 +4966,14 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v7.1                                  ║');
+  console.log('║  🚀 AM Premium Banggus v8.0                                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
   console.log('║  💳 DANA Admin: ' + DANA_ADMIN_NUMBER + '                     ║');
   console.log('║  ──────────────────────────────────────────────────────────  ║');
-  console.log('║  ✨ UPDATE v7.1:                                             ║');
+  console.log('║  ✨ UPDATE v8.0:                                             ║');
+  console.log('║  🖼️  HD PHOTO UPSCALE (Upload, Before/After, Download)       ║');
+  console.log('║  📊 QUOTA UNIFIED — Semua fitur pakai quota yang sama        ║');
   console.log('║  📧 TEMP MAIL AUTO-REFRESH (Pesan otomatis terbuka)         ║');
   console.log('║  🎨 UI AUTH REDESIGN (Animasi login/register baru)          ║');
-  console.log('║  🗑️ HAPUS IKON PETIR & HURUF "A" HARDCODE                   ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
