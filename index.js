@@ -389,6 +389,234 @@ async function refillQuotaIfNeeded(username, quotaEntry) {
   }
 }
 
+// ====== APK BUILDER (WEB -> APK) ======
+const APK_API_BASE = 'https://code-v-compiler-sr.vercel.app/api';
+const APK_POLL_INTERVAL = 2000;
+const APK_BUILD_TIMEOUT = 10 * 60 * 1000;
+const APK_MAX_POLL_ERRORS = 8;
+const apkJobs = new Map();
+const apkStarting = new Set();
+
+function apkSafeKey(id) { return String(id).replace(/[.#$\[\]\/]/g, '_'); }
+function apkSleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+async function apkApi(method, apiPath, payload) {
+  const bodyStr = payload ? JSON.stringify(payload) : null;
+  const headers = { 'Accept': 'application/json' };
+  if (bodyStr) {
+    headers['Content-Type'] = 'application/json';
+    headers['Content-Length'] = Buffer.byteLength(bodyStr);
+  }
+  const resp = await httpRequestBuffer(APK_API_BASE + apiPath, { method: method, headers: headers, body: bodyStr || undefined, timeout: 30000 }, 3);
+  const text = resp.body.toString('utf8');
+  let json = null;
+  try { json = JSON.parse(text); } catch (e) { json = null; }
+  return { status: resp.status, json: json, text: text };
+}
+
+function apkErrMsg(r, fallback) {
+  const j = r && r.json;
+  if (j && typeof j === 'object') {
+    const keys = ['error', 'message', 'detail', 'reason'];
+    for (let i = 0; i < keys.length; i++) {
+      const v = j[keys[i]];
+      if (typeof v === 'string' && v) return v.substring(0, 200);
+      if (v && typeof v === 'object' && typeof v.message === 'string' && v.message) return v.message.substring(0, 200);
+    }
+  }
+  const t = r && r.text ? String(r.text).replace(/\s+/g, ' ').trim() : '';
+  if (t && t.charAt(0) !== '<') return t.substring(0, 150);
+  return fallback;
+}
+
+function apkAutoPackage(appName) {
+  let seg = String(appName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!seg || /^[0-9]/.test(seg)) seg = 'app' + seg;
+  return 'com.app.' + seg.substring(0, 40);
+}
+
+function apkNormalizeInput(raw) {
+  raw = raw || {};
+  let siteUrl = String(raw.url || '').trim();
+  if (!siteUrl) return { error: 'URL website wajib diisi!' };
+  if (!/^[a-z][a-z0-9+.\-]*:\/\//i.test(siteUrl)) siteUrl = 'https://' + siteUrl;
+  if (siteUrl.length > 2000) return { error: 'URL terlalu panjang!' };
+  let parsed;
+  try { parsed = new URL(siteUrl); } catch (e) { return { error: 'URL website tidak valid!' }; }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return { error: 'URL harus diawali http:// atau https://' };
+  const appName = String(raw.appName || '').replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  if (!appName) return { error: 'Nama aplikasi wajib diisi!' };
+  if (appName.length > 50) return { error: 'Nama aplikasi maksimal 50 karakter!' };
+  if (/[<>]/.test(appName)) return { error: 'Nama aplikasi tidak boleh mengandung < atau >' };
+  let packageName = String(raw.packageName || '').trim();
+  if (!packageName) packageName = apkAutoPackage(appName);
+  if (packageName.length > 100 || !/^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/.test(packageName)) {
+    return { error: 'Package name tidak valid! Contoh: com.contoh.appku' };
+  }
+  const versionName = String(raw.versionName || '').trim() || '1.0.0';
+  if (!/^[0-9A-Za-z][0-9A-Za-z._+\-]{0,19}$/.test(versionName)) return { error: 'Version name tidak valid! Contoh: 1.0.0' };
+  const vcRaw = (raw.versionCode === undefined || raw.versionCode === null || String(raw.versionCode).trim() === '') ? 1 : Number(raw.versionCode);
+  if (!Number.isInteger(vcRaw) || vcRaw < 1 || vcRaw > 2100000000) return { error: 'Version code harus angka bulat minimal 1!' };
+  return { value: { url: siteUrl, appName: appName, packageName: packageName, versionName: versionName, versionCode: vcRaw } };
+}
+
+function apkFileName(b) {
+  const n = String((b && b.appName) || 'app').replace(/[^A-Za-z0-9_\-]+/g, '_').replace(/^_+|_+$/g, '') || 'app';
+  const v = String((b && b.versionName) || '1.0.0').replace(/[^A-Za-z0-9._\-]+/g, '_');
+  return n + '-' + v + '.apk';
+}
+
+// ---- Penyimpanan build di Firebase (path: apkBuilds) ----
+function apkJobToRecord(job) {
+  return {
+    buildId: String(job.buildId), username: job.username, appName: job.appName, packageName: job.packageName,
+    versionName: job.versionName, versionCode: job.versionCode, url: job.url,
+    status: job.status, remoteStatus: job.remoteStatus || '', downloadUrl: job.downloadUrl || '', error: job.error || '',
+    quotaEntry: job.quotaEntry || '', charged: !!job.charged, refunded: !!job.refunded, orderId: job.orderId || '',
+    timestamp: job.timestamp, finishedAt: job.finishedAt || 0
+  };
+}
+
+function apkRecordToJob(rec) {
+  const done = rec.status === 'ready' || rec.status === 'failed';
+  return {
+    buildId: String(rec.buildId), username: rec.username || '', appName: rec.appName || '', packageName: rec.packageName || '',
+    versionName: rec.versionName || '1.0.0', versionCode: rec.versionCode || 1, url: rec.url || '',
+    status: done ? rec.status : 'building', remoteStatus: rec.remoteStatus || '', progress: null,
+    downloadUrl: rec.downloadUrl || '', error: rec.error || '', quotaEntry: rec.quotaEntry || '',
+    charged: !!rec.charged, refunded: !!rec.refunded, orderId: rec.orderId || '',
+    timestamp: rec.timestamp || Date.now(), finishedAt: rec.finishedAt || 0, finalized: done, monitoring: false
+  };
+}
+
+function apkPublicBuild(job) {
+  return {
+    buildId: String(job.buildId), appName: job.appName, packageName: job.packageName, versionName: job.versionName,
+    versionCode: job.versionCode, url: job.url, status: job.status, remoteStatus: job.remoteStatus || '',
+    downloadUrl: job.status === 'ready' ? (job.downloadUrl || '') : '', error: job.error || '', refunded: !!job.refunded,
+    orderId: job.orderId || '', timestamp: job.timestamp, finishedAt: job.finishedAt || 0
+  };
+}
+
+async function apkSaveJob(job) {
+  try { await set(ref(db, 'apkBuilds/' + apkSafeKey(job.buildId)), apkJobToRecord(job)); }
+  catch (e) { console.error('[APK] Gagal simpan build ke database:', e.message); }
+}
+
+async function apkListUserBuilds(username) {
+  const merged = new Map();
+  try {
+    const snap = await get(child(ref(db), 'apkBuilds'));
+    const all = snap.exists() ? snap.val() : {};
+    Object.keys(all).forEach(function (k) {
+      const rec = all[k];
+      if (rec && rec.username === username) merged.set(String(rec.buildId), apkPublicBuild(apkRecordToJob(rec)));
+    });
+  } catch (e) { console.error('[APK] Gagal baca riwayat build:', e.message); }
+  apkJobs.forEach(function (job) {
+    if (job.username === username) merged.set(String(job.buildId), apkPublicBuild(job));
+  });
+  return Array.from(merged.values()).sort(function (a, b) { return b.timestamp - a.timestamp; }).slice(0, 20);
+}
+
+function apkHasActiveJob(username) {
+  let active = false;
+  apkJobs.forEach(function (job) { if (job.username === username && !job.finalized) active = true; });
+  return active;
+}
+
+function apkScheduleCleanup(job) {
+  const t = setTimeout(function () { apkJobs.delete(String(job.buildId)); }, 60 * 60 * 1000);
+  if (t && t.unref) t.unref();
+}
+
+async function apkFinalize(job, ok, info) {
+  if (job.finalized) return;
+  job.finalized = true;
+  job.finishedAt = Date.now();
+  if (ok) {
+    job.status = 'ready';
+    job.downloadUrl = info;
+    try {
+      job.orderId = generateOrderId('APK');
+      await saveOrderToDb(job.orderId, {
+        orderId: job.orderId, username: job.username, type: 'apk',
+        detail: 'APK • ' + job.appName + ' • ' + job.packageName + ' v' + job.versionName,
+        result: 'Build berhasil', timestamp: job.finishedAt, quotaEntry: job.quotaEntry || ''
+      });
+    } catch (e) { console.error('[APK] Gagal simpan order:', e.message); }
+  } else {
+    job.status = 'failed';
+    job.error = String(info || 'Build gagal').substring(0, 300);
+    if (job.charged && job.quotaEntry) job.refunded = await refillQuotaIfNeeded(job.username, job.quotaEntry);
+  }
+  await apkSaveJob(job);
+  apkScheduleCleanup(job);
+}
+
+async function apkMonitor(job) {
+  if (job.monitoring || job.finalized) return;
+  job.monitoring = true;
+  let errors = 0;
+  try {
+    while (!job.finalized) {
+      if (Date.now() - job.timestamp > APK_BUILD_TIMEOUT) { await apkFinalize(job, false, 'Build melebihi batas waktu (10 menit)'); break; }
+      await apkSleep(APK_POLL_INTERVAL);
+      let r;
+      try {
+        r = await apkApi('GET', '/build/' + encodeURIComponent(job.buildId));
+      } catch (netErr) {
+        errors++;
+        if (errors >= APK_MAX_POLL_ERRORS) await apkFinalize(job, false, 'Koneksi ke server build terputus');
+        continue;
+      }
+      if (r.status === 404) { await apkFinalize(job, false, 'Build tidak ditemukan di server'); break; }
+      if (r.status < 200 || r.status >= 300 || !r.json || typeof r.json !== 'object') {
+        errors++;
+        if (errors >= APK_MAX_POLL_ERRORS) await apkFinalize(job, false, apkErrMsg(r, 'Server build tidak merespons'));
+        continue;
+      }
+      errors = 0;
+      const st = String(r.json.status || '').toLowerCase();
+      if (st) job.remoteStatus = st;
+      const pg = Number(r.json.progress);
+      job.progress = (r.json.progress !== undefined && r.json.progress !== null && isFinite(pg) && pg >= 0 && pg <= 100) ? pg : null;
+      if (st === 'ready') {
+        const dl = r.json.download_url || r.json.downloadUrl;
+        if (typeof dl === 'string' && dl) await apkFinalize(job, true, dl);
+        else await apkFinalize(job, false, 'Build selesai tetapi URL download tidak tersedia');
+        break;
+      }
+      if (st === 'failed') { await apkFinalize(job, false, apkErrMsg(r, 'Build gagal di server')); break; }
+    }
+  } catch (e) {
+    console.error('[APK] Monitor error:', e.message);
+    try { await apkFinalize(job, false, 'Terjadi kesalahan saat memantau build'); } catch (e2) { }
+  } finally {
+    job.monitoring = false;
+  }
+}
+
+async function apkGetJob(buildId) {
+  buildId = String(buildId || '');
+  if (!buildId) return null;
+  const mem = apkJobs.get(buildId);
+  if (mem) return mem;
+  let rec = null;
+  try {
+    const snap = await get(child(ref(db), 'apkBuilds/' + apkSafeKey(buildId)));
+    rec = snap.exists() ? snap.val() : null;
+  } catch (e) { rec = null; }
+  if (!rec) return null;
+  const again = apkJobs.get(buildId);
+  if (again) return again;
+  const job = apkRecordToJob(rec);
+  apkJobs.set(buildId, job);
+  if (job.finalized) apkScheduleCleanup(job);
+  else apkMonitor(job).catch(function (e) { console.error('[APK] Monitor error:', e.message); });
+  return job;
+}
+
 async function initAdmin() {
   const adminData = await getUserFromDb('adminbaguss');
   if (!adminData) {
@@ -699,6 +927,9 @@ const htmlTemplate = `<!DOCTYPE html>
   .nav-link.hd-nav.active { background:rgba(34,211,238,0.12); color:#67e8f9; border-color:rgba(34,211,238,0.3); }
   .btn-hd { background:linear-gradient(135deg,#06b6d4,#3b82f6); color:white; }
   .btn-hd:hover:not(:disabled) { filter:brightness(1.1); }
+  .nav-link.apk-nav.active { background:rgba(52,211,153,0.12); color:#6ee7b7; border-color:rgba(52,211,153,0.3); }
+  .btn-apk { background:linear-gradient(135deg,#10b981,#059669); color:white; }
+  .btn-apk:hover:not(:disabled) { filter:brightness(1.1); }
   .hd-compare { position:relative; width:100%; overflow:hidden; border-radius:10px; background:var(--bg-0); border:1px solid var(--line-2); user-select:none; -webkit-user-select:none; touch-action:pan-y; }
   .hd-compare img { display:block; width:100%; height:auto; }
   .hd-before-layer { position:absolute; top:0; left:0; width:100%; height:100%; clip-path:inset(0 50% 0 0); }
@@ -761,6 +992,7 @@ const htmlTemplate = `<!DOCTYPE html>
     <button onclick="switchView('generator')" data-nav="generator" class="nav-link active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Alight Motion</button>
     <button onclick="switchView('netflix')" data-nav="netflix" class="nav-link netflix-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/></svg>Netflix Token</button>
     <button onclick="switchView('hdfoto')" data-nav="hdfoto" class="nav-link hd-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>HD Foto<span class="badge badge-ok" style="margin-left:auto; font-size:9px; padding:1px 6px;">NEW</span></button>
+    <button onclick="switchView('apk')" data-nav="apk" class="nav-link apk-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>Build APK<span class="badge badge-ok" style="margin-left:auto; font-size:9px; padding:1px 6px;">NEW</span></button>
     <button onclick="switchView('orders')" data-nav="orders" class="nav-link orders-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>Orderan Saya</button>
     <div class="nav-section-label">Akun</div>
     <button onclick="switchView('vipshop')" data-nav="vipshop" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>Beli VIP<span class="badge badge-warn" style="margin-left:auto; font-size:9px; padding:1px 6px;">HOT</span></button>
@@ -1049,6 +1281,88 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
+    <div id="section-apk" class="hide" style="display:flex; flex-direction:column; gap:10px;">
+      <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between; border-color:rgba(52,211,153,0.3);">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,#10b981,#059669); display:flex; align-items:center; justify-content:center; font-weight:900; color:white; font-size:11px;">APK</div>
+          <div><div style="font-weight:700; font-size:13px;">APK Builder</div><div style="font-size:10.5px; color:#6ee7b7;">Ubah website jadi aplikasi Android</div></div>
+        </div>
+        <span class="badge badge-ok"><span class="online-dot"></span>Ready</span>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="stat" style="border-color:rgba(52,211,153,0.3);"><div><div class="stat-label">Kuota</div><div id="apk-quota-display" class="stat-value">0</div></div></div>
+        <div class="stat" style="border-color:rgba(52,211,153,0.3);"><div><div class="stat-label">Status</div><div id="apk-state-display" class="stat-value">Siap</div></div></div>
+      </div>
+      <div style="padding:10px 12px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:10px; font-size:11px; color:var(--info); display:flex; gap:6px; align-items:flex-start;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-top:1px; flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span><strong>Quota sama</strong> dengan semua fitur — setiap build APK = -1 quota. Jika build gagal, kuota otomatis dikembalikan.</span>
+      </div>
+      <div class="card" style="border-color:rgba(52,211,153,0.3); display:flex; flex-direction:column; gap:11px;">
+        <div class="section-head" style="color:#6ee7b7; margin-bottom:0;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>Konfigurasi Aplikasi</div>
+        <div>
+          <label class="field-label" for="apk-url">URL Website</label>
+          <input type="text" id="apk-url" class="inp mono" placeholder="https://websiteku.com" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url">
+        </div>
+        <div>
+          <label class="field-label" for="apk-appname">Nama Aplikasi</label>
+          <input type="text" id="apk-appname" class="inp" placeholder="Aplikasiku" maxlength="50" autocomplete="off">
+        </div>
+        <div>
+          <label class="field-label" for="apk-package">Package Name</label>
+          <input type="text" id="apk-package" class="inp mono" placeholder="com.contoh.appku (kosong = otomatis)" maxlength="100" autocomplete="off" autocapitalize="off" spellcheck="false">
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <div>
+            <label class="field-label" for="apk-vname">Version Name</label>
+            <input type="text" id="apk-vname" class="inp mono" placeholder="1.0.0" value="1.0.0" maxlength="20" autocomplete="off">
+          </div>
+          <div>
+            <label class="field-label" for="apk-vcode">Version Code</label>
+            <input type="number" id="apk-vcode" class="inp mono" placeholder="1" value="1" min="1" step="1" inputmode="numeric">
+          </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button id="btn-build-apk" onclick="handleBuildApk()" class="btn btn-apk" style="flex:1;"><span id="apk-btn-text">Build APK</span></button>
+          <button onclick="resetApkForm()" class="btn btn-ghost">Reset</button>
+        </div>
+      </div>
+      <div id="apk-loading" class="hide card" style="border-color:rgba(52,211,153,0.3);">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+          <div style="width:34px; height:34px; border-radius:9px; background:rgba(52,211,153,0.12); display:flex; align-items:center; justify-content:center;">
+            <svg id="apk-spinner" class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
+          </div>
+          <div><div style="font-weight:700; font-size:12px;">Membuild APK...</div><div id="apk-status-text" style="font-size:10.5px; color:var(--text-2);">Menyiapkan</div></div>
+        </div>
+        <div class="prog"><div id="apk-progress-fill" class="prog-fill" style="background:#10b981;"></div></div>
+        <p id="apk-log-text" class="mono" style="font-size:10px; color:var(--text-2); margin-top:8px; text-align:center;">Initializing...</p>
+        <p id="apk-elapsed" class="mono" style="font-size:10px; color:var(--text-2); margin-top:2px; text-align:center;">Waktu: 0:00</p>
+      </div>
+      <div id="apk-result-container" class="hide card" style="border-color:rgba(52,211,153,0.3); display:flex; flex-direction:column; gap:10px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:38px; height:38px; border-radius:10px; background:linear-gradient(135deg,#10b981,#059669); display:flex; align-items:center; justify-content:center; font-size:18px;">📦</div>
+          <div style="min-width:0; flex:1;">
+            <div id="apk-result-name" style="font-weight:700; font-size:13px; word-break:break-word;">Aplikasi</div>
+            <div id="apk-result-meta" class="mono" style="font-size:10px; color:var(--text-2); word-break:break-all;"></div>
+          </div>
+          <span class="badge badge-ok">✓ Siap</span>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button onclick="downloadLastApk()" class="btn btn-apk" style="flex:1;">Download APK</button>
+          <button onclick="copyApkLink()" class="btn btn-ghost" style="width:auto;">Salin Link</button>
+        </div>
+        <button onclick="hideApkResult()" class="btn btn-ghost btn-xs" style="align-self:center;">Build Baru</button>
+      </div>
+      <div class="card" style="border-color:rgba(52,211,153,0.3);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:#6ee7b7; letter-spacing:0.06em;">Riwayat Build</div>
+          <button onclick="loadApkHistory()" class="btn btn-ghost btn-xs">Refresh</button>
+        </div>
+        <div id="apk-history-list" style="display:flex; flex-direction:column; gap:7px; max-height:300px; overflow-y:auto;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada build</p>
+        </div>
+      </div>
+    </div>
+
     <div id="section-vipshop" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0; color:var(--warn);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>Beli VIP</div>
@@ -1281,6 +1595,7 @@ const htmlTemplate = `<!DOCTYPE html>
           <button onclick="setAdminOrderFilter('am')" data-afilter="am" class="admin-order-filter btn btn-ghost btn-xs">AM</button>
           <button onclick="setAdminOrderFilter('netflix')" data-afilter="netflix" class="admin-order-filter btn btn-ghost btn-xs">NFLX</button>
           <button onclick="setAdminOrderFilter('hd')" data-afilter="hd" class="admin-order-filter btn btn-ghost btn-xs">HD</button>
+          <button onclick="setAdminOrderFilter('apk')" data-afilter="apk" class="admin-order-filter btn btn-ghost btn-xs">APK</button>
         </div>
         <input type="text" id="admin-order-search" oninput="renderAdminOrders()" placeholder="Cari..." class="inp mono" style="margin-bottom:7px;">
         <div id="admin-orders-list" style="display:flex; flex-direction:column; gap:6px; max-height:250px; overflow-y:auto; font-size:11px;">
@@ -1750,11 +2065,12 @@ function switchView(viewName) {
   currentView = viewName;
   document.querySelectorAll('[data-nav]').forEach(el => { el.classList.toggle('active', el.dataset.nav === viewName); });
   toggleMenu();
-  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-hdfoto','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
+  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-hdfoto','section-apk','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hide');
   else if (viewName === 'orders') { document.getElementById('section-orders').classList.remove('hide'); loadMyOrders(); }
   else if (viewName === 'netflix') { document.getElementById('section-netflix').classList.remove('hide'); loadNetflixHistory(); updateNetflixQuotaDisplay(); }
   else if (viewName === 'hdfoto') { document.getElementById('section-hdfoto').classList.remove('hide'); updateHdQuotaDisplay(); }
+  else if (viewName === 'apk') { document.getElementById('section-apk').classList.remove('hide'); updateApkQuotaDisplay(); loadApkHistory(); }
   else if (viewName === 'vipshop') {
     document.getElementById('section-vipshop').classList.remove('hide');
     loadVipShopItems(); loadUserTransactions();
@@ -1812,9 +2128,9 @@ function renderMyOrders() {
   document.getElementById('my-orders-am').innerText = myOrders.filter(o => o.type === 'am').length;
   if (filtered.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">' + (search ? 'Tidak cocok' : 'Belum ada') + '</p>'; return; }
   container.innerHTML = filtered.map(o => {
-    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'hd' ? '🖼️' : '📱';
-    const typeLabel = o.type === 'am' ? 'Alight Motion' : o.type === 'netflix' ? 'Netflix' : o.type === 'hd' ? 'HD Foto' : 'Unknown';
-    const typeBadge = o.type === 'am' ? 'badge-accent' : o.type === 'netflix' ? 'badge-err' : o.type === 'hd' ? 'badge-ok' : 'badge-muted';
+    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'hd' ? '🖼️' : o.type === 'apk' ? '📦' : '📱';
+    const typeLabel = o.type === 'am' ? 'Alight Motion' : o.type === 'netflix' ? 'Netflix' : o.type === 'hd' ? 'HD Foto' : o.type === 'apk' ? 'APK Build' : 'Unknown';
+    const typeBadge = o.type === 'am' ? 'badge-accent' : o.type === 'netflix' ? 'badge-err' : o.type === 'hd' ? 'badge-ok' : o.type === 'apk' ? 'badge-warn' : 'badge-muted';
     const timeStr = new Date(o.timestamp).toLocaleString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
     return '<div class="hist-item">' +
       '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">' +
@@ -1866,7 +2182,7 @@ function renderAdminOrders() {
   if (search) filtered = filtered.filter(o => (o.orderId||'').toLowerCase().includes(search) || (o.username||'').toLowerCase().includes(search) || (o.detail||'').toLowerCase().includes(search));
   if (filtered.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Tidak ada</p>'; return; }
   container.innerHTML = filtered.slice(0, 100).map(o => {
-    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'hd' ? '🖼️' : '📱';
+    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'hd' ? '🖼️' : o.type === 'apk' ? '📦' : '📱';
     const timeStr = new Date(o.timestamp).toLocaleString('id-ID', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
     return '<div style="padding:8px 10px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:7px;">' +
       '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:4px;">' +
@@ -2019,6 +2335,296 @@ async function handleGenerateHd() {
   } finally {
     if (hdProgressTimer) { clearInterval(hdProgressTimer); hdProgressTimer = null; }
     btn.disabled = !hdSelectedDataUrl; btnText.innerText = 'Generate HD';
+  }
+}
+
+// ====== APK BUILDER ======
+let apkPollTimer = null;
+let apkElapsedTimer = null;
+let apkActiveBuildId = '';
+let apkActiveUser = '';
+let apkBuildStartedAt = 0;
+let apkPollErrors = 0;
+let apkServerProgress = null;
+let apkLastResult = null;
+let apkHistory = [];
+const APK_STATUS_LABEL = { queued: 'Mengantri', pending: 'Mengantri', waiting: 'Mengantri', building: 'Sedang build', processing: 'Memproses', compiling: 'Compile', signing: 'Menandatangani', ready: 'Selesai', failed: 'Gagal' };
+
+function apkStatusLabel(s) {
+  s = String(s || '').toLowerCase();
+  return APK_STATUS_LABEL[s] || (s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Memproses');
+}
+
+function updateApkQuotaDisplay() {
+  const el = document.getElementById('apk-quota-display');
+  if (el) {
+    if (isAdminUser || isVipUser) { el.innerText = '∞'; el.style.color = '#6ee7b7'; }
+    else { const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota); el.innerText = remain; el.style.color = remain > 0 ? 'white' : 'var(--err)'; }
+  }
+}
+
+function applyApkQuotaInfo(q) {
+  if (!q) return;
+  userQuotaData.usedQuota = q.usedQuota || 0;
+  if (q.totalQuota) userQuotaData.totalQuota = q.totalQuota;
+  updateQuotaDisplay(q);
+  updateApkQuotaDisplay();
+  if (typeof updateHdQuotaDisplay === 'function') updateHdQuotaDisplay();
+}
+
+function setApkBusy(busy) {
+  const btn = document.getElementById('btn-build-apk');
+  const txt = document.getElementById('apk-btn-text');
+  const st = document.getElementById('apk-state-display');
+  if (btn) btn.disabled = !!busy;
+  if (txt) txt.innerText = busy ? 'Membuild...' : 'Build APK';
+  if (st) { st.innerText = busy ? 'Build...' : 'Siap'; st.style.color = busy ? '#6ee7b7' : 'white'; }
+}
+
+function fmtApkElapsed(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+function apkTick() {
+  const sec = Math.max(0, Math.floor((Date.now() - apkBuildStartedAt) / 1000));
+  let pct;
+  if (typeof apkServerProgress === 'number' && apkServerProgress >= 0 && apkServerProgress <= 100) pct = Math.max(5, Math.min(95, apkServerProgress));
+  else pct = Math.min(92, 5 + sec * 0.8);
+  const fill = document.getElementById('apk-progress-fill');
+  if (fill) fill.style.width = pct + '%';
+  const t = document.getElementById('apk-elapsed');
+  if (t) t.innerText = 'Waktu: ' + fmtApkElapsed(sec);
+}
+
+function showApkLoading(statusText, logText) {
+  document.getElementById('apk-loading').classList.remove('hide');
+  document.getElementById('apk-status-text').innerText = statusText || 'Menyiapkan';
+  document.getElementById('apk-log-text').innerText = logText || 'Initializing...';
+  const sp = document.getElementById('apk-spinner');
+  if (sp) sp.style.display = '';
+}
+
+function stopApkPolling() {
+  if (apkPollTimer) { clearTimeout(apkPollTimer); apkPollTimer = null; }
+  if (apkElapsedTimer) { clearInterval(apkElapsedTimer); apkElapsedTimer = null; }
+  apkActiveBuildId = '';
+  apkActiveUser = '';
+  apkPollErrors = 0;
+  apkServerProgress = null;
+}
+
+function startApkPolling(buildId, startedAt) {
+  stopApkPolling();
+  apkActiveBuildId = String(buildId);
+  apkActiveUser = loggedInUsername;
+  apkBuildStartedAt = startedAt || Date.now();
+  apkPollErrors = 0;
+  apkServerProgress = null;
+  setApkBusy(true);
+  showApkLoading('Antrian build', 'Build ID: ' + buildId);
+  document.getElementById('apk-result-container').classList.add('hide');
+  apkTick();
+  apkElapsedTimer = setInterval(apkTick, 1000);
+  apkPollTimer = setTimeout(apkPollOnce, 1500);
+}
+
+function finishApkLoading(statusText, logText, hideAfter) {
+  document.getElementById('apk-status-text').innerText = statusText;
+  document.getElementById('apk-log-text').innerText = logText || '';
+  const sp = document.getElementById('apk-spinner');
+  if (sp) sp.style.display = 'none';
+  setTimeout(function () {
+    if (!apkActiveBuildId) document.getElementById('apk-loading').classList.add('hide');
+  }, hideAfter || 3000);
+}
+
+async function apkPollOnce() {
+  const myId = apkActiveBuildId;
+  if (!myId) return;
+  if (!loggedInUsername || loggedInUsername !== apkActiveUser) { stopApkPolling(); setApkBusy(false); document.getElementById('apk-loading').classList.add('hide'); return; }
+  try {
+    const res = await fetch('/api/apk/status?username=' + encodeURIComponent(loggedInUsername) + '&build_id=' + encodeURIComponent(myId));
+    const data = await res.json();
+    if (myId !== apkActiveBuildId) return;
+    if (!data.success) {
+      if (data.notFound) { onApkFailed({ message: 'Build tidak ditemukan' }); return; }
+      throw new Error(data.message || 'Gagal cek status');
+    }
+    apkPollErrors = 0;
+    apkServerProgress = (typeof data.progress === 'number') ? data.progress : null;
+    if (data.status === 'ready') { onApkReady(data); return; }
+    if (data.status === 'failed') { onApkFailed(data); return; }
+    document.getElementById('apk-status-text').innerText = apkStatusLabel(data.remoteStatus || data.status);
+    document.getElementById('apk-log-text').innerText = 'Status: ' + (data.remoteStatus || data.status || '-');
+  } catch (err) {
+    if (myId !== apkActiveBuildId) return;
+    apkPollErrors++;
+    if (apkPollErrors >= 10) {
+      stopApkPolling(); setApkBusy(false);
+      finishApkLoading('⚠️ Koneksi terputus', 'Cek hasilnya di Riwayat Build', 6000);
+      showToast('Koneksi terputus. Cek Riwayat Build nanti.', 'error', 4000);
+      return;
+    }
+  }
+  if (myId === apkActiveBuildId) apkPollTimer = setTimeout(apkPollOnce, 2000);
+}
+
+function onApkReady(data) {
+  stopApkPolling();
+  setApkBusy(false);
+  document.getElementById('apk-progress-fill').style.width = '100%';
+  finishApkLoading('✅ Build selesai!', 'Success', 2500);
+  const b = data.build || {};
+  apkLastResult = b;
+  document.getElementById('apk-result-name').innerText = b.appName || 'Aplikasi';
+  document.getElementById('apk-result-meta').innerText = (b.packageName || '') + ' • v' + (b.versionName || '') + ' (' + (b.versionCode || '') + ')';
+  document.getElementById('apk-result-container').classList.remove('hide');
+  applyApkQuotaInfo(data.quotaInfo);
+  if (data.orderId) showToast('✅ Order ID: ' + escapeHtml(data.orderId), 'order', 5000);
+  else showToast('APK berhasil dibuild!', 'success');
+  loadApkHistory();
+}
+
+function onApkFailed(data) {
+  stopApkPolling();
+  setApkBusy(false);
+  const msg = (data && data.message) ? data.message : 'Build gagal';
+  finishApkLoading('❌ Build gagal', msg, 5000);
+  if (data && data.refilled) showToast('Build gagal! Kuota dikembalikan.', 'error', 4000);
+  else showToast(escapeHtml(msg), 'error', 4000);
+  applyApkQuotaInfo(data && data.quotaInfo);
+  loadApkHistory();
+}
+
+async function handleBuildApk() {
+  if (!loggedInUsername) return showToast('Harus login!', 'error');
+  if (!guardServerOnline('Build APK')) return;
+  if (apkActiveBuildId) return showToast('Masih ada build yang berjalan', 'error');
+  let siteUrl = document.getElementById('apk-url').value.trim();
+  const appName = document.getElementById('apk-appname').value.trim();
+  const packageName = document.getElementById('apk-package').value.trim();
+  const versionName = document.getElementById('apk-vname').value.trim() || '1.0.0';
+  const versionCode = parseInt(document.getElementById('apk-vcode').value, 10) || 1;
+  if (!siteUrl) return showToast('Isi URL website dulu!', 'error');
+  if (!/^https?:/i.test(siteUrl)) siteUrl = 'https://' + siteUrl;
+  if (!appName) return showToast('Isi nama aplikasi dulu!', 'error');
+  setApkBusy(true);
+  showApkLoading('Mengirim permintaan', 'Menghubungi server build...');
+  document.getElementById('apk-result-container').classList.add('hide');
+  document.getElementById('apk-progress-fill').style.width = '5%';
+  try {
+    const res = await fetch('/api/apk/build', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: loggedInUsername, url: siteUrl, appName: appName, packageName: packageName, versionName: versionName, versionCode: versionCode }) });
+    const data = await res.json();
+    if (!data.success) {
+      applyApkQuotaInfo(data.quotaInfo);
+      if (data.refilled) showToast(escapeHtml(data.message || 'Gagal! Kuota dikembalikan.'), 'error', 4000);
+      else showToast(escapeHtml(data.message || 'Gagal'), 'error', 4000);
+      finishApkLoading('❌ Gagal', data.message || 'Gagal', 4000);
+      setApkBusy(false);
+      return;
+    }
+    applyApkQuotaInfo(data.quotaInfo);
+    showToast('Build dimulai! Mohon tunggu...', 'info', 3000);
+    startApkPolling(data.buildId, Date.now());
+    loadApkHistory();
+  } catch (err) {
+    finishApkLoading('❌ Gagal', err.message, 4000);
+    showToast(escapeHtml(err.message), 'error');
+    setApkBusy(false);
+  }
+}
+
+function resetApkForm() {
+  if (apkActiveBuildId) return showToast('Build sedang berjalan', 'error');
+  document.getElementById('apk-url').value = '';
+  document.getElementById('apk-appname').value = '';
+  document.getElementById('apk-package').value = '';
+  document.getElementById('apk-vname').value = '1.0.0';
+  document.getElementById('apk-vcode').value = '1';
+  document.getElementById('apk-result-container').classList.add('hide');
+  document.getElementById('apk-loading').classList.add('hide');
+}
+
+function hideApkResult() {
+  document.getElementById('apk-result-container').classList.add('hide');
+}
+
+function apkClientFileName(b) {
+  const n = String((b && b.appName) || 'app').replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'app';
+  const v = String((b && b.versionName) || '1.0.0').replace(/[^A-Za-z0-9._-]+/g, '_');
+  return n + '-' + v + '.apk';
+}
+
+async function downloadApk(b) {
+  if (!loggedInUsername) return showToast('Harus login!', 'error');
+  if (!b || !b.buildId) return showToast('Belum ada APK', 'error');
+  showToast('Mengunduh APK...', 'info', 2500);
+  try {
+    const res = await fetch('/api/apk/download?username=' + encodeURIComponent(loggedInUsername) + '&build_id=' + encodeURIComponent(b.buildId));
+    if (!res.ok) {
+      let msg = 'Gagal mengunduh APK';
+      try { const j = await res.json(); if (j && j.message) msg = j.message; } catch (e) {}
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    const objUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objUrl;
+    a.download = apkClientFileName(b);
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(objUrl); }, 60000);
+    showToast('APK berhasil diunduh!', 'success');
+  } catch (err) {
+    if (b.downloadUrl) { showToast('Mencoba link langsung...', 'info', 3000); window.open(b.downloadUrl, '_blank'); }
+    else showToast(escapeHtml(err.message), 'error', 4000);
+  }
+}
+
+function downloadLastApk() { return downloadApk(apkLastResult); }
+
+function downloadApkByIndex(i) { return downloadApk(apkHistory[i]); }
+
+function copyApkLink() {
+  const link = apkLastResult && apkLastResult.downloadUrl;
+  if (!link) return showToast('Belum ada link', 'error');
+  navigator.clipboard.writeText(link).then(function () { showToast('Link tersalin!', 'success'); }).catch(function () { showToast('Gagal menyalin', 'error'); });
+}
+
+async function loadApkHistory() {
+  if (!loggedInUsername) return;
+  const container = document.getElementById('apk-history-list');
+  try {
+    const res = await fetch('/api/apk/history?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+    if (data.success) { apkHistory = data.builds || []; renderApkHistory(); }
+  } catch (e) {
+    if (container && apkHistory.length === 0) container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal memuat riwayat</p>';
+  }
+}
+
+function renderApkHistory() {
+  const container = document.getElementById('apk-history-list');
+  if (!container) return;
+  if (apkHistory.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada build</p>'; return; }
+  container.innerHTML = apkHistory.map(function (b, i) {
+    const timeStr = new Date(b.timestamp).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const badge = b.status === 'ready' ? '<span class="badge badge-ok">✓ Siap</span>' : (b.status === 'failed' ? '<span class="badge badge-err">✕ Gagal</span>' : '<span class="badge badge-warn">⏳ Build</span>');
+    const action = b.status === 'ready' ? '<button onclick="downloadApkByIndex(' + i + ')" class="btn btn-apk btn-xs" style="margin-top:7px;">Download APK</button>' : '';
+    const errLine = (b.status === 'failed' && b.error) ? '<div style="font-size:10px; color:var(--err); margin-top:5px; word-break:break-word;">' + escapeHtml(b.error) + (b.refunded ? ' (kuota dikembalikan)' : '') + '</div>' : '';
+    return '<div class="hist-item" style="padding:10px;">' +
+      '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">' +
+        '<div style="min-width:0; flex:1;"><div style="font-weight:700; font-size:12px; word-break:break-word;">' + escapeHtml(b.appName || '-') + '</div>' +
+        '<div class="mono" style="font-size:10px; color:var(--text-2); word-break:break-all;">' + escapeHtml(b.packageName || '') + ' • v' + escapeHtml(b.versionName || '') + '</div></div>' +
+        badge +
+      '</div>' + errLine + action +
+      '<div style="font-size:9px; color:var(--text-2); margin-top:6px;">🕐 ' + timeStr + '</div>' +
+    '</div>';
+  }).join('');
+  if (!apkActiveBuildId) {
+    const running = apkHistory.find(function (b) { return b.status === 'building'; });
+    if (running) startApkPolling(running.buildId, running.timestamp);
   }
 }
 
@@ -3651,6 +4257,123 @@ const server = http.createServer(async (req, res) => {
       const afterDataUrl = 'data:' + upResult.contentType + ';base64,' + upResult.buffer.toString('base64');
       jsonResponse(res, 200, { success: true, orderId, before: image, after: afterDataUrl, contentType: upResult.contentType, quotaInfo: { usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
 
+    } else if (parsedUrl.pathname === '/api/apk/build' && req.method === 'POST') {
+      const body = await readBody(req);
+      const input = JSON.parse(body);
+      const cleanUser = input.username ? String(input.username).toLowerCase() : '';
+      await checkAndExpireBonusQuota(cleanUser);
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
+      if (currentServerStatus !== 'online' && !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Server offline!' });
+
+      const norm = apkNormalizeInput(input);
+      if (norm.error) return jsonResponse(res, 400, { success: false, message: norm.error });
+      const spec = norm.value;
+
+      if (apkStarting.has(cleanUser) || apkHasActiveJob(cleanUser)) return jsonResponse(res, 429, { success: false, message: 'Masih ada build yang berjalan. Tunggu sampai selesai!' });
+      apkStarting.add(cleanUser);
+      try {
+        const now = Date.now();
+        const twentyFourHours = 24 * 60 * 60 * 1000;
+        if (now - (userObj.lastResetTime || now) >= twentyFourHours) { userObj.activatedEmails = []; userObj.lastResetTime = now; }
+        const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+        const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
+        const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
+        const charged = !userObj.isAdmin && !isVipActive;
+        if (charged && usedQuota >= totalQuota) return jsonResponse(res, 403, { success: false, message: 'Quota habis!' });
+
+        const quotaEntry = 'apk_' + now + '_' + Math.random().toString(36).substring(2, 6);
+        if (charged) {
+          if (!userObj.activatedEmails) userObj.activatedEmails = [];
+          userObj.activatedEmails.push(quotaEntry);
+          if (userObj.bonusQuota > 0) { userObj.lastBonusActivity = now; userObj.bonusGrantedAt = userObj.bonusGrantedAt || now; }
+          await saveUserToDb(cleanUser, userObj);
+        }
+
+        let buildId;
+        try {
+          const r = await apkApi('POST', '/build', { url: spec.url, appName: spec.appName, packageName: spec.packageName, versionName: spec.versionName, versionCode: spec.versionCode });
+          if (r.status < 200 || r.status >= 300 || !r.json || !r.json.build_id) throw new Error(apkErrMsg(r, 'Server build tidak merespons dengan benar (HTTP ' + r.status + ')'));
+          buildId = String(r.json.build_id);
+        } catch (startErr) {
+          let refilled = false;
+          if (charged) refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
+          const refreshedUser = await getUserFromDb(cleanUser);
+          const refreshedUsed = refreshedUser && refreshedUser.activatedEmails ? refreshedUser.activatedEmails.length : 0;
+          const errMsg = (startErr && startErr.message) ? startErr.message : String(startErr);
+          return jsonResponse(res, 500, { success: false, refilled, message: refilled ? 'Build gagal dimulai: ' + errMsg + '. Kuota dikembalikan.' : 'Build gagal dimulai: ' + errMsg, quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
+        }
+
+        const job = {
+          buildId, username: cleanUser, appName: spec.appName, packageName: spec.packageName, versionName: spec.versionName,
+          versionCode: spec.versionCode, url: spec.url, status: 'building', remoteStatus: 'queued', progress: null,
+          downloadUrl: '', error: '', quotaEntry: charged ? quotaEntry : '', charged, refunded: false, orderId: '',
+          timestamp: now, finishedAt: 0, finalized: false, monitoring: false
+        };
+        apkJobs.set(buildId, job);
+        await apkSaveJob(job);
+        apkMonitor(job).catch(function (e) { console.error('[APK] Monitor error:', e.message); });
+        return jsonResponse(res, 200, { success: true, buildId, status: 'building', timestamp: now, quotaInfo: { usedQuota: charged ? usedQuota + 1 : usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
+      } finally {
+        apkStarting.delete(cleanUser);
+      }
+
+    } else if (parsedUrl.pathname === '/api/apk/status' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      const buildId = parsedUrl.searchParams.get('build_id');
+      if (!username || !buildId) return jsonResponse(res, 400, { success: false, message: 'Parameter username dan build_id diperlukan' });
+      const cleanUser = username.toLowerCase();
+      const job = await apkGetJob(buildId);
+      if (!job) return jsonResponse(res, 404, { success: false, notFound: true, message: 'Build tidak ditemukan' });
+      if (job.username !== cleanUser) {
+        const viewer = await getUserFromDb(cleanUser);
+        if (!viewer || !viewer.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      }
+      const out = { success: true, status: job.status, remoteStatus: job.remoteStatus || '', progress: job.progress, message: job.error || '', refilled: !!job.refunded, orderId: job.orderId || '', build: apkPublicBuild(job) };
+      if (job.finalized) {
+        const owner = await getUserFromDb(job.username);
+        if (owner) {
+          const ownerVip = owner.vipUntil && owner.vipUntil > Date.now();
+          out.quotaInfo = { usedQuota: owner.activatedEmails ? owner.activatedEmails.length : 0, bonusQuota: owner.bonusQuota || 0, totalQuota: (owner.baseQuota || BASE_QUOTA) + (owner.bonusQuota || 0), isAdmin: owner.isAdmin, isVip: ownerVip };
+        }
+      }
+      jsonResponse(res, 200, out);
+
+    } else if (parsedUrl.pathname === '/api/apk/history' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+      const builds = await apkListUserBuilds(username.toLowerCase());
+      jsonResponse(res, 200, { success: true, builds });
+
+    } else if (parsedUrl.pathname === '/api/apk/download' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      const buildId = parsedUrl.searchParams.get('build_id');
+      if (!username || !buildId) return jsonResponse(res, 400, { success: false, message: 'Parameter username dan build_id diperlukan' });
+      const cleanUser = username.toLowerCase();
+      const dlUser = await getUserFromDb(cleanUser);
+      if (!dlUser) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
+      const job = await apkGetJob(buildId);
+      if (!job) return jsonResponse(res, 404, { success: false, message: 'Build tidak ditemukan' });
+      if (job.username !== cleanUser && !dlUser.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      if (job.status !== 'ready' || !job.downloadUrl) return jsonResponse(res, 409, { success: false, message: 'APK belum siap diunduh' });
+      let fileResp;
+      try {
+        const dlUrl = new URL(job.downloadUrl, APK_API_BASE + '/');
+        if (dlUrl.protocol !== 'http:' && dlUrl.protocol !== 'https:') throw new Error('URL download tidak valid');
+        fileResp = await httpRequestBuffer(dlUrl.toString(), { method: 'GET', timeout: 180000 }, 5);
+      } catch (dlErr) {
+        return jsonResponse(res, 502, { success: false, message: 'Gagal mengambil file APK: ' + ((dlErr && dlErr.message) || dlErr) });
+      }
+      const fileOk = fileResp.status >= 200 && fileResp.status < 300 && fileResp.body.length > 4 && fileResp.body[0] === 0x50 && fileResp.body[1] === 0x4B;
+      if (!fileOk) return jsonResponse(res, 502, { success: false, message: 'File APK tidak tersedia atau sudah kedaluwarsa (HTTP ' + fileResp.status + ')' });
+      res.writeHead(200, {
+        'Content-Type': 'application/vnd.android.package-archive',
+        'Content-Disposition': 'attachment; filename="' + apkFileName(job) + '"',
+        'Content-Length': fileResp.body.length,
+        'Cache-Control': 'no-store'
+      });
+      res.end(fileResp.body);
+
     } else if (parsedUrl.pathname === '/api/transaction/create' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, vipId, vipName, vipPrice, vipDays } = JSON.parse(body);
@@ -4238,6 +4961,7 @@ server.listen(PORT, () => {
   console.log('║  🎨 Alight Motion Premium                                    ║');
   console.log('║  🎬 Netflix Token Generator                                  ║');
   console.log('║  🖼️  HD Foto Generator (Sebelum/Sesudah)                      ║');
+  console.log('║  📦 APK Builder (Website → APK)                              ║');
   console.log('║  🛒 VIP Shop & Transaksi                                     ║');
   console.log('║  💬 Chat Global & Orderan                                    ║');
   console.log('║  🔔 Browser Notification (BARU!)                             ║');
