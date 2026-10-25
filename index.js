@@ -179,25 +179,6 @@ async function getNetflixResultsFromDb() {
 }
 async function saveNetflixResultToDb(id, data) { await set(ref(db, `netflixResults/${id}`), data); }
 
-// ====== APK MOD HELPERS ======
-async function getApkModsFromDb() {
-  const snapshot = await get(child(ref(db), `apkMods`));
-  return snapshot.exists() ? snapshot.val() : {};
-}
-async function getApkModFromDb(id) {
-  const snapshot = await get(child(ref(db), `apkMods/${id}`));
-  return snapshot.exists() ? snapshot.val() : null;
-}
-async function saveApkModToDb(id, data) { await set(ref(db, `apkMods/${id}`), data); }
-async function removeApkModFromDb(id) { await set(ref(db, `apkMods/${id}`), null); }
-
-// ====== APK MOD REQUESTS HELPERS ======
-async function getApkRequestsFromDb() {
-  const snapshot = await get(child(ref(db), `apkRequests`));
-  return snapshot.exists() ? snapshot.val() : {};
-}
-async function saveApkRequestToDb(id, data) { await set(ref(db, `apkRequests/${id}`), data); }
-
 // ====== ORDER HELPERS ======
 async function getOrdersFromDb() {
   const snapshot = await get(child(ref(db), `orders`));
@@ -314,18 +295,6 @@ async function initDefaultVipShop() {
   }
 }
 initDefaultVipShop();
-
-async function initDefaultApkMods() {
-  const apks = await getApkModsFromDb();
-  if (Object.keys(apks).length === 0) {
-    const defaultApks = [
-      { id: 'apk_netflix', name: 'Netflix Mod', link: 'https://example.com/netflix-mod.apk', description: 'Netflix Premium MOD APK', active: true, order: 1 },
-      { id: 'apk_spotify', name: 'Spotify Mod', link: 'https://example.com/spotify-mod.apk', description: 'Spotify Premium MOD APK', active: true, order: 2 }
-    ];
-    for (const apk of defaultApks) await saveApkModToDb(apk.id, apk);
-  }
-}
-initDefaultApkMods();
 
 // ====== CLEANUP ONLINE USERS ======
 setInterval(async () => {
@@ -557,7 +526,7 @@ const htmlTemplate = `<!DOCTYPE html>
     --warn: #fbbf24; --warn-soft: rgba(251,191,36,0.12);
     --err: #f87171; --err-soft: rgba(248,113,113,0.12);
     --info: #60a5fa; --info-soft: rgba(96,165,250,0.12);
-    --netflix: #e50914; --apk: #4ade80; --mail: #60a5fa;
+    --netflix: #e50914; --mail: #60a5fa;
   }
   * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
   html, body { width:100%; max-width:100%; overflow-x:hidden; margin:0; padding:0; background:var(--bg-0); color:var(--text-0); font-family:'Inter',system-ui,sans-serif; font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased; }
@@ -590,8 +559,6 @@ const htmlTemplate = `<!DOCTYPE html>
   .btn-err:hover:not(:disabled) { background:#e85c5c; }
   .btn-netflix { background:var(--netflix); }
   .btn-netflix:hover:not(:disabled) { background:#c4070f; }
-  .btn-apk { background:var(--apk); color:#032a17; }
-  .btn-apk:hover:not(:disabled) { background:#3ecf70; }
   .btn-mail { background:var(--mail); }
   .btn-mail:hover:not(:disabled) { background:#4a90e2; }
   .btn-warn { background:var(--warn); color:#3a2800; }
@@ -611,7 +578,6 @@ const htmlTemplate = `<!DOCTYPE html>
   .nav-link:hover { background:var(--bg-2); color:var(--text-0); }
   .nav-link.active { background:var(--accent-soft); color:var(--accent); border-color:rgba(139,124,246,0.3); font-weight:600; }
   .nav-link.netflix-nav.active { background:rgba(229,9,20,0.12); color:#ff6b6b; border-color:rgba(229,9,20,0.3); }
-  .nav-link.apk-nav.active { background:var(--ok-soft); color:var(--ok); border-color:rgba(74,222,128,0.3); }
   .nav-link.mail-nav.active { background:var(--info-soft); color:var(--info); border-color:rgba(96,165,250,0.3); }
   .nav-link.orders-nav.active { background:rgba(96,165,250,0.12); color:#7dd3fc; border-color:rgba(96,165,250,0.3); }
   .nav-section-label { font-size:10px; font-weight:700; color:var(--text-2); text-transform:uppercase; letter-spacing:0.1em; padding:14px 12px 6px 12px; }
@@ -626,7 +592,6 @@ const htmlTemplate = `<!DOCTYPE html>
   .toast-error { background:#3a1a1f; color:#fecaca; border:1px solid #5f2d33; }
   .toast-info { background:#1f1a3a; color:#ddd6fe; border:1px solid #3d2f5f; }
   .toast-netflix { background:#3a0a0c; color:#fecaca; border:1px solid #5f0a0d; }
-  .toast-apk { background:#1a3a26; color:#a7f3c8; border:1px solid #2d5f3f; }
   .toast-mail { background:#0a1f3a; color:#bfdbfe; border:1px solid #0a3d5f; }
   .toast-order { background:#0a2a3a; color:#bae6fd; border:1px solid #0a4a5f; }
   .prog { height:6px; background:var(--bg-0); border-radius:999px; overflow:hidden; }
@@ -649,7 +614,6 @@ const htmlTemplate = `<!DOCTYPE html>
   .opt-row:hover { border-color:var(--line); background:var(--line); }
   .opt-row.selected { border-color:var(--accent); background:var(--accent-soft); }
   .opt-row.netflix.selected { border-color:var(--netflix); background:rgba(229,9,20,0.1); }
-  .opt-row.apk.selected { border-color:var(--apk); background:var(--ok-soft); }
   .dana-card { background:linear-gradient(180deg,#0a1a2e,#08121d); border:1px solid #10385c; border-radius:12px; padding:16px; text-align:center; }
   .dana-chip { display:inline-flex; align-items:center; justify-content:center; padding:4px 12px; background:#0084ff; color:white; border-radius:6px; font-weight:800; font-size:12px; letter-spacing:0.04em; margin-bottom:10px; }
   .dana-number { font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:800; color:#60c4ff; letter-spacing:0.03em; margin:8px 0; }
@@ -677,7 +641,6 @@ const htmlTemplate = `<!DOCTYPE html>
   ::-webkit-scrollbar-thumb:hover { background:var(--text-2); }
   .hide { display:none !important; }
 
-  /* ====== ANIMASI LOGIN & REGISTER ====== */
   @keyframes shake {
     0%, 100% { transform: translateX(0); }
     25% { transform: translateX(-5px); }
@@ -685,18 +648,12 @@ const htmlTemplate = `<!DOCTYPE html>
     75% { transform: translateX(-5px); }
   }
   .shake-error { animation: shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; border-color: var(--err) !important; }
-  .auth-tab-content {
-    animation: fadeInScale 0.3s ease-out forwards;
-  }
+  .auth-tab-content { animation: fadeInScale 0.3s ease-out forwards; }
   @keyframes fadeInScale {
     from { opacity: 0; transform: scale(0.95) translateY(5px); }
     to { opacity: 1; transform: scale(1) translateY(0); }
   }
-  .btn-loading {
-    position: relative;
-    color: transparent !important;
-    pointer-events: none;
-  }
+  .btn-loading { position: relative; color: transparent !important; pointer-events: none; }
   .btn-loading::after {
     content: '';
     position: absolute;
@@ -713,18 +670,12 @@ const htmlTemplate = `<!DOCTYPE html>
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ====== ANIMASI INBOX TEMP MAIL ====== */
   @keyframes slideInRight {
     from { opacity: 0; transform: translateX(20px); }
     to { opacity: 1; transform: translateX(0); }
   }
-  .mail-new {
-    animation: slideInRight 0.4s cubic-bezier(0.32, 0.72, 0, 1) forwards;
-    border-left: 3px solid var(--info) !important;
-  }
-  .pulse-border {
-    animation: borderPulse 1.5s infinite;
-  }
+  .mail-new { animation: slideInRight 0.4s cubic-bezier(0.32, 0.72, 0, 1) forwards; border-left: 3px solid var(--info) !important; }
+  .pulse-border { animation: borderPulse 1.5s infinite; }
   @keyframes borderPulse {
     0% { box-shadow: 0 0 0 0 rgba(96,165,250,0.4); }
     70% { box-shadow: 0 0 0 10px rgba(96,165,250,0); }
@@ -737,7 +688,6 @@ const htmlTemplate = `<!DOCTYPE html>
 <div class="app-shell">
   <div class="topbar">
     <div style="display:flex; align-items:center; gap:10px;">
-      <!-- Mengganti simbol petir dengan logo SVG rapi -->
       <div class="brand-mark">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
@@ -774,7 +724,6 @@ const htmlTemplate = `<!DOCTYPE html>
     <div class="nav-section-label">Fitur</div>
     <button onclick="switchView('generator')" data-nav="generator" class="nav-link active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Alight Motion</button>
     <button onclick="switchView('netflix')" data-nav="netflix" class="nav-link netflix-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/></svg>Netflix Token</button>
-    <button onclick="switchView('apkmod')" data-nav="apkmod" class="nav-link apk-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>APK MOD</button>
     <button onclick="switchView('tempmail')" data-nav="tempmail" class="nav-link mail-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>Temp Mail<span class="badge badge-info" style="margin-left:auto; font-size:9px; padding:1px 6px;">NEW</span></button>
     <button onclick="switchView('orders')" data-nav="orders" class="nav-link orders-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>Orderan Saya</button>
     <div class="nav-section-label">Akun</div>
@@ -804,7 +753,6 @@ const htmlTemplate = `<!DOCTYPE html>
     <!-- AUTH VIEW DENGAN ANIMASI BARU -->
     <div id="auth-view" class="card-elevated" style="display:flex; flex-direction:column; gap:16px;">
       <div style="text-align:center; padding:8px 0 4px;">
-        <!-- Logo diganti menjadi SVG bersih, tanpa huruf A -->
         <div style="width:54px; height:54px; border-radius:14px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:inline-flex; align-items:center; justify-content:center; box-shadow:0 8px 24px rgba(109,92,230,0.4); margin-bottom:10px;">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
@@ -814,14 +762,12 @@ const htmlTemplate = `<!DOCTYPE html>
         <p style="font-size:12.5px; color:var(--text-2); margin:0;">Login atau daftar untuk mulai menggunakan layanan</p>
       </div>
       
-      <!-- Tab Switch dengan indikator geser -->
       <div style="display:flex; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; padding:3px; position:relative;">
         <div id="tab-indicator" style="position:absolute; top:3px; bottom:3px; left:3px; width:calc(50% - 3px); background:var(--accent); border-radius:7px; transition:transform 0.25s cubic-bezier(0.32,0.72,0,1);"></div>
         <button onclick="switchAuthTab('login')" id="tab-login-btn" style="position:relative; z-index:1; flex:1; padding:8px; background:transparent; border:none; font-weight:600; font-size:12.5px; cursor:pointer; color:white; font-family:inherit; border-radius:7px;">Login</button>
         <button onclick="switchAuthTab('register')" id="tab-reg-btn" style="position:relative; z-index:1; flex:1; padding:8px; background:transparent; border:none; font-weight:600; font-size:12.5px; cursor:pointer; color:var(--text-1); font-family:inherit; border-radius:7px;">Daftar</button>
       </div>
       
-      <!-- Form container dengan efek transisi -->
       <div id="auth-form-container" class="auth-tab-content" style="display:flex; flex-direction:column; gap:12px;">
         <div><label class="field-label">Username</label><input type="text" id="auth-username" placeholder="username_kamu" class="inp mono"></div>
         <div><label class="field-label">Password</label><input type="password" id="auth-password" placeholder="••••••••" class="inp"></div>
@@ -840,7 +786,6 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
       <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between;">
         <div style="display:flex; align-items:center; gap:10px; min-width:0;">
-          <!-- Avatar inisial, bukan huruf A hardcode -->
           <div class="brand-mark" style="width:34px; height:34px; font-size:14px; background:var(--bg-2); border:1px solid var(--line-2); box-shadow:none;"><span id="user-avatar" style="color:var(--accent);">U</span></div>
           <div style="min-width:0;">
             <div id="logged-username" style="font-weight:700; font-size:13px; overflow:hidden; text-overflow:ellipsis;">-</div>
@@ -993,11 +938,10 @@ const htmlTemplate = `<!DOCTYPE html>
         <div class="section-head" style="margin:0; color:var(--info);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>Orderan Saya</div>
         <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
       </div>
-      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px;">
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px;">
         <div style="padding:8px 4px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--info); font-weight:700; text-transform:uppercase;">Total</div><div id="my-orders-total" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
         <div style="padding:8px 4px; background:var(--accent-soft); border:1px solid rgba(139,124,246,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--accent); font-weight:700; text-transform:uppercase;">AM</div><div id="my-orders-am" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
         <div style="padding:8px 4px; background:var(--err-soft); border:1px solid rgba(248,113,113,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--err); font-weight:700; text-transform:uppercase;">NFLX</div><div id="my-orders-netflix" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
-        <div style="padding:8px 4px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--info); font-weight:700; text-transform:uppercase;">Mail</div><div id="my-orders-mail" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
       </div>
       <div style="display:flex; gap:7px;">
         <input type="text" id="order-search-input" oninput="renderMyOrders()" placeholder="Cari Order ID..." class="inp mono" style="flex:1;">
@@ -1060,55 +1004,6 @@ const htmlTemplate = `<!DOCTYPE html>
           <button onclick="loadNetflixHistory()" class="btn btn-ghost btn-xs">Refresh</button>
         </div>
         <div id="netflix-history-list" style="display:flex; flex-direction:column; gap:7px; max-height:220px; overflow-y:auto;">
-          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
-        </div>
-      </div>
-    </div>
-
-    <div id="section-apkmod" class="hide" style="display:flex; flex-direction:column; gap:10px;">
-      <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between; border-color:rgba(74,222,128,0.3);">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <div style="width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,var(--apk),#16a34a); display:flex; align-items:center; justify-content:center; font-weight:900; color:white; font-size:11px;">APK</div>
-          <div><div style="font-weight:700; font-size:13px;">APK MOD</div><div style="font-size:10.5px; color:var(--ok);">Download link</div></div>
-        </div>
-        <span class="badge badge-ok"><span class="online-dot"></span>Ready</span>
-      </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-        <div class="stat" style="border-color:rgba(74,222,128,0.3);"><div><div class="stat-label">Kuota</div><div id="apk-quota-display" class="stat-value">0</div></div></div>
-        <div class="stat" style="border-color:rgba(74,222,128,0.3);"><div><div class="stat-label">Reset</div><div id="apk-reset-display" class="stat-value">24 Jam</div></div></div>
-      </div>
-      <div style="padding:10px 12px; background:var(--ok-soft); border:1px solid rgba(74,222,128,0.25); border-radius:10px; font-size:11px; color:var(--ok); display:flex; gap:6px; align-items:flex-start;">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-top:1px; flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-        <span><strong>Quota sama</strong> dengan semua fitur — setiap request = -1 quota</span>
-      </div>
-      <div class="card" style="border-color:rgba(74,222,128,0.3); display:flex; flex-direction:column; gap:12px;">
-        <div class="section-head" style="color:var(--ok);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>Pilih APK</div>
-        <div id="apk-options"><p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Memuat...</p></div>
-        <button id="btn-generate-apk" onclick="handleGenerateApk()" class="btn btn-apk"><span id="apk-btn-text">Dapatkan Link</span></button>
-      </div>
-      <div id="apk-loading" class="hide card" style="border-color:rgba(74,222,128,0.3);">
-        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
-          <div style="width:34px; height:34px; border-radius:9px; background:var(--ok-soft); display:flex; align-items:center; justify-content:center;">
-            <svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
-          </div>
-          <div><div style="font-weight:700; font-size:12px;">Memproses...</div><div id="apk-status-text" style="font-size:10.5px; color:var(--text-2);">Menyiapkan link</div></div>
-        </div>
-        <div class="prog"><div id="apk-progress-fill" class="prog-fill" style="background:var(--apk);"></div></div>
-        <p id="apk-log-text" class="mono" style="font-size:10px; color:var(--text-2); margin-top:8px; text-align:center;">Processing...</p>
-      </div>
-      <div id="apk-results-container" class="hide" style="display:flex; flex-direction:column; gap:9px;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <div class="section-head" style="margin:0; color:var(--ok);">Link Download</div>
-          <button onclick="clearApkResults()" class="btn btn-ghost btn-xs">Bersihkan</button>
-        </div>
-        <div id="apk-results-list" style="display:flex; flex-direction:column; gap:9px;"></div>
-      </div>
-      <div class="card" style="border-color:rgba(74,222,128,0.2);">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--ok); letter-spacing:0.06em;">Riwayat</div>
-          <button onclick="loadApkHistory()" class="btn btn-ghost btn-xs">Refresh</button>
-        </div>
-        <div id="apk-history-list" style="display:flex; flex-direction:column; gap:7px; max-height:220px; overflow-y:auto;">
           <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
         </div>
       </div>
@@ -1338,26 +1233,6 @@ const htmlTemplate = `<!DOCTYPE html>
           <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Memuat...</p>
         </div>
       </div>
-      <div style="padding:11px; background:linear-gradient(135deg,var(--ok-soft),var(--info-soft)); border:1px solid rgba(74,222,128,0.3); border-radius:9px;">
-        <div class="section-head" style="color:var(--ok); margin-top:0;">Kelola APK MOD</div>
-        <input type="hidden" id="apk-edit-id" value="">
-        <div style="display:flex; flex-direction:column; gap:7px;">
-          <input type="text" id="apk-name-input" placeholder="Nama APK" class="inp">
-          <input type="text" id="apk-link-input" placeholder="Link download" class="inp mono">
-          <input type="text" id="apk-desc-input" placeholder="Deskripsi (opsional)" class="inp">
-          <div style="display:flex; gap:7px;">
-            <button onclick="handleSaveApkMod()" id="apk-submit-btn" class="btn btn-apk btn-sm" style="flex:1;">Tambah APK</button>
-            <button onclick="resetApkForm()" id="apk-cancel-btn" class="btn btn-ghost btn-sm hide">Batal</button>
-          </div>
-        </div>
-        <div style="display:flex; justify-content:space-between; align-items:center; margin:9px 0 6px;">
-          <div style="font-size:10px; color:var(--ok); font-weight:700; text-transform:uppercase;">Daftar APK</div>
-          <button onclick="loadAdminApkList()" class="btn btn-ghost btn-xs">Refresh</button>
-        </div>
-        <div id="admin-apk-list" style="display:flex; flex-direction:column; gap:6px; max-height:180px; overflow-y:auto; font-size:11px;">
-          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Memuat...</p>
-        </div>
-      </div>
       <div style="padding:11px; background:linear-gradient(135deg,var(--info-soft),var(--accent-soft)); border:1px solid rgba(96,165,250,0.3); border-radius:9px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:9px;">
           <div class="section-head" style="color:var(--info); margin:0;">Semua Orderan</div>
@@ -1367,7 +1242,6 @@ const htmlTemplate = `<!DOCTYPE html>
           <button onclick="setAdminOrderFilter('all')" data-afilter="all" class="admin-order-filter btn btn-xs" style="background:var(--info); color:white;">Semua</button>
           <button onclick="setAdminOrderFilter('am')" data-afilter="am" class="admin-order-filter btn btn-ghost btn-xs">AM</button>
           <button onclick="setAdminOrderFilter('netflix')" data-afilter="netflix" class="admin-order-filter btn btn-ghost btn-xs">NFLX</button>
-          <button onclick="setAdminOrderFilter('apk')" data-afilter="apk" class="admin-order-filter btn btn-ghost btn-xs">APK</button>
           <button onclick="setAdminOrderFilter('mail')" data-afilter="mail" class="admin-order-filter btn btn-ghost btn-xs">Mail</button>
         </div>
         <input type="text" id="admin-order-search" oninput="renderAdminOrders()" placeholder="Cari..." class="inp mono" style="margin-bottom:7px;">
@@ -1476,10 +1350,9 @@ const htmlTemplate = `<!DOCTYPE html>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">1</div><div style="font-size:12px; color:var(--text-1);">Login/daftar dulu dengan akunmu</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">2</div><div style="font-size:12px; color:var(--text-1);"><strong>Alight Motion:</strong> Masukkan email target, kirim magic link, copy URL, verifikasi</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--netflix); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">3</div><div style="font-size:12px; color:var(--text-1);"><strong>Netflix:</strong> Pilih plan, klik Generate, tunggu proses</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--ok); color:#032a17; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">4</div><div style="font-size:12px; color:var(--text-1);"><strong>APK MOD:</strong> Pilih APK, klik Dapatkan Link</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">5</div><div style="font-size:12px; color:var(--text-1);"><strong>Temp Mail:</strong> Generate email, copy, cek inbox (Otomatis Terbuka)</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">7</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai.</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">4</div><div style="font-size:12px; color:var(--text-1);"><strong>Temp Mail:</strong> Generate email, copy, cek inbox (Otomatis Terbuka)</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">5</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai.</div></div>
       </div>
     </div>
 
@@ -1545,9 +1418,6 @@ let currentTransactionId = null;
 let cachedVipShopItems = [];
 let selectedNetflixPlan = 'premium';
 let netflixResults = [];
-let selectedApkId = null;
-let apkResults = [];
-let cachedApkMods = [];
 let tempMailSession = null;
 let myOrders = [];
 let allOrders = [];
@@ -1566,16 +1436,14 @@ let lastEmailsFetch = 0;
 let lastRedeemsFetch = 0;
 let lastAnnouncementsFetch = 0;
 let lastNetflixHistoryFetch = 0;
-let lastApkHistoryFetch = 0;
 let lastMailHistoryFetch = 0;
 let lastMyOrdersFetch = 0;
 let lastAdminOrdersFetch = 0;
 
-// Variabel untuk Auto Refresh Temp Mail
 let mailAutoRefreshInterval = null;
 let lastMailMessageCount = 0;
 
-const CACHE_DURATION = { status:30000, video:60000, chat:15000, emails:30000, redeems:60000, announcements:60000, netflixHistory:30000, apkHistory:30000, mailHistory:30000, myOrders:15000, adminOrders:15000, onlineUsers:15000 };
+const CACHE_DURATION = { status:30000, video:60000, chat:15000, emails:30000, redeems:60000, announcements:60000, netflixHistory:30000, mailHistory:30000, myOrders:15000, adminOrders:15000, onlineUsers:15000 };
 const memoryCache = {};
 
 function getCached(key) {
@@ -1594,7 +1462,6 @@ document.addEventListener('visibilitychange', () => {
     if (currentView === 'chat') loadGlobalChat(true);
     if (currentView === 'vipshop') loadUserTransactions();
     if (currentView === 'netflix') loadNetflixHistory(true);
-    if (currentView === 'apkmod') loadApkHistory(true);
     if (currentView === 'tempmail') { loadTempMailHistory(true); if(tempMailSession) startMailAutoRefresh(); }
     if (currentView === 'orders') loadMyOrders(true);
   } else {
@@ -1675,11 +1542,10 @@ function switchView(viewName) {
   currentView = viewName;
   document.querySelectorAll('[data-nav]').forEach(el => { el.classList.toggle('active', el.dataset.nav === viewName); });
   toggleMenu();
-  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-apkmod','section-tempmail','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
+  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-tempmail','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hide');
   else if (viewName === 'orders') { document.getElementById('section-orders').classList.remove('hide'); loadMyOrders(); }
   else if (viewName === 'netflix') { document.getElementById('section-netflix').classList.remove('hide'); loadNetflixHistory(); updateNetflixQuotaDisplay(); }
-  else if (viewName === 'apkmod') { document.getElementById('section-apkmod').classList.remove('hide'); loadApkMods(); loadApkHistory(); updateApkQuotaDisplay(); }
   else if (viewName === 'tempmail') { 
     document.getElementById('section-tempmail').classList.remove('hide'); 
     loadTempMailHistory(); 
@@ -1700,10 +1566,9 @@ function switchView(viewName) {
   else if (viewName === 'admin') {
     if (!isAdminUser) return showToast('Akses ditolak!', 'error');
     document.getElementById('section-admin').classList.remove('hide');
-    loadAdminRedeems(); loadAdminAnnouncements(); loadAdminVipList(); loadAllUsers(); loadVipAccounts(); loadAdminFeatureRequests(); loadAdminVipShop(); loadAdminTransactions(); loadAdminApkList(); loadAdminOrders();
+    loadAdminRedeems(); loadAdminAnnouncements(); loadAdminVipList(); loadAllUsers(); loadVipAccounts(); loadAdminFeatureRequests(); loadAdminVipShop(); loadAdminTransactions(); loadAdminOrders();
   }
   
-  // Matikan auto refresh jika pindah dari view tempmail
   if (viewName !== 'tempmail') {
     stopMailAutoRefresh();
   }
@@ -1747,12 +1612,11 @@ function renderMyOrders() {
   document.getElementById('my-orders-total').innerText = myOrders.length;
   document.getElementById('my-orders-am').innerText = myOrders.filter(o => o.type === 'am').length;
   document.getElementById('my-orders-netflix').innerText = myOrders.filter(o => o.type === 'netflix').length;
-  document.getElementById('my-orders-mail').innerText = myOrders.filter(o => o.type === 'mail').length;
   if (filtered.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">' + (search ? 'Tidak cocok' : 'Belum ada') + '</p>'; return; }
   container.innerHTML = filtered.map(o => {
     const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'mail' ? '📧' : '📱';
-    const typeLabel = o.type === 'am' ? 'Alight Motion' : o.type === 'netflix' ? 'Netflix' : o.type === 'mail' ? 'Temp Mail' : 'APK MOD';
-    const typeBadge = o.type === 'am' ? 'badge-accent' : o.type === 'netflix' ? 'badge-err' : o.type === 'mail' ? 'badge-info' : 'badge-ok';
+    const typeLabel = o.type === 'am' ? 'Alight Motion' : o.type === 'netflix' ? 'Netflix' : o.type === 'mail' ? 'Temp Mail' : 'Unknown';
+    const typeBadge = o.type === 'am' ? 'badge-accent' : o.type === 'netflix' ? 'badge-err' : o.type === 'mail' ? 'badge-info' : 'badge-muted';
     const timeStr = new Date(o.timestamp).toLocaleString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
     return '<div class="hist-item">' +
       '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">' +
@@ -1827,40 +1691,25 @@ function updateMailQuotaDisplay() {
   if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
 }
 
-// FUNGSI BARU: Auto Refresh Temp Mail
 function startMailAutoRefresh() {
   if (mailAutoRefreshInterval) clearInterval(mailAutoRefreshInterval);
   mailAutoRefreshInterval = setInterval(async () => {
     if (!isPageVisible || !tempMailSession || currentView !== 'tempmail') return;
-    
     try {
-      // Menggunakan endpoint check yang sudah ada
-      const res = await fetch('/api/tempmail/check', { 
-        method:'POST', 
-        headers:{'Content-Type':'application/json'}, 
-        body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession }) 
-      });
+      const res = await fetch('/api/tempmail/check', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, sessionId: tempMailSession }) });
       const data = await res.json();
-      
       if (data.success && data.messages) {
-        // Cek apakah ada pesan baru berdasarkan jumlah
         if (data.messages.length > lastMailMessageCount) {
           showToast('📧 Pesan baru masuk!', 'mail');
           lastMailMessageCount = data.messages.length;
-          
-          // Update list inbox
           document.getElementById('mail-message-count').innerText = data.messages.length + ' pesan';
-          
-          // Render ulang dengan animasi
           const inboxList = document.getElementById('mail-inbox-list');
           if (data.messages.length > 0) {
             inboxList.innerHTML = data.messages.map((msg, idx) => {
-              const isNew = idx === 0; // Asumsi pesan terbaru ada di index 0
+              const isNew = idx === 0;
               const animClass = isNew ? 'mail-new' : '';
-              
               const linksHtml = msg.extracted_links && msg.extracted_links.length > 0 
                 ? '<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">' + msg.extracted_links.map(link => '<div class="link-line" style="margin-bottom:4px;" onclick="copyMailLink(\\'' + escapeHtml(link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(link) + '</div>').join('') + '</div>' : '';
-              
               return '<div class="hist-item ' + animClass + '" style="border-color:rgba(96,165,250,0.25);"><div style="font-size:12px; font-weight:700; color:var(--info); margin-bottom:3px;">📬 ' + escapeHtml(msg.subject || '(No Subject)') + '</div><div style="font-size:10px; color:var(--text-2); margin-bottom:3px;">Dari: ' + escapeHtml(msg.from || '-') + ' • ' + escapeHtml(msg.date || '-') + '</div><div style="font-size:11px; color:var(--text-1); line-height:1.4;">' + escapeHtml((msg.preview || msg.clean_content || '').substring(0, 200)) + '</div>' + linksHtml + '</div>';
             }).join('');
           } else {
@@ -1868,10 +1717,8 @@ function startMailAutoRefresh() {
           }
         }
       }
-    } catch (e) {
-      // Abaikan error silent agar tidak spam
-    }
-  }, 5000); // Cek setiap 5 detik
+    } catch (e) {}
+  }, 5000);
 }
 
 function stopMailAutoRefresh() {
@@ -1891,11 +1738,8 @@ async function handleGenerateTempMail() {
   const logText = document.getElementById('mail-log-text');
   const progressFill = document.getElementById('mail-progress-fill');
   const resultContainer = document.getElementById('mail-result-container');
-  
-  // Reset state auto refresh
   stopMailAutoRefresh();
   lastMailMessageCount = 0;
-  
   btn.disabled = true; btnText.innerText = 'Memproses...';
   loadingEl.classList.remove('hide'); progressFill.style.width = '0%';
   statusText.innerText = 'Menyiapkan'; logText.innerText = 'Initializing...';
@@ -1915,10 +1759,7 @@ async function handleGenerateTempMail() {
       resultContainer.classList.remove('hide');
       document.getElementById('mail-inbox-list').innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Menunggu email (Auto-Refresh Aktif)...</p>';
       document.getElementById('mail-message-count').innerText = '0 pesan';
-      
-      // Memulai Auto refresh
       startMailAutoRefresh();
-      
       if (genData.quotaInfo) { userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(genData.quotaInfo); updateMailQuotaDisplay(); }
       if (genData.orderId) showToast('✅ Order ID: ' + genData.orderId, 'order', 5000);
       else showToast('Email berhasil!', 'mail');
@@ -2100,185 +1941,6 @@ function renderNetflixHistory(data) {
   } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
 }
 
-function updateApkQuotaDisplay() {
-  const el = document.getElementById('apk-quota-display');
-  if (el) {
-    if (isAdminUser || isVipUser) { el.innerText = '∞'; el.style.color = 'var(--ok)'; }
-    else { const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota); el.innerText = remain; el.style.color = remain > 0 ? 'white' : 'var(--err)'; }
-  }
-  const resetEl = document.getElementById('apk-reset-display');
-  if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
-}
-
-async function loadApkMods() {
-  const container = document.getElementById('apk-options');
-  if (!container) return;
-  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px;">Memuat...</p>';
-  try {
-    const res = await fetch('/api/apk-mods');
-    const data = await res.json();
-    if (data.success && data.items && Object.keys(data.items).length > 0) {
-      const items = Object.entries(data.items).filter(([_,v]) => v.active !== false).sort((a,b) => (a[1].order||0) - (b[1].order||0));
-      cachedApkMods = items;
-      container.innerHTML = items.map(([id, item]) => {
-        const isSelected = selectedApkId === id;
-        return '<div class="opt-row apk ' + (isSelected ? 'selected' : '') + '" data-apk-id="' + id + '" onclick="selectApkMod(\\'' + id + '\\')"><div><div style="font-weight:700; font-size:12.5px;">📱 ' + escapeHtml(item.name) + '</div><div style="font-size:10px; color:var(--text-2);">' + escapeHtml(item.description || 'APK MOD') + '</div></div><span style="font-size:11px; color:var(--ok); font-weight:700;">1 Q</span></div>';
-      }).join('');
-    } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada</p>';
-  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
-}
-
-function selectApkMod(apkId) {
-  selectedApkId = apkId;
-  document.querySelectorAll('.opt-row[data-apk-id]').forEach(el => { el.classList.toggle('selected', el.dataset.apkId === apkId); });
-  const item = cachedApkMods.find(([id]) => id === apkId);
-  if (item) showToast('Dipilih: ' + item[1].name, 'apk');
-}
-
-async function handleGenerateApk() {
-  if (!loggedInUsername) return showToast('Harus login!', 'error');
-  if (!selectedApkId) return showToast('Pilih APK dulu!', 'error');
-  if (!guardServerOnline('APK MOD')) return;
-  const btn = document.getElementById('btn-generate-apk');
-  const btnText = document.getElementById('apk-btn-text');
-  const loadingEl = document.getElementById('apk-loading');
-  const statusText = document.getElementById('apk-status-text');
-  const logText = document.getElementById('apk-log-text');
-  const progressFill = document.getElementById('apk-progress-fill');
-  btn.disabled = true; btnText.innerText = 'Memproses...';
-  loadingEl.classList.remove('hide'); progressFill.style.width = '0%';
-  statusText.innerText = 'Cek kuota...'; logText.innerText = 'Checking...';
-  try {
-    const quotaRes = await fetch('/api/apk/check-quota?username=' + encodeURIComponent(loggedInUsername));
-    const quotaData = await quotaRes.json();
-    if (!quotaData.success) throw new Error(quotaData.message || 'Gagal');
-    if (!quotaData.allowed) throw new Error(quotaData.message || 'Quota habis!');
-    statusText.innerText = 'Ambil link...'; logText.innerText = 'Fetching...'; progressFill.style.width = '50%';
-    const reqRes = await fetch('/api/apk/request', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, apkId: selectedApkId }) });
-    const reqData = await reqRes.json();
-    progressFill.style.width = '80%';
-    if (reqData.success && reqData.result) {
-      progressFill.style.width = '100%'; statusText.innerText = '✅ Berhasil!'; logText.innerText = 'Success';
-      addApkResult(reqData.result);
-      if (reqData.quotaInfo) { userQuotaData.usedQuota = reqData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(reqData.quotaInfo); updateApkQuotaDisplay(); }
-      if (reqData.orderId) showToast('✅ Order ID: ' + reqData.orderId, 'order', 5000);
-      else showToast('Link berhasil!', 'apk');
-      loadApkHistory(true);
-      setTimeout(() => loadingEl.classList.add('hide'), 2000);
-    } else {
-      if (reqData.refilled) showToast(reqData.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
-      else showToast(reqData.message || 'Gagal', 'error');
-      if (reqData.quotaInfo) { updateQuotaDisplay(reqData.quotaInfo); updateApkQuotaDisplay(); }
-      else loadVerifiedEmails(true);
-      throw new Error(reqData.message || 'Gagal');
-    }
-  } catch (err) {
-    statusText.innerText = '❌ Gagal'; logText.innerText = err.message;
-    if (!err.message.includes('dikembalikan')) showToast(err.message, 'error');
-    setTimeout(() => loadingEl.classList.add('hide'), 3000);
-  } finally { btn.disabled = false; btnText.innerText = 'Dapatkan Link'; }
-}
-
-function addApkResult(result) { apkResults.unshift(result); renderApkResults(); document.getElementById('apk-results-container').classList.remove('hide'); }
-
-function renderApkResults() {
-  const container = document.getElementById('apk-results-list');
-  if (!container) return;
-  if (apkResults.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Belum ada</p>'; return; }
-  container.innerHTML = apkResults.map((r, i) => '<div class="hist-item" style="border-color:rgba(74,222,128,0.25);"><div style="display:flex; justify-content:space-between; margin-bottom:7px;"><span style="font-size:11.5px; font-weight:700; color:var(--ok);">#' + (apkResults.length - i) + ' • ' + escapeHtml(r.name) + '</span><span class="badge badge-ok" style="font-size:9px;">APK</span></div><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700; margin-bottom:4px;">Link</div><div class="link-line" style="margin-bottom:6px;" onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.link) + '</div><button onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')" class="btn btn-apk btn-sm" style="width:100%;">Copy Link</button></div>').join('');
-}
-
-function copyApkLink(link) { navigator.clipboard.writeText(link).then(() => showToast('Tersalin!', 'apk')).catch(() => showToast('Gagal', 'error')); }
-function clearApkResults() { apkResults = []; renderApkResults(); document.getElementById('apk-results-container').classList.add('hide'); }
-
-async function loadApkHistory(force = false) {
-  if (!loggedInUsername) return;
-  const now = Date.now();
-  if (!force && now - lastApkHistoryFetch < CACHE_DURATION.apkHistory) { const cached = getCached('apkHistory'); if (cached) { renderApkHistory(cached); return; } }
-  const container = document.getElementById('apk-history-list');
-  if (!container) return;
-  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Memuat...</p>';
-  try {
-    const res = await fetch('/api/apk/history?username=' + encodeURIComponent(loggedInUsername));
-    const data = await res.json();
-    lastApkHistoryFetch = now; setCache('apkHistory', data, CACHE_DURATION.apkHistory); renderApkHistory(data);
-  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
-}
-
-function renderApkHistory(data) {
-  const container = document.getElementById('apk-history-list');
-  if (!container) return;
-  if (data.success && data.results && data.results.length > 0) {
-    container.innerHTML = data.results.map(r => '<div class="hist-item" style="border-color:rgba(74,222,128,0.2);"><div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span style="font-size:11px; font-weight:700; color:var(--ok);">' + escapeHtml(r.name) + '</span><span style="font-size:9px; color:var(--text-2);">' + new Date(r.timestamp).toLocaleDateString('id-ID') + '</span></div><div class="link-line" style="margin-top:5px; font-size:10px;" onclick="copyApkLink(\\'' + escapeHtml(r.link).replace(/'/g, "\\\\'") + '\\')">' + escapeHtml(r.link) + '</div></div>').join('');
-  } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
-}
-
-async function loadAdminApkList() {
-  if (!isAdminUser) return;
-  const container = document.getElementById('admin-apk-list');
-  if (!container) return;
-  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px;">Memuat...</p>';
-  try {
-    const res = await fetch('/api/apk-mods');
-    const data = await res.json();
-    if (data.success && data.items && Object.keys(data.items).length > 0) {
-      const items = Object.entries(data.items).sort((a,b) => (a[1].order||0) - (b[1].order||0));
-      container.innerHTML = items.map(([id, item]) => '<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 9px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:6px;"><div style="flex:1; min-width:0;"><div style="font-size:11px; font-weight:700; color:var(--ok);">' + escapeHtml(item.name) + '</div><div style="font-size:9px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(item.link) + '</div></div><div style="display:flex; gap:3px; flex-shrink:0;"><button onclick="editApkMod(\\'' + id + '\\', \\'' + encodeURIComponent(item.name) + '\\', \\'' + encodeURIComponent(item.link) + '\\', \\'' + encodeURIComponent(item.description || '') + '\\')" class="btn btn-ghost btn-xs">E</button><button onclick="toggleApkMod(\\'' + id + '\\', ' + (item.active !== false) + ')" class="btn btn-ghost btn-xs">' + (item.active !== false ? 'O' : 'X') + '</button><button onclick="deleteApkMod(\\'' + id + '\\')" class="btn btn-ghost btn-xs" style="color:var(--err);">×</button></div></div>').join('');
-    } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px;">Belum ada</p>';
-  } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:6px;">Gagal</p>'; }
-}
-
-async function handleSaveApkMod() {
-  if (!isAdminUser) return showToast('Akses ditolak!', 'error');
-  const editId = document.getElementById('apk-edit-id').value;
-  const name = document.getElementById('apk-name-input').value.trim();
-  const link = document.getElementById('apk-link-input').value.trim();
-  const description = document.getElementById('apk-desc-input').value.trim();
-  if (!name || !link) return showToast('Lengkapi!', 'error');
-  if (!link.startsWith('http://') && !link.startsWith('https://')) return showToast('Link harus http/https', 'error');
-  try {
-    const res = await fetch('/api/admin/apk-mod/save', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, id: editId, name, link, description }) });
-    const data = await res.json();
-    if (data.success) { showToast(data.message, 'success'); resetApkForm(); loadAdminApkList(); loadApkMods(); }
-    else showToast(data.message, 'error');
-  } catch(e) { showToast('Gagal', 'error'); }
-}
-
-function editApkMod(id, encName, encLink, encDesc) {
-  document.getElementById('apk-edit-id').value = id;
-  document.getElementById('apk-name-input').value = decodeURIComponent(encName);
-  document.getElementById('apk-link-input').value = decodeURIComponent(encLink);
-  document.getElementById('apk-desc-input').value = decodeURIComponent(encDesc || '');
-  document.getElementById('apk-submit-btn').innerText = 'Perbarui';
-  document.getElementById('apk-cancel-btn').classList.remove('hide');
-}
-
-function resetApkForm() {
-  document.getElementById('apk-edit-id').value = '';
-  document.getElementById('apk-name-input').value = '';
-  document.getElementById('apk-link-input').value = '';
-  document.getElementById('apk-desc-input').value = '';
-  document.getElementById('apk-submit-btn').innerText = 'Tambah APK';
-  document.getElementById('apk-cancel-btn').classList.add('hide');
-}
-
-async function toggleApkMod(id, currentActive) {
-  try {
-    const res = await fetch('/api/admin/apk-mod/toggle', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, id, active: !currentActive }) });
-    const data = await res.json();
-    if (data.success) { showToast(data.message, 'success'); loadAdminApkList(); loadApkMods(); }
-  } catch(e) {}
-}
-
-async function deleteApkMod(id) {
-  if (!confirm('Hapus APK ini?')) return;
-  try {
-    const res = await fetch('/api/admin/apk-mod/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, id }) });
-    const data = await res.json();
-    if (data.success) { showToast('Dihapus', 'success'); loadAdminApkList(); loadApkMods(); }
-  } catch(e) {}
-}
-
 async function fetchServerStatus(force = false) {
   if (!isPageVisible && !force) return;
   const now = Date.now();
@@ -2332,12 +1994,9 @@ function switchAuthTab(mode) {
   const emailField = document.getElementById('email-field-container');
   const btnText = document.getElementById('auth-btn-text');
   const formContainer = document.getElementById('auth-form-container');
-  
-  // Animasi form fade
   formContainer.style.animation = 'none';
-  formContainer.offsetHeight; // trigger reflow
+  formContainer.offsetHeight;
   formContainer.style.animation = 'fadeInScale 0.3s ease-out forwards';
-
   if (mode === 'login') {
     ind.style.transform = 'translateX(0%)'; loginBtn.style.color = 'white'; regBtn.style.color = 'var(--text-1)';
     emailField.classList.add('hide'); btnText.innerText = 'Masuk';
@@ -2352,28 +2011,22 @@ async function handleAuthAction() {
   const password = document.getElementById('auth-password').value.trim();
   const email = document.getElementById('auth-email').value.trim();
   const formContainer = document.getElementById('auth-form-container');
-  
   if (!username || !password) {
     formContainer.classList.add('shake-error');
     setTimeout(() => formContainer.classList.remove('shake-error'), 500);
     return showToast('Username dan password wajib!', 'error');
   }
-  
   let deviceToken = localStorage.getItem('am_device_token');
   if (currentAuthMode === 'register' && deviceToken) {
     formContainer.classList.add('shake-error');
     setTimeout(() => formContainer.classList.remove('shake-error'), 500);
     return showToast('Perangkat sudah terdaftar!', 'error');
   }
-  
   const btn = document.getElementById('auth-submit-btn');
   const originalText = document.getElementById('auth-btn-text').innerText;
-  
-  // Efek loading pada tombol
   btn.classList.add('btn-loading');
   btn.disabled = true;
   document.getElementById('auth-btn-text').innerText = '';
-  
   try {
     const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, email, deviceToken }) });
     const data = await res.json();
@@ -2381,15 +2034,12 @@ async function handleAuthAction() {
       if (currentAuthMode === 'register' && data.deviceToken) localStorage.setItem('am_device_token', data.deviceToken);
       if (data.token) { localStorage.setItem('authToken', data.token); localStorage.setItem('savedUsername', data.username); }
       showToast(data.message, 'success');
-      
-      // Animasi fade out sebelum masuk
       document.getElementById('auth-view').style.transition = 'opacity 0.3s';
       document.getElementById('auth-view').style.opacity = '0';
       setTimeout(() => {
         applySession(data);
         document.getElementById('auth-view').style.opacity = '1';
       }, 300);
-      
     } else {
       formContainer.classList.add('shake-error');
       setTimeout(() => formContainer.classList.remove('shake-error'), 500);
@@ -2415,11 +2065,8 @@ function applySession(data) {
   document.getElementById('terminal-view').classList.remove('hide');
   document.getElementById('menu-btn').classList.remove('hide');
   document.getElementById('logged-username').innerText = data.username;
-  
-  // Set avatar huruf depan, bukan hardcode 'A'
   document.getElementById('user-avatar').innerText = data.username.charAt(0).toUpperCase();
   document.getElementById('drawer-avatar').innerText = data.username.charAt(0).toUpperCase();
-  
   document.getElementById('drawer-username').innerText = data.username;
   document.getElementById('drawer-role').innerText = data.isAdmin ? 'Admin' : (data.isVip ? 'VIP Member' : 'User');
   document.getElementById('drawer-logout-btn').classList.remove('hide');
@@ -2434,7 +2081,6 @@ function applySession(data) {
   updateStatusUI(data.serverStatus);
   fetchFeaturedVideo(true);
   updateNetflixQuotaDisplay();
-  updateApkQuotaDisplay();
   updateMailQuotaDisplay();
   startOnlineTracking();
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
@@ -2467,7 +2113,7 @@ async function handleRedeemCodeMain() {
     if (data.success) {
       showToast(data.message, 'success');
       document.getElementById('redeem-code-input-main').value = '';
-      updateQuotaDisplay(data); updateNetflixQuotaDisplay(); updateApkQuotaDisplay(); updateMailQuotaDisplay();
+      updateQuotaDisplay(data); updateNetflixQuotaDisplay(); updateMailQuotaDisplay();
       loadVerifiedEmails(true); loadActiveRedeems(true);
     } else showToast(data.message, 'error');
   } catch(e) { showToast('Gagal', 'error'); }
@@ -2872,7 +2518,7 @@ function renderVerifiedEmails(data) {
   if (!container) return;
   updateQuotaStatusCard(data);
   handleCountdown(data);
-  updateNetflixQuotaDisplay(); updateApkQuotaDisplay(); updateMailQuotaDisplay();
+  updateNetflixQuotaDisplay(); updateMailQuotaDisplay();
   const emails = data.activatedEmails || [];
   if (emails.length === 0) {
     container.innerHTML = '<div style="padding:11px; text-align:center; background:var(--bg-2); border:1px dashed var(--line-2); border-radius:9px;"><div style="font-size:11.5px; color:var(--text-1); font-weight:600;">Belum ada Gmail</div><div style="font-size:10px; color:var(--text-2); margin-top:2px;">Gmail yang terverifikasi akan muncul di sini</div></div>';
@@ -3604,7 +3250,6 @@ const server = http.createServer(async (req, res) => {
       const items = await getVipShopFromDb();
       jsonResponse(res, 200, { success: true, items });
 
-    // ====== ONLINE TRACKING ======
     } else if (parsedUrl.pathname === '/api/online/heartbeat' && req.method === 'POST') {
       const body = await readBody(req);
       const { username } = JSON.parse(body);
@@ -3645,7 +3290,6 @@ const server = http.createServer(async (req, res) => {
       }
       jsonResponse(res, 200, { success: true, count: active.length, users: active });
 
-    // ====== TEMP MAIL ======
     } else if (parsedUrl.pathname === '/api/tempmail/check-quota' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
@@ -3735,117 +3379,22 @@ const server = http.createServer(async (req, res) => {
       const myMails = Object.values(allMails).filter(m => m.username === cleanUser).sort((a, b) => b.createdAt - a.createdAt).slice(0, 20);
       jsonResponse(res, 200, { success: true, results: myMails });
 
-    // ====== APK MOD ======
-    } else if (parsedUrl.pathname === '/api/apk-mods' && req.method === 'GET') {
-      const items = await getApkModsFromDb();
-      jsonResponse(res, 200, { success: true, items });
-
-    } else if (parsedUrl.pathname === '/api/apk/check-quota' && req.method === 'GET') {
-      const username = parsedUrl.searchParams.get('username');
-      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-      const cleanUser = username.toLowerCase();
-      await checkAndExpireBonusQuota(cleanUser);
-      const userObj = await getUserFromDb(cleanUser);
-      if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-      const now = Date.now();
-      const twentyFourHours = 24 * 60 * 60 * 1000;
-      if (now - (userObj.lastResetTime || now) >= twentyFourHours) { userObj.activatedEmails = []; userObj.lastResetTime = now; await saveUserToDb(cleanUser, userObj); }
-      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
-      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
-      const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
-      if (userObj.isAdmin || isVipActive) return jsonResponse(res, 200, { success: true, allowed: true, message: 'Unlimited', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
-      if (usedQuota >= totalQuota) return jsonResponse(res, 200, { success: true, allowed: false, message: 'Quota habis!', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
-      jsonResponse(res, 200, { success: true, allowed: true, message: 'Quota tersedia', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
-
-    } else if (parsedUrl.pathname === '/api/apk/request' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { username, apkId } = JSON.parse(body);
-      const cleanUser = username ? username.toLowerCase() : '';
-      await checkAndExpireBonusQuota(cleanUser);
-      const userObj = await getUserFromDb(cleanUser);
-      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
-      if (currentServerStatus !== 'online' && !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Server offline!' });
-      const apkObj = await getApkModFromDb(apkId);
-      if (!apkObj) return jsonResponse(res, 404, { success: false, message: 'APK tidak ditemukan!' });
-      if (apkObj.active === false) return jsonResponse(res, 400, { success: false, message: 'APK tidak tersedia!' });
-      const now = Date.now();
-      const twentyFourHours = 24 * 60 * 60 * 1000;
-      if (now - (userObj.lastResetTime || now) >= twentyFourHours) { userObj.activatedEmails = []; userObj.lastResetTime = now; }
-      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
-      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
-      const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
-      if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) return jsonResponse(res, 403, { success: false, message: 'Quota habis!' });
-      const quotaEntry = 'apk_' + now + '_' + Math.random().toString(36).substring(2, 6);
-      if (!userObj.isAdmin && !isVipActive) {
-        if (!userObj.activatedEmails) userObj.activatedEmails = [];
-        userObj.activatedEmails.push(quotaEntry);
-        if (userObj.bonusQuota > 0) { userObj.lastBonusActivity = now; userObj.bonusGrantedAt = userObj.bonusGrantedAt || now; }
-        await saveUserToDb(cleanUser, userObj);
-      }
-      const orderId = generateOrderId('APK');
-      await saveOrderToDb(orderId, { orderId, username: cleanUser, type: 'apk', detail: apkObj.name, result: apkObj.link, timestamp: now, quotaEntry });
-      const reqId = 'apk_req_' + now + '_' + Math.random().toString(36).substring(2, 8);
-      await saveApkRequestToDb(reqId, { id: reqId, orderId, username: cleanUser, apkId, name: apkObj.name, link: apkObj.link, description: apkObj.description || '', timestamp: now });
-      jsonResponse(res, 200, { success: true, orderId, result: { name: apkObj.name, link: apkObj.link, description: apkObj.description || '', requestedAt: now, orderId }, quotaInfo: { usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
-
-    } else if (parsedUrl.pathname === '/api/apk/history' && req.method === 'GET') {
-      const username = parsedUrl.searchParams.get('username');
-      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
-      const cleanUser = username.toLowerCase();
-      const allRequests = await getApkRequestsFromDb();
-      const myRequests = Object.values(allRequests).filter(r => r.username === cleanUser).sort((a, b) => b.timestamp - a.timestamp).slice(0, 20);
-      jsonResponse(res, 200, { success: true, results: myRequests });
-
-    } else if (parsedUrl.pathname === '/api/admin/apk-mod/save' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { adminUsername, id, name, link, description } = JSON.parse(body);
-      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
-      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      if (!name || !link) return jsonResponse(res, 400, { success: false, message: 'Nama dan link wajib!' });
-      if (!link.startsWith('http://') && !link.startsWith('https://')) return jsonResponse(res, 400, { success: false, message: 'Link harus http/https' });
-      const apkId = id || ('apk_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
-      const apks = await getApkModsFromDb();
-      const order = id ? (apks[id]?.order || Object.keys(apks).length + 1) : Object.keys(apks).length + 1;
-      await saveApkModToDb(apkId, { id: apkId, name, link, description: description || '', active: true, order });
-      jsonResponse(res, 200, { success: true, message: id ? 'APK diperbarui!' : 'APK ditambahkan!' });
-
-    } else if (parsedUrl.pathname === '/api/admin/apk-mod/toggle' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { adminUsername, id, active } = JSON.parse(body);
-      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
-      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      const apkObj = await getApkModFromDb(id);
-      if (!apkObj) return jsonResponse(res, 404, { success: false, message: 'APK tidak ditemukan!' });
-      apkObj.active = active;
-      await saveApkModToDb(id, apkObj);
-      jsonResponse(res, 200, { success: true, message: active ? 'Diaktifkan' : 'Dinonaktifkan' });
-
-    } else if (parsedUrl.pathname === '/api/admin/apk-mod/delete' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { adminUsername, id } = JSON.parse(body);
-      const adminObj = await getUserFromDb(adminUsername.toLowerCase());
-      if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      await removeApkModFromDb(id);
-      jsonResponse(res, 200, { success: true, message: 'APK dihapus' });
-
-    // ====== ORDERS ======
     } else if (parsedUrl.pathname === '/api/orders/my' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
       const cleanUser = username.toLowerCase();
-      const allOrders = await getOrdersFromDb();
-      const myOrders = Object.values(allOrders).filter(o => o.username === cleanUser).sort((a, b) => b.timestamp - a.timestamp).slice(0, 100);
-      jsonResponse(res, 200, { success: true, orders: myOrders });
+      const allOrdersData = await getOrdersFromDb();
+      const myOrdersList = Object.values(allOrdersData).filter(o => o.username === cleanUser).sort((a, b) => b.timestamp - a.timestamp).slice(0, 100);
+      jsonResponse(res, 200, { success: true, orders: myOrdersList });
 
     } else if (parsedUrl.pathname === '/api/admin/orders' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       const adminObj = username ? await getUserFromDb(username.toLowerCase()) : null;
       if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      const allOrders = await getOrdersFromDb();
-      const orders = Object.values(allOrders).sort((a, b) => b.timestamp - a.timestamp).slice(0, 500);
+      const allOrdersData = await getOrdersFromDb();
+      const orders = Object.values(allOrdersData).sort((a, b) => b.timestamp - a.timestamp).slice(0, 500);
       jsonResponse(res, 200, { success: true, orders });
 
-    // ====== NETFLIX ======
     } else if (parsedUrl.pathname === '/api/netflix/check-quota' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
@@ -3907,7 +3456,6 @@ const server = http.createServer(async (req, res) => {
       const myResults = Object.values(allResults).filter(r => r.username === cleanUser).sort((a, b) => b.timestamp - a.timestamp).slice(0, 20);
       jsonResponse(res, 200, { success: true, results: myResults });
 
-    // ====== TRANSACTIONS ======
     } else if (parsedUrl.pathname === '/api/transaction/create' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, vipId, vipName, vipPrice, vipDays } = JSON.parse(body);
@@ -4491,9 +4039,12 @@ server.listen(PORT, () => {
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
   console.log('║  💳 DANA Admin: ' + DANA_ADMIN_NUMBER + '                     ║');
   console.log('║  ──────────────────────────────────────────────────────────  ║');
-  console.log('║  ✨ UPDATE v7.1:                                             ║');
-  console.log('║  📧 TEMP MAIL AUTO-REFRESH (Pesan otomatis terbuka)         ║');
-  console.log('║  🎨 UI AUTH REDESIGN (Animasi login/register baru)          ║');
-  console.log('║  🗑️ HAPUS IKON PETIR & HURUF "A" HARDCODE                   ║');
+  console.log('║  ✨ FITUR AKTIF:                                             ║');
+  console.log('║  🎨 Alight Motion Premium                                    ║');
+  console.log('║  🎬 Netflix Token Generator                                  ║');
+  console.log('║  📧 Temp Mail (Auto-Refresh)                                 ║');
+  console.log('║  🛒 VIP Shop & Transaksi                                     ║');
+  console.log('║  💬 Chat Global & Orderan                                    ║');
+  console.log('║  ⚙️  Panel Admin Lengkap                                     ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
