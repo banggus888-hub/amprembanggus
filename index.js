@@ -435,6 +435,52 @@ function apkAutoPackage(appName) {
   return 'com.app.' + seg.substring(0, 40);
 }
 
+// ---- Izin (permission) yang bisa diminta APK saat aplikasi dibuka ----
+const APK_PERMISSION_MAP = {
+  notifications: ['android.permission.POST_NOTIFICATIONS'],
+  camera: ['android.permission.CAMERA'],
+  microphone: ['android.permission.RECORD_AUDIO'],
+  location: ['android.permission.ACCESS_FINE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION'],
+  storage: ['android.permission.READ_MEDIA_IMAGES', 'android.permission.READ_MEDIA_VIDEO', 'android.permission.READ_EXTERNAL_STORAGE'],
+  contacts: ['android.permission.READ_CONTACTS'],
+  bluetooth: ['android.permission.BLUETOOTH_CONNECT']
+};
+const APK_ICON_MAX_BYTES = 1536 * 1024;
+
+function apkParseIcon(rawIcon) {
+  if (rawIcon === undefined || rawIcon === null || rawIcon === '') return { value: '' };
+  if (typeof rawIcon !== 'string') return { error: 'Format logo tidak valid!' };
+  if (rawIcon.length > 3 * 1024 * 1024) return { error: 'Ukuran logo terlalu besar!' };
+  const m = /^data:image\/(png|jpeg|jpg|webp);base64,([A-Za-z0-9+\/]+={0,2})$/.exec(rawIcon);
+  if (!m) return { error: 'Logo harus berupa gambar PNG, JPG, atau WEBP!' };
+  const buf = Buffer.from(m[2], 'base64');
+  if (buf.length < 100) return { error: 'File logo rusak atau terlalu kecil!' };
+  if (buf.length > APK_ICON_MAX_BYTES) return { error: 'Ukuran logo maksimal 1.5MB!' };
+  const kind = sniffImageType(buf);
+  if (!kind) return { error: 'File logo bukan gambar yang valid!' };
+  return { value: 'data:' + kind + ';base64,' + m[2] };
+}
+
+function apkParsePermissions(rawPerms) {
+  if (rawPerms === undefined || rawPerms === null || rawPerms === '') return { value: [] };
+  if (!Array.isArray(rawPerms)) return { error: 'Format izin tidak valid!' };
+  const out = [];
+  for (let i = 0; i < rawPerms.length; i++) {
+    const k = String(rawPerms[i] || '').trim().toLowerCase();
+    if (!Object.prototype.hasOwnProperty.call(APK_PERMISSION_MAP, k)) return { error: 'Izin tidak dikenal: ' + k.substring(0, 30) };
+    if (out.indexOf(k) === -1) out.push(k);
+  }
+  return { value: out };
+}
+
+function apkAndroidPermissions(keys) {
+  const list = [];
+  (keys || []).forEach(function (k) {
+    (APK_PERMISSION_MAP[k] || []).forEach(function (n) { if (list.indexOf(n) === -1) list.push(n); });
+  });
+  return list;
+}
+
 function apkNormalizeInput(raw) {
   raw = raw || {};
   let siteUrl = String(raw.url || '').trim();
@@ -457,7 +503,11 @@ function apkNormalizeInput(raw) {
   if (!/^[0-9A-Za-z][0-9A-Za-z._+\-]{0,19}$/.test(versionName)) return { error: 'Version name tidak valid! Contoh: 1.0.0' };
   const vcRaw = (raw.versionCode === undefined || raw.versionCode === null || String(raw.versionCode).trim() === '') ? 1 : Number(raw.versionCode);
   if (!Number.isInteger(vcRaw) || vcRaw < 1 || vcRaw > 2100000000) return { error: 'Version code harus angka bulat minimal 1!' };
-  return { value: { url: siteUrl, appName: appName, packageName: packageName, versionName: versionName, versionCode: vcRaw } };
+  const iconRes = apkParseIcon(raw.icon);
+  if (iconRes.error) return { error: iconRes.error };
+  const permRes = apkParsePermissions(raw.permissions);
+  if (permRes.error) return { error: permRes.error };
+  return { value: { url: siteUrl, appName: appName, packageName: packageName, versionName: versionName, versionCode: vcRaw, icon: iconRes.value, permissions: permRes.value } };
 }
 
 function apkFileName(b) {
@@ -473,6 +523,7 @@ function apkJobToRecord(job) {
     versionName: job.versionName, versionCode: job.versionCode, url: job.url,
     status: job.status, remoteStatus: job.remoteStatus || '', downloadUrl: job.downloadUrl || '', error: job.error || '',
     quotaEntry: job.quotaEntry || '', charged: !!job.charged, refunded: !!job.refunded, orderId: job.orderId || '',
+    permissions: Array.isArray(job.permissions) ? job.permissions : [], hasIcon: !!job.hasIcon,
     timestamp: job.timestamp, finishedAt: job.finishedAt || 0
   };
 }
@@ -485,6 +536,7 @@ function apkRecordToJob(rec) {
     status: done ? rec.status : 'building', remoteStatus: rec.remoteStatus || '', progress: null,
     downloadUrl: rec.downloadUrl || '', error: rec.error || '', quotaEntry: rec.quotaEntry || '',
     charged: !!rec.charged, refunded: !!rec.refunded, orderId: rec.orderId || '',
+    permissions: Array.isArray(rec.permissions) ? rec.permissions : [], hasIcon: !!rec.hasIcon,
     timestamp: rec.timestamp || Date.now(), finishedAt: rec.finishedAt || 0, finalized: done, monitoring: false
   };
 }
@@ -494,7 +546,8 @@ function apkPublicBuild(job) {
     buildId: String(job.buildId), appName: job.appName, packageName: job.packageName, versionName: job.versionName,
     versionCode: job.versionCode, url: job.url, status: job.status, remoteStatus: job.remoteStatus || '',
     downloadUrl: job.status === 'ready' ? (job.downloadUrl || '') : '', error: job.error || '', refunded: !!job.refunded,
-    orderId: job.orderId || '', timestamp: job.timestamp, finishedAt: job.finishedAt || 0
+    orderId: job.orderId || '', permissions: Array.isArray(job.permissions) ? job.permissions : [], hasIcon: !!job.hasIcon,
+    timestamp: job.timestamp, finishedAt: job.finishedAt || 0
   };
 }
 
@@ -930,6 +983,18 @@ const htmlTemplate = `<!DOCTYPE html>
   .nav-link.apk-nav.active { background:rgba(52,211,153,0.12); color:#6ee7b7; border-color:rgba(52,211,153,0.3); }
   .btn-apk { background:linear-gradient(135deg,#10b981,#059669); color:white; }
   .btn-apk:hover:not(:disabled) { filter:brightness(1.1); }
+  .apk-icon-row { display:flex; align-items:center; gap:10px; }
+  .apk-icon-box { width:64px; height:64px; border-radius:16px; background:var(--bg-0); border:1px dashed rgba(52,211,153,0.45); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; font-size:22px; }
+  .apk-icon-box img { width:100%; height:100%; object-fit:cover; display:block; }
+  .apk-perm-list { display:flex; flex-direction:column; gap:6px; }
+  .apk-perm { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; padding:9px 11px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:10px; color:var(--text-1); font-size:12px; font-weight:600; cursor:pointer; text-align:left; transition:all 0.15s; font-family:inherit; }
+  .apk-perm:hover { border-color:rgba(52,211,153,0.45); }
+  .apk-perm .apk-perm-sub { display:block; font-size:10px; font-weight:400; color:var(--text-2); margin-top:1px; }
+  .apk-perm .apk-switch { position:relative; width:34px; height:19px; border-radius:20px; background:var(--line-2); flex-shrink:0; transition:background 0.15s; }
+  .apk-perm .apk-switch::after { content:''; position:absolute; top:2px; left:2px; width:15px; height:15px; border-radius:50%; background:#fff; transition:transform 0.15s; }
+  .apk-perm.on { background:rgba(52,211,153,0.1); border-color:rgba(52,211,153,0.45); }
+  .apk-perm.on .apk-switch { background:#10b981; }
+  .apk-perm.on .apk-switch::after { transform:translateX(15px); }
   .hd-compare { position:relative; width:100%; overflow:hidden; border-radius:10px; background:var(--bg-0); border:1px solid var(--line-2); user-select:none; -webkit-user-select:none; touch-action:pan-y; }
   .hd-compare img { display:block; width:100%; height:auto; }
   .hd-before-layer { position:absolute; top:0; left:0; width:100%; height:100%; clip-path:inset(0 50% 0 0); }
@@ -1319,6 +1384,38 @@ const htmlTemplate = `<!DOCTYPE html>
           <div>
             <label class="field-label" for="apk-vcode">Version Code</label>
             <input type="number" id="apk-vcode" class="inp mono" placeholder="1" value="1" min="1" step="1" inputmode="numeric">
+          </div>
+        </div>
+        <div>
+          <label class="field-label">Logo Aplikasi (opsional)</label>
+          <div class="apk-icon-row">
+            <div class="apk-icon-box" id="apk-icon-box"><span id="apk-icon-placeholder">🖼️</span><img id="apk-icon-preview" class="hide" alt="Logo"></div>
+            <div style="display:flex; flex-direction:column; gap:6px; flex:1; min-width:0;">
+              <input type="file" id="apk-icon-input" accept="image/png,image/jpeg,image/webp" onchange="handleApkIconSelect(event)" style="display:none;">
+              <div style="display:flex; gap:6px;">
+                <button type="button" onclick="document.getElementById('apk-icon-input').click()" class="btn btn-ghost btn-xs">Pilih Foto</button>
+                <button type="button" id="apk-icon-remove" onclick="clearApkIcon()" class="btn btn-ghost btn-xs hide">Hapus</button>
+              </div>
+              <div id="apk-icon-info" style="font-size:10px; color:var(--text-2); word-break:break-word;">PNG/JPG/WEBP, otomatis dipotong persegi 512x512</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <label class="field-label">Minta Perizinan Otomatis</label>
+          <div style="font-size:10.5px; color:var(--text-2); margin-bottom:7px;">Aktifkan izin yang ingin langsung diminta APK saat pertama kali dibuka.</div>
+          <div class="apk-perm-list" id="apk-perm-list">
+            <button type="button" class="apk-perm" data-perm="notifications" onclick="toggleApkPerm('notifications')"><span>🔔 Notifikasi<span class="apk-perm-sub">Kirim pemberitahuan ke pengguna</span></span><span class="apk-switch"></span></button>
+            <button type="button" class="apk-perm" data-perm="camera" onclick="toggleApkPerm('camera')"><span>📷 Kamera<span class="apk-perm-sub">Ambil foto / video dari website</span></span><span class="apk-switch"></span></button>
+            <button type="button" class="apk-perm" data-perm="microphone" onclick="toggleApkPerm('microphone')"><span>🎤 Mikrofon<span class="apk-perm-sub">Rekam suara / panggilan</span></span><span class="apk-switch"></span></button>
+            <button type="button" class="apk-perm" data-perm="location" onclick="toggleApkPerm('location')"><span>📍 Lokasi<span class="apk-perm-sub">Akses lokasi perangkat</span></span><span class="apk-switch"></span></button>
+            <button type="button" class="apk-perm" data-perm="storage" onclick="toggleApkPerm('storage')"><span>📁 Penyimpanan / Media<span class="apk-perm-sub">Baca foto, video, dan file</span></span><span class="apk-switch"></span></button>
+            <button type="button" class="apk-perm" data-perm="contacts" onclick="toggleApkPerm('contacts')"><span>👤 Kontak<span class="apk-perm-sub">Baca daftar kontak</span></span><span class="apk-switch"></span></button>
+            <button type="button" class="apk-perm" data-perm="bluetooth" onclick="toggleApkPerm('bluetooth')"><span>📶 Bluetooth<span class="apk-perm-sub">Hubungkan ke perangkat sekitar</span></span><span class="apk-switch"></span></button>
+          </div>
+          <div style="display:flex; gap:6px; margin-top:7px; align-items:center;">
+            <button type="button" onclick="setAllApkPerms(true)" class="btn btn-ghost btn-xs">Aktifkan Semua</button>
+            <button type="button" onclick="setAllApkPerms(false)" class="btn btn-ghost btn-xs">Matikan Semua</button>
+            <span id="apk-perm-count" style="font-size:10px; color:var(--text-2); margin-left:auto;">0 dipilih</span>
           </div>
         </div>
         <div style="display:flex; gap:8px;">
@@ -2498,6 +2595,78 @@ function onApkFailed(data) {
   loadApkHistory();
 }
 
+let apkIconDataUrl = '';
+let apkSelectedPerms = [];
+const APK_ICON_SIZE = 512;
+const APK_ICON_MAX_FILE = 5 * 1024 * 1024;
+
+function renderApkPerms() {
+  document.querySelectorAll('#apk-perm-list .apk-perm').forEach(function (btn) {
+    const on = apkSelectedPerms.indexOf(btn.getAttribute('data-perm')) !== -1;
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  const c = document.getElementById('apk-perm-count');
+  if (c) c.innerText = apkSelectedPerms.length + ' dipilih';
+}
+
+function toggleApkPerm(key) {
+  const i = apkSelectedPerms.indexOf(key);
+  if (i === -1) apkSelectedPerms.push(key); else apkSelectedPerms.splice(i, 1);
+  renderApkPerms();
+}
+
+function setAllApkPerms(on) {
+  apkSelectedPerms = on ? Array.prototype.map.call(document.querySelectorAll('#apk-perm-list .apk-perm'), function (b) { return b.getAttribute('data-perm'); }) : [];
+  renderApkPerms();
+}
+
+function clearApkIcon() {
+  apkIconDataUrl = '';
+  const img = document.getElementById('apk-icon-preview');
+  if (img) { img.src = ''; img.classList.add('hide'); }
+  const ph = document.getElementById('apk-icon-placeholder');
+  if (ph) ph.classList.remove('hide');
+  const rm = document.getElementById('apk-icon-remove');
+  if (rm) rm.classList.add('hide');
+  const info = document.getElementById('apk-icon-info');
+  if (info) info.innerText = 'PNG/JPG/WEBP, otomatis dipotong persegi 512x512';
+}
+
+function handleApkIconSelect(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (['image/png', 'image/jpeg', 'image/webp'].indexOf(file.type) === -1) return showToast('Logo harus PNG, JPG, atau WEBP', 'error');
+  if (file.size > APK_ICON_MAX_FILE) return showToast('Ukuran logo maksimal 5MB', 'error');
+  const reader = new FileReader();
+  reader.onerror = function () { showToast('Gagal membaca foto', 'error'); };
+  reader.onload = function () {
+    const img = new Image();
+    img.onerror = function () { showToast('File bukan gambar yang valid', 'error'); };
+    img.onload = function () {
+      try {
+        const side = Math.min(img.naturalWidth, img.naturalHeight);
+        if (!side) return showToast('Gambar tidak valid', 'error');
+        const sx = Math.floor((img.naturalWidth - side) / 2);
+        const sy = Math.floor((img.naturalHeight - side) / 2);
+        const canvas = document.createElement('canvas');
+        canvas.width = APK_ICON_SIZE; canvas.height = APK_ICON_SIZE;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, APK_ICON_SIZE, APK_ICON_SIZE);
+        apkIconDataUrl = canvas.toDataURL('image/png');
+        const prev = document.getElementById('apk-icon-preview');
+        prev.src = apkIconDataUrl; prev.classList.remove('hide');
+        document.getElementById('apk-icon-placeholder').classList.add('hide');
+        document.getElementById('apk-icon-remove').classList.remove('hide');
+        document.getElementById('apk-icon-info').innerText = (file.name || 'logo') + ' • ' + APK_ICON_SIZE + 'x' + APK_ICON_SIZE;
+      } catch (err) { showToast('Gagal memproses logo', 'error'); }
+    };
+    img.src = String(reader.result || '');
+  };
+  reader.readAsDataURL(file);
+}
+
 async function handleBuildApk() {
   if (!loggedInUsername) return showToast('Harus login!', 'error');
   if (!guardServerOnline('Build APK')) return;
@@ -2515,7 +2684,7 @@ async function handleBuildApk() {
   document.getElementById('apk-result-container').classList.add('hide');
   document.getElementById('apk-progress-fill').style.width = '5%';
   try {
-    const res = await fetch('/api/apk/build', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: loggedInUsername, url: siteUrl, appName: appName, packageName: packageName, versionName: versionName, versionCode: versionCode }) });
+    const res = await fetch('/api/apk/build', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: loggedInUsername, url: siteUrl, appName: appName, packageName: packageName, versionName: versionName, versionCode: versionCode, icon: apkIconDataUrl, permissions: apkSelectedPerms }) });
     const data = await res.json();
     if (!data.success) {
       applyApkQuotaInfo(data.quotaInfo);
@@ -2543,6 +2712,9 @@ function resetApkForm() {
   document.getElementById('apk-package').value = '';
   document.getElementById('apk-vname').value = '1.0.0';
   document.getElementById('apk-vcode').value = '1';
+  clearApkIcon();
+  apkSelectedPerms = [];
+  renderApkPerms();
   document.getElementById('apk-result-container').classList.add('hide');
   document.getElementById('apk-loading').classList.add('hide');
 }
@@ -2619,6 +2791,7 @@ function renderApkHistory() {
         '<div class="mono" style="font-size:10px; color:var(--text-2); word-break:break-all;">' + escapeHtml(b.packageName || '') + ' • v' + escapeHtml(b.versionName || '') + '</div></div>' +
         badge +
       '</div>' + errLine + action +
+      ((b.hasIcon || (b.permissions && b.permissions.length)) ? '<div style="font-size:9px; color:var(--text-2); margin-top:6px;">' + (b.hasIcon ? '🖼️ Logo kustom' : '') + (b.hasIcon && b.permissions && b.permissions.length ? ' • ' : '') + (b.permissions && b.permissions.length ? '🔐 ' + b.permissions.length + ' izin' : '') + '</div>' : '') +
       '<div style="font-size:9px; color:var(--text-2); margin-top:6px;">🕐 ' + timeStr + '</div>' +
     '</div>';
   }).join('');
@@ -4292,7 +4465,13 @@ const server = http.createServer(async (req, res) => {
 
         let buildId;
         try {
-          const r = await apkApi('POST', '/build', { url: spec.url, appName: spec.appName, packageName: spec.packageName, versionName: spec.versionName, versionCode: spec.versionCode });
+          const buildPayload = { url: spec.url, appName: spec.appName, packageName: spec.packageName, versionName: spec.versionName, versionCode: spec.versionCode };
+          if (spec.icon) buildPayload.icon = spec.icon;
+          if (spec.permissions.length > 0) {
+            buildPayload.permissions = apkAndroidPermissions(spec.permissions);
+            buildPayload.requestPermissionsOnLaunch = true;
+          }
+          const r = await apkApi('POST', '/build', buildPayload);
           if (r.status < 200 || r.status >= 300 || !r.json || !r.json.build_id) throw new Error(apkErrMsg(r, 'Server build tidak merespons dengan benar (HTTP ' + r.status + ')'));
           buildId = String(r.json.build_id);
         } catch (startErr) {
@@ -4308,6 +4487,7 @@ const server = http.createServer(async (req, res) => {
           buildId, username: cleanUser, appName: spec.appName, packageName: spec.packageName, versionName: spec.versionName,
           versionCode: spec.versionCode, url: spec.url, status: 'building', remoteStatus: 'queued', progress: null,
           downloadUrl: '', error: '', quotaEntry: charged ? quotaEntry : '', charged, refunded: false, orderId: '',
+          permissions: spec.permissions, hasIcon: !!spec.icon,
           timestamp: now, finishedAt: 0, finalized: false, monitoring: false
         };
         apkJobs.set(buildId, job);
