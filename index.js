@@ -826,7 +826,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>AM Premium • Banggus</title>
+<title>AM PREMIUM • BANGGUS</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1023,7 +1023,7 @@ const htmlTemplate = `<!DOCTYPE html>
         </svg>
       </div>
       <div>
-        <div class="brand-text">AM Premium</div>
+        <div class="brand-text">AM PREMIUM</div>
         <div class="brand-sub">by Banggus</div>
       </div>
     </div>
@@ -1134,7 +1134,7 @@ const htmlTemplate = `<!DOCTYPE html>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2.2"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>
             </div>
             <div>
-              <div style="font-size:12px; font-weight:800; color:var(--warn);">VIP Premium</div>
+              <div style="font-size:12px; font-weight:800; color:var(--warn);">VIP PREMIUM</div>
               <div id="vip-expiry-text" style="font-size:10.5px; color:var(--text-1); margin-top:2px;">Aktif hingga: -</div>
             </div>
           </div>
@@ -1840,7 +1840,7 @@ const htmlTemplate = `<!DOCTYPE html>
     </div>
   </div>
 
-  <div style="text-align:center; font-size:10px; color:var(--text-2); padding:10px 0; letter-spacing:0.08em; text-transform:uppercase; font-weight:600;">AM Premium • Banggus</div>
+  <div style="text-align:center; font-size:10px; color:var(--text-2); padding:10px 0; letter-spacing:0.08em; text-transform:uppercase; font-weight:600;">AM PREMIUM  • BANGGUS</div>
 </div>
 
 <script>
@@ -1982,7 +1982,7 @@ async function registerServiceWorker() {
         );
       });
       self.addEventListener('push', function(event) {
-        var data = { title: 'AM Premium', body: 'Notifikasi baru' };
+        var data = { title: 'AM PREMIUM', body: 'Notifikasi baru' };
         try { if (event.data) data = event.data.json(); } catch(e) {}
         event.waitUntil(self.registration.showNotification(data.title, {
           body: data.body, icon: data.icon || '', badge: data.badge || '',
