@@ -1105,9 +1105,7 @@ const htmlTemplate = `<!DOCTYPE html>
         <div><label class="field-label">Username</label><input type="text" id="auth-username" placeholder="username_kamu" class="inp mono"></div>
         <div><label class="field-label">Password</label><input type="password" id="auth-password" placeholder="••••••••" class="inp"></div>
         <div id="email-field-container" class="hide">
-          <label class="field-label">Recovery Email</label>
-          <input type="email" id="auth-email" placeholder="kamu@email.com" class="inp">
-          <p style="font-size:10.5px; color:var(--warn); margin-top:6px;">1 perangkat hanya bisa mendaftar 1 akun</p>
+          <p style="font-size:10.5px; color:var(--warn); margin:0;">1 perangkat hanya bisa mendaftar 1 akun</p>
         </div>
       </div>
       <button onclick="handleAuthAction()" id="auth-submit-btn" class="btn"><span id="auth-btn-text">Masuk</span></button>
@@ -2977,7 +2975,6 @@ function switchAuthTab(mode) {
 async function handleAuthAction() {
   const username = document.getElementById('auth-username').value.trim();
   const password = document.getElementById('auth-password').value.trim();
-  const email = document.getElementById('auth-email').value.trim();
   const formContainer = document.getElementById('auth-form-container');
   if (!username || !password) {
     formContainer.classList.add('shake-error');
@@ -2996,7 +2993,7 @@ async function handleAuthAction() {
   btn.disabled = true;
   document.getElementById('auth-btn-text').innerText = '';
   try {
-    const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, email, deviceToken }) });
+    const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, deviceToken }) });
     const data = await res.json();
     if (data.success) {
       if (currentAuthMode === 'register' && data.deviceToken) localStorage.setItem('am_device_token', data.deviceToken);
@@ -5052,13 +5049,17 @@ const server = http.createServer(async (req, res) => {
 
     } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
       const body = await readBody(req);
-      const { mode, username, password, email, deviceToken } = JSON.parse(body);
-      const cleanUser = username.trim().toLowerCase();
+      const { mode, username, password, deviceToken } = JSON.parse(body);
+      if (!username || !password) return jsonResponse(res, 400, { success: false, message: 'Username dan password wajib!' });
+      const cleanUser = String(username).trim().toLowerCase();
+      if (!cleanUser || /[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false, message: 'Username tidak boleh mengandung spasi atau karakter . # $ [ ] /' });
       let existingUser = await getUserFromDb(cleanUser);
       if (mode === 'register') {
         if (cleanUser === 'adminbaguss' || existingUser) return jsonResponse(res, 400, { success: false, message: 'Username tidak tersedia!' });
+        if (cleanUser.length < 3) return jsonResponse(res, 400, { success: false, message: 'Username minimal 3 karakter!' });
+        if (String(password).length < 4) return jsonResponse(res, 400, { success: false, message: 'Password minimal 4 karakter!' });
         const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
-        await saveUserToDb(cleanUser, { password, email, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
+        await saveUserToDb(cleanUser, { password, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
         const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
         return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: fakeAuthToken });
       } else {
