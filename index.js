@@ -5,8 +5,6 @@ const path = require('path');
 const os = require('os');
 const tls = require('tls');
 const crypto = require('crypto');
-const axios = require('axios');
-const FormData = require('form-data');
 const Go = require('@xof/fetch');
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, get, set, child, remove } = require('firebase/database');
@@ -203,11 +201,13 @@ async function checkAndExpireBonusQuota(username) {
     }
 
     if (userObj.bonusQuota > 0) {
-      // Bonus hangus tepat BONUS_EXPIRY_MS (2 hari) setelah diterima, tidak diperpanjang oleh pemakaian
-      let grantedAt = userObj.bonusGrantedAt || userObj.lastBonusActivity || 0;
-      if (!grantedAt) { grantedAt = now; userObj.bonusGrantedAt = now; changed = true; }
+      // Bonus kedaluwarsa tepat 2 hari sejak bonus diterima (tidak diperpanjang oleh pemakaian)
+      if (!userObj.bonusGrantedAt) {
+        userObj.bonusGrantedAt = userObj.lastBonusActivity || now;
+        changed = true;
+      }
 
-      if ((now - grantedAt) >= BONUS_EXPIRY_MS) {
+      if ((now - userObj.bonusGrantedAt) >= BONUS_EXPIRY_MS) {
         userObj.bonusQuota = 0;
         userObj.bonusGrantedAt = 0;
         userObj.lastBonusActivity = 0;
@@ -215,7 +215,7 @@ async function checkAndExpireBonusQuota(username) {
           userObj.activatedEmails = userObj.activatedEmails.slice(0, userObj.baseQuota);
         }
         changed = true;
-        console.log(`[BONUS EXPIRED] User ${username} - bonus direset (2 hari), kuota kembali ke ${userObj.baseQuota}`);
+        console.log(`[BONUS EXPIRED] User ${username} - bonus direset (2 hari), kembali ke kuota bawaan ${userObj.baseQuota}`);
       }
     }
 
@@ -227,20 +227,131 @@ async function checkAndExpireBonusQuota(username) {
   }
 }
 
-// ====== AUTO RESET BONUS QUOTA (SWEEPER) ======
-// Mengecek semua user secara berkala, jadi bonus tetap direset walau user tidak sedang online
-const BONUS_SWEEP_INTERVAL = 10 * 60 * 1000;
-async function sweepExpiredBonusQuota() {
+// Sapu otomatis: reset bonus semua user yang sudah lewat 2 hari (walau user tidak sedang online)
+async function sweepExpiredBonusQuotas() {
   try {
-    const users = await getAllUsersFromDb();
-    for (const uname of Object.keys(users)) {
-      const u = users[uname];
-      if (u && u.bonusQuota > 0) await checkAndExpireBonusQuota(uname);
+    const allUsers = await getAllUsersFromDb();
+    for (const [uname, udata] of Object.entries(allUsers || {})) {
+      if (udata && udata.bonusQuota > 0) await checkAndExpireBonusQuota(uname);
     }
-  } catch (e) { console.error('[BONUS SWEEP] Error:', e.message); }
+  } catch (e) {
+    console.error('[BONUS SWEEP] Error:', e.message);
+  }
 }
-setInterval(sweepExpiredBonusQuota, BONUS_SWEEP_INTERVAL);
-sweepExpiredBonusQuota();
+setTimeout(sweepExpiredBonusQuotas, 15 * 1000);
+setInterval(sweepExpiredBonusQuotas, 10 * 60 * 1000);
+
+// ====== HD FOTO (UPSCALE) - tanpa dependensi tambahan ======
+const UPSCALE_ENDPOINT = config.base + '/api/imgbb/upscale-image';
+const HD_MAX_BYTES = 10 * 1024 * 1024;
+
+function httpRequestBuffer(urlStr, options, redirectsLeft) {
+  return new Promise((resolve, reject) => {
+    let u;
+    try { u = new URL(urlStr); } catch (e) { return reject(new Error('URL tidak valid')); }
+    const lib = u.protocol === 'http:' ? http : https;
+    const reqOpts = {
+      method: options.method || 'GET',
+      hostname: u.hostname,
+      port: u.port || undefined,
+      path: u.pathname + u.search,
+      headers: options.headers || {}
+    };
+    const r = lib.request(reqOpts, (resp) => {
+      if ([301, 302, 303, 307, 308].includes(resp.statusCode) && resp.headers.location && redirectsLeft > 0) {
+        resp.resume();
+        const next = new URL(resp.headers.location, urlStr).toString();
+        return resolve(httpRequestBuffer(next, { method: 'GET', headers: {}, timeout: options.timeout }, redirectsLeft - 1));
+      }
+      const chunks = [];
+      let total = 0;
+      resp.on('data', (c) => {
+        total += c.length;
+        if (total > 40 * 1024 * 1024) { r.destroy(new Error('Respon terlalu besar')); return; }
+        chunks.push(c);
+      });
+      resp.on('end', () => resolve({ status: resp.statusCode, headers: resp.headers, body: Buffer.concat(chunks) }));
+      resp.on('error', reject);
+    });
+    r.setTimeout(options.timeout || 120000, () => r.destroy(new Error('Request timeout')));
+    r.on('error', reject);
+    if (options.body) r.write(options.body);
+    r.end();
+  });
+}
+
+function sniffImageType(buf) {
+  if (!buf || buf.length < 12) return null;
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png';
+  if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg';
+  if (buf.slice(0, 4).toString('ascii') === 'RIFF' && buf.slice(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
+  return null;
+}
+
+async function upscaleImage(input, meta) {
+  try {
+    meta = meta || {};
+    let buffer;
+    let contentType = meta.contentType || 'image/jpeg';
+    let filename = meta.filename || 'image.jpg';
+
+    if (Buffer.isBuffer(input)) {
+      buffer = input;
+    } else if (typeof input === 'string') {
+      const dl = await httpRequestBuffer(input, { method: 'GET' }, 3);
+      if (dl.status < 200 || dl.status >= 300) throw new Error('Gagal mengunduh gambar (HTTP ' + dl.status + ')');
+      buffer = dl.body;
+      contentType = String(dl.headers['content-type'] || 'image/jpeg').split(';')[0];
+    } else {
+      throw new Error('Input harus berupa URL (string) atau Buffer.');
+    }
+
+    const boundary = '----HDFoto' + crypto.randomBytes(12).toString('hex');
+    const head = Buffer.from(
+      '--' + boundary + '\r\n' +
+      'Content-Disposition: form-data; name="file"; filename="' + filename + '"\r\n' +
+      'Content-Type: ' + contentType + '\r\n\r\n'
+    );
+    const tail = Buffer.from('\r\n--' + boundary + '--\r\n');
+    const body = Buffer.concat([head, buffer, tail]);
+
+    const resp = await httpRequestBuffer(UPSCALE_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'multipart/form-data; boundary=' + boundary,
+        'Content-Length': body.length,
+        'X-apikey': config.kyzznekooApiKey
+      },
+      body,
+      timeout: 120000
+    }, 0);
+
+    if (resp.status < 200 || resp.status >= 300) {
+      throw new Error('Server upscale error (HTTP ' + resp.status + '): ' + resp.body.toString('utf8').substring(0, 200));
+    }
+
+    const ct = String(resp.headers['content-type'] || '').split(';')[0].toLowerCase();
+    const sniffed = sniffImageType(resp.body);
+    if (ct.indexOf('image/') === 0 || sniffed) {
+      return { buffer: resp.body, contentType: ct.indexOf('image/') === 0 ? ct : sniffed };
+    }
+
+    // Fallback: bila API membalas JSON berisi link hasil
+    try {
+      const j = JSON.parse(resp.body.toString('utf8'));
+      const cand = j.url || (j.result && (j.result.url || j.result)) || (j.data && (j.data.url || j.data));
+      if (typeof cand === 'string' && /^https?:\/\//i.test(cand)) {
+        const dl2 = await httpRequestBuffer(cand, { method: 'GET' }, 3);
+        const t2 = sniffImageType(dl2.body);
+        if (dl2.status >= 200 && dl2.status < 300 && t2) return { buffer: dl2.body, contentType: t2 };
+      }
+    } catch (e) { /* bukan JSON */ }
+
+    throw new Error('Respon upscale tidak valid');
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+}
 
 // ====== GENERATE ORDER ID ======
 function generateOrderId(prefix = 'ORD') {
@@ -419,52 +530,6 @@ async function generateNetflixToken(plan, proxy) {
   }
 }
 
-// ====== HD FOTO (UPSCALE IMAGE) ======
-async function upscaleImage(input, mimeType) {
-    try {
-        let buffer;
-        let contentType = mimeType || 'image/jpeg';
-        let filename = 'image.jpg';
-
-        if (Buffer.isBuffer(input)) {
-            buffer = input;
-            if (contentType === 'image/png') filename = 'image.png';
-            else if (contentType === 'image/webp') filename = 'image.webp';
-        } else if (typeof input === 'string') {
-            const imageResponse = await axios.get(input, { responseType: 'arraybuffer' });
-            buffer = Buffer.from(imageResponse.data);
-            contentType = imageResponse.headers['content-type'] || 'image/jpeg';
-        } else {
-            throw new Error('Input harus berupa URL (string) atau Buffer.');
-        }
-
-        const form = new FormData();
-        form.append('file', buffer, {
-            filename: filename,
-            contentType: contentType
-        });
-
-        const uploadResponse = await axios.post('https://app.kyzznekoo.my.id/api/imgbb/upscale-image', form, {
-            responseType: 'arraybuffer', // Ubah ke arraybuffer agar langsung dapat buffer hasilnya
-            maxBodyLength: Infinity,
-            maxContentLength: Infinity,
-            timeout: 120000,
-            headers: {
-                ...form.getHeaders()
-            }
-        });
-
-        return {
-            buffer: Buffer.from(uploadResponse.data),
-            contentType: uploadResponse.headers['content-type'] || 'image/png'
-        };
-    } catch (error) {
-        throw error.response && error.response.data
-            ? Buffer.from(error.response.data).toString()
-            : error.message;
-    }
-}
-
 // ==========================================
 // HTML TEMPLATE
 // ==========================================
@@ -590,16 +655,6 @@ const htmlTemplate = `<!DOCTYPE html>
   .hist-item-order-id { font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700; color:var(--info); background:var(--info-soft); padding:2px 7px; border-radius:5px; display:inline-block; }
   .link-line { font-family:'IBM Plex Mono',monospace; font-size:11px; word-break:break-all; color:var(--text-1); background:var(--bg-0); border:1px solid var(--line-2); border-radius:7px; padding:8px 10px; cursor:pointer; transition:border-color 0.15s, background 0.15s; }
   .link-line:hover { border-color:var(--accent); background:var(--accent-soft); }
-  .nav-link.hd-nav.active { background:rgba(96,165,250,0.12); color:#7dd3fc; border-color:rgba(96,165,250,0.3); }
-  .hd-compare { position:relative; width:100%; overflow:hidden; border-radius:10px; background:var(--bg-0); border:1px solid var(--line-2); touch-action:none; user-select:none; -webkit-user-select:none; cursor:ew-resize; }
-  .hd-compare img { display:block; width:100%; height:auto; pointer-events:none; }
-  .hd-before-wrap { position:absolute; top:0; left:0; right:0; bottom:0; clip-path:inset(0 50% 0 0); }
-  .hd-before-wrap img { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; }
-  .hd-handle { position:absolute; top:0; bottom:0; left:50%; width:2px; background:white; transform:translateX(-1px); box-shadow:0 0 6px rgba(0,0,0,0.6); pointer-events:none; }
-  .hd-handle::after { content:'↔'; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:30px; height:30px; border-radius:50%; background:white; color:#111; font-size:15px; font-weight:800; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 10px rgba(0,0,0,0.5); }
-  .hd-tag { position:absolute; top:8px; padding:3px 8px; border-radius:6px; font-size:10px; font-weight:700; background:rgba(0,0,0,0.65); color:white; pointer-events:none; letter-spacing:0.04em; }
-  .hd-tag-l { left:8px; }
-  .hd-tag-r { right:8px; background:rgba(37,99,235,0.85); }
   @media (max-width:480px) { .app-shell { padding:10px; } .card, .card-elevated { padding:13px; } .chat-wrap { height:360px; } }
   ::-webkit-scrollbar { width:5px; height:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -635,6 +690,17 @@ const htmlTemplate = `<!DOCTYPE html>
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .nav-link.hd-nav.active { background:rgba(34,211,238,0.12); color:#67e8f9; border-color:rgba(34,211,238,0.3); }
+  .btn-hd { background:linear-gradient(135deg,#06b6d4,#3b82f6); color:white; }
+  .btn-hd:hover:not(:disabled) { filter:brightness(1.1); }
+  .hd-compare { position:relative; width:100%; overflow:hidden; border-radius:10px; background:var(--bg-0); border:1px solid var(--line-2); user-select:none; -webkit-user-select:none; touch-action:pan-y; }
+  .hd-compare img { display:block; width:100%; height:auto; }
+  .hd-before-layer { position:absolute; top:0; left:0; width:100%; height:100%; clip-path:inset(0 50% 0 0); }
+  .hd-before-layer img { width:100%; height:100%; object-fit:fill; }
+  .hd-slider-line { position:absolute; top:0; bottom:0; left:50%; width:2px; background:white; box-shadow:0 0 6px rgba(0,0,0,0.6); pointer-events:none; }
+  .hd-slider-knob { position:absolute; top:50%; left:50%; width:30px; height:30px; margin:-15px 0 0 -15px; border-radius:50%; background:white; color:#0f172a; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; box-shadow:0 2px 8px rgba(0,0,0,0.5); }
+  .hd-range { position:absolute; top:0; left:0; width:100%; height:100%; margin:0; opacity:0; cursor:ew-resize; }
+  .hd-tag { position:absolute; top:8px; padding:3px 8px; border-radius:6px; background:rgba(0,0,0,0.6); color:white; font-size:10px; font-weight:700; pointer-events:none; }
 </style>
 </head>
 <body>
@@ -678,7 +744,7 @@ const htmlTemplate = `<!DOCTYPE html>
     <div class="nav-section-label">Fitur</div>
     <button onclick="switchView('generator')" data-nav="generator" class="nav-link active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Alight Motion</button>
     <button onclick="switchView('netflix')" data-nav="netflix" class="nav-link netflix-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/></svg>Netflix Token</button>
-    <button onclick="switchView('hdfoto')" data-nav="hdfoto" class="nav-link hd-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>HD Foto<span class="badge badge-info" style="margin-left:auto; font-size:9px; padding:1px 6px;">NEW</span></button>
+    <button onclick="switchView('hdfoto')" data-nav="hdfoto" class="nav-link hd-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>HD Foto<span class="badge badge-ok" style="margin-left:auto; font-size:9px; padding:1px 6px;">NEW</span></button>
     <button onclick="switchView('orders')" data-nav="orders" class="nav-link orders-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>Orderan Saya</button>
     <div class="nav-section-label">Akun</div>
     <button onclick="switchView('vipshop')" data-nav="vipshop" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>Beli VIP<span class="badge badge-warn" style="margin-left:auto; font-size:9px; padding:1px 6px;">HOT</span></button>
@@ -901,65 +967,68 @@ const htmlTemplate = `<!DOCTYPE html>
     </div>
 
     <div id="section-hdfoto" class="hide" style="display:flex; flex-direction:column; gap:10px;">
-      <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between; border-color:rgba(96,165,250,0.3);">
+      <div class="card" style="padding:11px 13px; display:flex; align-items:center; justify-content:space-between; border-color:rgba(34,211,238,0.3);">
         <div style="display:flex; align-items:center; gap:10px;">
-          <div style="width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,var(--info),#2563eb); display:flex; align-items:center; justify-content:center; font-weight:900; color:white; font-size:12px;">HD</div>
-          <div><div style="font-weight:700; font-size:13px;">HD Foto</div><div style="font-size:10.5px; color:var(--info);">AI Image Upscaler</div></div>
+          <div style="width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,#06b6d4,#3b82f6); display:flex; align-items:center; justify-content:center; font-weight:900; color:white; font-size:13px;">HD</div>
+          <div><div style="font-weight:700; font-size:13px;">HD Foto Generator</div><div style="font-size:10.5px; color:#67e8f9;">Upscale &amp; perjelas foto</div></div>
         </div>
         <span class="badge badge-ok"><span class="online-dot"></span>Ready</span>
       </div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-        <div class="stat" style="border-color:rgba(96,165,250,0.3);"><div><div class="stat-label">Kuota</div><div id="hd-quota-display" class="stat-value">0</div></div></div>
-        <div class="stat" style="border-color:rgba(96,165,250,0.3);"><div><div class="stat-label">Biaya</div><div class="stat-value">1 Q</div></div></div>
+        <div class="stat" style="border-color:rgba(34,211,238,0.3);"><div><div class="stat-label">Kuota</div><div id="hd-quota-display" class="stat-value">0</div></div></div>
+        <div class="stat" style="border-color:rgba(34,211,238,0.3);"><div><div class="stat-label">Reset</div><div id="hd-reset-display" class="stat-value">24 Jam</div></div></div>
       </div>
       <div style="padding:10px 12px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:10px; font-size:11px; color:var(--info); display:flex; gap:6px; align-items:flex-start;">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-top:1px; flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-        <span><strong>Quota sama</strong> dengan semua fitur — setiap foto HD = -1 quota. Jika gagal, kuota dikembalikan.</span>
+        <span><strong>Quota sama</strong> dengan semua fitur — setiap generate HD = -1 quota. Jika gagal, kuota otomatis dikembalikan.</span>
       </div>
-      <div class="card" style="border-color:rgba(96,165,250,0.3); display:flex; flex-direction:column; gap:12px;">
-        <div class="section-head" style="color:var(--info);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>Upload Foto</div>
-        <input type="file" id="hd-file-input" accept="image/jpeg,image/png,image/webp" class="hide">
-        <div id="hd-dropzone" class="dropzone">
-          <div id="hd-drop-empty">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <div style="font-size:12.5px; font-weight:600;">Klik atau seret foto ke sini</div>
-            <div style="font-size:10.5px; color:var(--text-2); margin-top:3px;">JPG, PNG, WEBP • maks 10 MB</div>
+      <div class="card" style="border-color:rgba(34,211,238,0.3); display:flex; flex-direction:column; gap:12px;">
+        <div class="section-head" style="color:#67e8f9;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Upload Foto</div>
+        <label id="hd-dropzone" for="hd-file-input" ondragover="event.preventDefault()" ondrop="handleHdDrop(event)" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:16px 12px; border:2px dashed rgba(34,211,238,0.4); border-radius:12px; background:var(--bg-0); cursor:pointer; text-align:center;">
+          <div id="hd-dropzone-empty" style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+            <div style="font-size:30px;">🖼️</div>
+            <div style="font-weight:700; font-size:12.5px;">Tap untuk upload foto</div>
+            <div style="font-size:10.5px; color:var(--text-2);">JPG, PNG, WEBP • Maks 8MB</div>
           </div>
-          <div id="hd-preview-box" class="hide">
-            <img id="hd-preview-img" alt="Preview" style="max-width:100%; max-height:240px; border-radius:8px; display:block; margin:0 auto;">
+          <div id="hd-preview-wrap" class="hide" style="width:100%;">
+            <img id="hd-preview-img" alt="Preview" style="max-width:100%; max-height:260px; border-radius:8px; display:block; margin:0 auto;">
             <div id="hd-file-info" class="mono" style="font-size:10.5px; color:var(--text-1); margin-top:8px; word-break:break-all;"></div>
+            <div style="font-size:10px; color:var(--text-2); margin-top:2px;">Tap untuk ganti foto</div>
           </div>
-        </div>
+        </label>
+        <input type="file" id="hd-file-input" accept="image/png,image/jpeg,image/webp" onchange="handleHdFileSelect(event)" style="display:none;">
         <div style="display:flex; gap:8px;">
-          <button id="btn-generate-hd" onclick="handleGenerateHD()" class="btn btn-info" disabled><span id="hd-btn-text">Jadikan HD</span></button>
-          <button onclick="hdClearFile()" class="btn btn-ghost btn-sm" style="flex-shrink:0;">Reset</button>
+          <button id="btn-generate-hd" onclick="handleGenerateHd()" class="btn btn-hd" style="flex:1;" disabled><span id="hd-btn-text">Generate HD</span></button>
+          <button onclick="clearHdPhoto()" class="btn btn-ghost">Reset</button>
         </div>
       </div>
-      <div id="hd-loading" class="hide card" style="border-color:rgba(96,165,250,0.3);">
+      <div id="hd-loading" class="hide card" style="border-color:rgba(34,211,238,0.3);">
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
-          <div style="width:34px; height:34px; border-radius:9px; background:var(--info-soft); display:flex; align-items:center; justify-content:center;">
-            <svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
+          <div style="width:34px; height:34px; border-radius:9px; background:rgba(34,211,238,0.12); display:flex; align-items:center; justify-content:center;">
+            <svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#67e8f9" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
           </div>
           <div><div style="font-weight:700; font-size:12px;">Memproses...</div><div id="hd-status-text" style="font-size:10.5px; color:var(--text-2);">Menyiapkan</div></div>
         </div>
-        <div class="prog"><div id="hd-progress-fill" class="prog-fill" style="background:var(--info);"></div></div>
+        <div class="prog"><div id="hd-progress-fill" class="prog-fill" style="background:#06b6d4;"></div></div>
         <p id="hd-log-text" class="mono" style="font-size:10px; color:var(--text-2); margin-top:8px; text-align:center;">Initializing...</p>
       </div>
-      <div id="hd-result-card" class="hide card" style="border-color:rgba(74,222,128,0.3); display:flex; flex-direction:column; gap:10px;">
+      <div id="hd-result-container" class="hide card" style="border-color:rgba(34,211,238,0.3); display:flex; flex-direction:column; gap:10px;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
-          <div class="section-head" style="margin:0; color:var(--ok);">Sebelum &amp; Sesudah</div>
-          <span id="hd-size-info" class="badge badge-ok" style="font-size:9.5px;"></span>
+          <div class="section-head" style="margin:0; color:#67e8f9;">Sebelum &amp; Sesudah</div>
+          <span id="hd-dims-info" class="mono" style="font-size:9.5px; color:var(--text-2);"></span>
         </div>
-        <div id="hd-compare" class="hd-compare">
-          <img id="hd-img-after" alt="Sesudah (HD)">
-          <div id="hd-before-wrap" class="hd-before-wrap"><img id="hd-img-before" alt="Sebelum"></div>
-          <div id="hd-handle" class="hd-handle"></div>
-          <span class="hd-tag hd-tag-l">SEBELUM</span>
-          <span class="hd-tag hd-tag-r">SESUDAH (HD)</span>
+        <div class="hd-compare" id="hd-compare">
+          <img id="hd-after-img" alt="Sesudah HD">
+          <div class="hd-before-layer" id="hd-before-layer"><img id="hd-before-img" alt="Sebelum HD"></div>
+          <span class="hd-tag" style="left:8px;">Sebelum</span>
+          <span class="hd-tag" style="right:8px;">Sesudah HD</span>
+          <div class="hd-slider-line" id="hd-slider-line"><div class="hd-slider-knob">&#8596;</div></div>
+          <input type="range" min="0" max="100" value="50" id="hd-range" class="hd-range" oninput="updateHdSlider(this.value)">
         </div>
-        <div style="font-size:10.5px; color:var(--text-2); text-align:center;">Geser garis putih untuk membandingkan</div>
+        <div style="font-size:10px; color:var(--text-2); text-align:center;">Geser untuk membandingkan sebelum dan sesudah</div>
         <div style="display:flex; gap:8px;">
-          <button onclick="hdDownloadResult()" class="btn btn-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download HD</button>
+          <button onclick="downloadHdResult()" class="btn btn-hd" style="flex:1;">Download HD</button>
+          <button onclick="clearHdPhoto()" class="btn btn-ghost">Foto Baru</button>
         </div>
       </div>
     </div>
@@ -1195,7 +1264,7 @@ const htmlTemplate = `<!DOCTYPE html>
           <button onclick="setAdminOrderFilter('all')" data-afilter="all" class="admin-order-filter btn btn-xs" style="background:var(--info); color:white;">Semua</button>
           <button onclick="setAdminOrderFilter('am')" data-afilter="am" class="admin-order-filter btn btn-ghost btn-xs">AM</button>
           <button onclick="setAdminOrderFilter('netflix')" data-afilter="netflix" class="admin-order-filter btn btn-ghost btn-xs">NFLX</button>
-          <button onclick="setAdminOrderFilter('hdfoto')" data-afilter="hdfoto" class="admin-order-filter btn btn-ghost btn-xs">HD</button>
+          <button onclick="setAdminOrderFilter('hd')" data-afilter="hd" class="admin-order-filter btn btn-ghost btn-xs">HD</button>
         </div>
         <input type="text" id="admin-order-search" oninput="renderAdminOrders()" placeholder="Cari..." class="inp mono" style="margin-bottom:7px;">
         <div id="admin-orders-list" style="display:flex; flex-direction:column; gap:6px; max-height:250px; overflow-y:auto; font-size:11px;">
@@ -1548,9 +1617,9 @@ function renderMyOrders() {
   document.getElementById('my-orders-am').innerText = myOrders.filter(o => o.type === 'am').length;
   if (filtered.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">' + (search ? 'Tidak cocok' : 'Belum ada') + '</p>'; return; }
   container.innerHTML = filtered.map(o => {
-    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'hdfoto' ? '🖼️' : '📱';
-    const typeLabel = o.type === 'am' ? 'Alight Motion' : o.type === 'netflix' ? 'Netflix' : o.type === 'hdfoto' ? 'HD Foto' : 'Unknown';
-    const typeBadge = o.type === 'am' ? 'badge-accent' : o.type === 'netflix' ? 'badge-err' : o.type === 'hdfoto' ? 'badge-info' : 'badge-muted';
+    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'hd' ? '🖼️' : '📱';
+    const typeLabel = o.type === 'am' ? 'Alight Motion' : o.type === 'netflix' ? 'Netflix' : o.type === 'hd' ? 'HD Foto' : 'Unknown';
+    const typeBadge = o.type === 'am' ? 'badge-accent' : o.type === 'netflix' ? 'badge-err' : o.type === 'hd' ? 'badge-ok' : 'badge-muted';
     const timeStr = new Date(o.timestamp).toLocaleString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
     return '<div class="hist-item">' +
       '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">' +
@@ -1602,7 +1671,7 @@ function renderAdminOrders() {
   if (search) filtered = filtered.filter(o => (o.orderId||'').toLowerCase().includes(search) || (o.username||'').toLowerCase().includes(search) || (o.detail||'').toLowerCase().includes(search));
   if (filtered.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">Tidak ada</p>'; return; }
   container.innerHTML = filtered.slice(0, 100).map(o => {
-    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'hdfoto' ? '🖼️' : '📱';
+    const typeIcon = o.type === 'am' ? '🎨' : o.type === 'netflix' ? '🎬' : o.type === 'hd' ? '🖼️' : '📱';
     const timeStr = new Date(o.timestamp).toLocaleString('id-ID', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
     return '<div style="padding:8px 10px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:7px;">' +
       '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:4px;">' +
@@ -1613,6 +1682,149 @@ function renderAdminOrders() {
       '<div style="font-size:8.5px; color:var(--text-2); margin-top:3px;">' + timeStr + '</div>' +
     '</div>';
   }).join('');
+}
+
+// ====== HD FOTO ======
+let hdSelectedDataUrl = '';
+let hdSelectedFileName = '';
+let hdResultDataUrl = '';
+let hdResultMime = 'image/png';
+let hdProgressTimer = null;
+const HD_MAX_FILE_BYTES = 8 * 1024 * 1024;
+const HD_ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+
+function updateHdQuotaDisplay() {
+  const el = document.getElementById('hd-quota-display');
+  if (el) {
+    if (isAdminUser || isVipUser) { el.innerText = '∞'; el.style.color = '#67e8f9'; }
+    else { const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota); el.innerText = remain; el.style.color = remain > 0 ? 'white' : 'var(--err)'; }
+  }
+  const resetEl = document.getElementById('hd-reset-display');
+  if (resetEl) resetEl.innerText = (isAdminUser || isVipUser) ? '∞' : '24 Jam';
+}
+
+function updateHdSlider(val) {
+  const v = Math.max(0, Math.min(100, parseFloat(val) || 0));
+  const layer = document.getElementById('hd-before-layer');
+  const line = document.getElementById('hd-slider-line');
+  if (layer) layer.style.clipPath = 'inset(0 ' + (100 - v) + '% 0 0)';
+  if (line) line.style.left = v + '%';
+}
+
+function updateHdDims() {
+  const b = document.getElementById('hd-before-img');
+  const a = document.getElementById('hd-after-img');
+  const info = document.getElementById('hd-dims-info');
+  if (!b || !a || !info) return;
+  if (b.naturalWidth && a.naturalWidth) info.innerText = b.naturalWidth + 'x' + b.naturalHeight + ' → ' + a.naturalWidth + 'x' + a.naturalHeight;
+}
+
+function processHdFile(file) {
+  if (!file) return;
+  if (HD_ALLOWED_TYPES.indexOf(file.type) === -1) { showToast('Format harus JPG, PNG, atau WEBP', 'error'); return; }
+  if (file.size > HD_MAX_FILE_BYTES) { showToast('Ukuran foto maksimal 8MB', 'error'); return; }
+  const reader = new FileReader();
+  reader.onload = function() {
+    hdSelectedDataUrl = String(reader.result || '');
+    hdSelectedFileName = file.name || 'foto';
+    hdResultDataUrl = '';
+    document.getElementById('hd-preview-img').src = hdSelectedDataUrl;
+    document.getElementById('hd-preview-wrap').classList.remove('hide');
+    document.getElementById('hd-dropzone-empty').classList.add('hide');
+    document.getElementById('hd-file-info').innerText = hdSelectedFileName + ' • ' + Math.round(file.size / 1024) + ' KB';
+    document.getElementById('hd-result-container').classList.add('hide');
+    document.getElementById('btn-generate-hd').disabled = false;
+  };
+  reader.onerror = function() { showToast('Gagal membaca foto', 'error'); };
+  reader.readAsDataURL(file);
+}
+
+function handleHdFileSelect(e) {
+  const file = e.target.files && e.target.files[0];
+  processHdFile(file);
+  e.target.value = '';
+}
+
+function handleHdDrop(e) {
+  e.preventDefault();
+  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  processHdFile(file);
+}
+
+function clearHdPhoto() {
+  hdSelectedDataUrl = ''; hdSelectedFileName = ''; hdResultDataUrl = '';
+  const prev = document.getElementById('hd-preview-img'); if (prev) prev.removeAttribute('src');
+  document.getElementById('hd-preview-wrap').classList.add('hide');
+  document.getElementById('hd-dropzone-empty').classList.remove('hide');
+  document.getElementById('hd-file-info').innerText = '';
+  document.getElementById('hd-result-container').classList.add('hide');
+  document.getElementById('hd-loading').classList.add('hide');
+  document.getElementById('btn-generate-hd').disabled = true;
+}
+
+function downloadHdResult() {
+  if (!hdResultDataUrl) { showToast('Belum ada hasil', 'error'); return; }
+  const ext = hdResultMime.indexOf('jpeg') !== -1 ? 'jpg' : (hdResultMime.indexOf('webp') !== -1 ? 'webp' : 'png');
+  const a = document.createElement('a');
+  a.href = hdResultDataUrl;
+  a.download = 'hd-foto-' + Date.now() + '.' + ext;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+async function handleGenerateHd() {
+  if (!loggedInUsername) return showToast('Harus login!', 'error');
+  if (!guardServerOnline('HD Foto')) return;
+  if (!hdSelectedDataUrl) return showToast('Upload foto dulu!', 'error');
+  const btn = document.getElementById('btn-generate-hd');
+  const btnText = document.getElementById('hd-btn-text');
+  const loadingEl = document.getElementById('hd-loading');
+  const statusText = document.getElementById('hd-status-text');
+  const logText = document.getElementById('hd-log-text');
+  const progressFill = document.getElementById('hd-progress-fill');
+  btn.disabled = true; btnText.innerText = 'Memproses...';
+  loadingEl.classList.remove('hide'); progressFill.style.width = '5%';
+  statusText.innerText = 'Menyiapkan'; logText.innerText = 'Initializing...';
+  document.getElementById('hd-result-container').classList.add('hide');
+  let pct = 10;
+  if (hdProgressTimer) clearInterval(hdProgressTimer);
+  hdProgressTimer = setInterval(function() { pct = Math.min(90, pct + 3); progressFill.style.width = pct + '%'; }, 1200);
+  try {
+    const quotaRes = await fetch('/api/hd/check-quota?username=' + encodeURIComponent(loggedInUsername));
+    const quotaData = await quotaRes.json();
+    if (!quotaData.success) throw new Error(quotaData.message || 'Gagal cek');
+    if (!quotaData.allowed) throw new Error(quotaData.message || 'Quota habis!');
+    statusText.innerText = 'Meng-HD-kan foto...'; logText.innerText = 'Uploading & upscaling...';
+    const genRes = await fetch('/api/hd/upscale', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, image: hdSelectedDataUrl, fileName: hdSelectedFileName }) });
+    const genData = await genRes.json();
+    if (genData.success && genData.after) {
+      progressFill.style.width = '100%'; statusText.innerText = '✅ Berhasil!'; logText.innerText = 'Success';
+      hdResultDataUrl = genData.after;
+      hdResultMime = genData.contentType || 'image/png';
+      const beforeImg = document.getElementById('hd-before-img');
+      const afterImg = document.getElementById('hd-after-img');
+      beforeImg.onload = updateHdDims; afterImg.onload = updateHdDims;
+      beforeImg.src = hdSelectedDataUrl; afterImg.src = hdResultDataUrl;
+      document.getElementById('hd-range').value = 50; updateHdSlider(50);
+      document.getElementById('hd-result-container').classList.remove('hide');
+      if (genData.quotaInfo) { userQuotaData.usedQuota = genData.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(genData.quotaInfo); updateHdQuotaDisplay(); }
+      if (genData.orderId) showToast('✅ Order ID: ' + genData.orderId, 'order', 5000);
+      else showToast('Foto HD berhasil!', 'success');
+      setTimeout(() => loadingEl.classList.add('hide'), 1500);
+    } else {
+      if (genData.refilled) showToast(genData.message || 'Gagal! Kuota dikembalikan.', 'error', 4000);
+      else showToast(genData.message || 'Gagal', 'error');
+      if (genData.quotaInfo) { updateQuotaDisplay(genData.quotaInfo); updateHdQuotaDisplay(); }
+      else loadVerifiedEmails(true);
+      throw new Error(genData.message || 'Gagal');
+    }
+  } catch (err) {
+    statusText.innerText = '❌ Gagal'; logText.innerText = err.message;
+    if (!err.message.includes('dikembalikan')) showToast(err.message, 'error');
+    setTimeout(() => loadingEl.classList.add('hide'), 3000);
+  } finally {
+    if (hdProgressTimer) { clearInterval(hdProgressTimer); hdProgressTimer = null; }
+    btn.disabled = !hdSelectedDataUrl; btnText.innerText = 'Generate HD';
+  }
 }
 
 function selectNetflixPlan(plan) {
@@ -1672,139 +1884,6 @@ async function handleGenerateNetflix() {
     if (!err.message.includes('dikembalikan')) showToast(err.message, 'error');
     setTimeout(() => loadingEl.classList.add('hide'), 3000);
   } finally { btn.disabled = false; btnText.innerText = 'Generate Token'; }
-}
-
-// ====== HD FOTO (CLIENT) ======
-let hdSelectedFile = null;
-let hdSelectedDataUrl = null;
-let hdResultDataUrl = null;
-let hdResultType = 'image/png';
-let hdProgressTimer = null;
-const HD_MAX_BYTES = 10 * 1024 * 1024;
-
-function updateHdQuotaDisplay() {
-  const el = document.getElementById('hd-quota-display');
-  if (!el) return;
-  if (isAdminUser || isVipUser) { el.innerText = '∞'; el.style.color = 'var(--info)'; }
-  else { const remain = Math.max(0, userQuotaData.totalQuota - userQuotaData.usedQuota); el.innerText = remain; el.style.color = remain > 0 ? 'white' : 'var(--err)'; }
-}
-
-function hdFormatSize(bytes) {
-  if (bytes >= 1048576) return (bytes / 1048576).toFixed(2) + ' MB';
-  return Math.max(1, Math.round(bytes / 1024)) + ' KB';
-}
-
-function hdHandleFile(file) {
-  if (!file) return;
-  if (['image/jpeg', 'image/png', 'image/webp'].indexOf(file.type) === -1) return showToast('Format harus JPG, PNG, atau WEBP', 'error');
-  if (file.size > HD_MAX_BYTES) return showToast('Ukuran maksimal 10 MB', 'error');
-  const reader = new FileReader();
-  reader.onload = function(ev) {
-    hdSelectedFile = file;
-    hdSelectedDataUrl = ev.target.result;
-    document.getElementById('hd-preview-img').src = hdSelectedDataUrl;
-    document.getElementById('hd-preview-box').classList.remove('hide');
-    document.getElementById('hd-drop-empty').classList.add('hide');
-    document.getElementById('hd-file-info').innerText = file.name + ' • ' + hdFormatSize(file.size);
-    document.getElementById('btn-generate-hd').disabled = false;
-    document.getElementById('hd-result-card').classList.add('hide');
-  };
-  reader.onerror = function() { showToast('Gagal membaca file', 'error'); };
-  reader.readAsDataURL(file);
-}
-
-function hdClearFile() {
-  hdSelectedFile = null; hdSelectedDataUrl = null; hdResultDataUrl = null;
-  const input = document.getElementById('hd-file-input');
-  if (input) input.value = '';
-  document.getElementById('hd-preview-box').classList.add('hide');
-  document.getElementById('hd-drop-empty').classList.remove('hide');
-  document.getElementById('btn-generate-hd').disabled = true;
-  document.getElementById('hd-result-card').classList.add('hide');
-}
-
-function initHdDrop() {
-  const zone = document.getElementById('hd-dropzone');
-  const input = document.getElementById('hd-file-input');
-  if (!zone || !input) return;
-  zone.addEventListener('click', function() { input.click(); });
-  zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('dragover'); });
-  zone.addEventListener('dragleave', function() { zone.classList.remove('dragover'); });
-  zone.addEventListener('drop', function(e) { e.preventDefault(); zone.classList.remove('dragover'); if (e.dataTransfer.files.length) hdHandleFile(e.dataTransfer.files[0]); });
-  input.addEventListener('change', function(e) { if (e.target.files.length) hdHandleFile(e.target.files[0]); });
-}
-
-function hdSetSlider(pct) {
-  pct = Math.max(0, Math.min(100, pct));
-  document.getElementById('hd-before-wrap').style.clipPath = 'inset(0 ' + (100 - pct) + '% 0 0)';
-  document.getElementById('hd-handle').style.left = pct + '%';
-}
-
-function hdInitSlider() {
-  const box = document.getElementById('hd-compare');
-  if (!box || box.dataset.bound) return;
-  box.dataset.bound = '1';
-  let dragging = false;
-  function move(e) { const r = box.getBoundingClientRect(); hdSetSlider(((e.clientX - r.left) / r.width) * 100); }
-  box.addEventListener('pointerdown', function(e) { dragging = true; try { box.setPointerCapture(e.pointerId); } catch (x) {} move(e); });
-  box.addEventListener('pointermove', function(e) { if (dragging) move(e); });
-  box.addEventListener('pointerup', function() { dragging = false; });
-  box.addEventListener('pointercancel', function() { dragging = false; });
-}
-
-function hdDownloadResult() {
-  if (!hdResultDataUrl) return;
-  const a = document.createElement('a');
-  const ext = hdResultType.indexOf('jpeg') !== -1 ? 'jpg' : hdResultType.indexOf('webp') !== -1 ? 'webp' : 'png';
-  a.href = hdResultDataUrl;
-  a.download = 'hd-foto-' + Date.now() + '.' + ext;
-  document.body.appendChild(a); a.click(); a.remove();
-}
-
-async function handleGenerateHD() {
-  if (!loggedInUsername) return showToast('Harus login!', 'error');
-  if (!guardServerOnline('HD Foto')) return;
-  if (!hdSelectedDataUrl) return showToast('Upload foto dulu!', 'error');
-  const btn = document.getElementById('btn-generate-hd');
-  const btnText = document.getElementById('hd-btn-text');
-  const loadingEl = document.getElementById('hd-loading');
-  const statusText = document.getElementById('hd-status-text');
-  const logText = document.getElementById('hd-log-text');
-  const fill = document.getElementById('hd-progress-fill');
-  btn.disabled = true; btnText.innerText = 'Memproses...';
-  loadingEl.classList.remove('hide'); fill.style.width = '5%';
-  statusText.innerText = 'Mengunggah foto'; logText.innerText = 'Uploading...';
-  document.getElementById('hd-result-card').classList.add('hide');
-  let prog = 5;
-  if (hdProgressTimer) clearInterval(hdProgressTimer);
-  hdProgressTimer = setInterval(function() { prog = Math.min(90, prog + 2); fill.style.width = prog + '%'; if (prog > 25) { statusText.innerText = 'Meningkatkan kualitas'; logText.innerText = 'Upscaling...'; } }, 700);
-  try {
-    const res = await fetch('/api/hdfoto/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: loggedInUsername, image: hdSelectedDataUrl, fileName: hdSelectedFile ? hdSelectedFile.name : 'foto' }) });
-    const data = await res.json();
-    if (data.success && data.image) {
-      clearInterval(hdProgressTimer); fill.style.width = '100%';
-      statusText.innerText = '✅ Berhasil!'; logText.innerText = 'Success';
-      hdResultDataUrl = data.image; hdResultType = data.contentType || 'image/png';
-      document.getElementById('hd-img-before').src = hdSelectedDataUrl;
-      document.getElementById('hd-img-after').src = hdResultDataUrl;
-      document.getElementById('hd-size-info').innerText = hdFormatSize(data.beforeSize || 0) + ' → ' + hdFormatSize(data.afterSize || 0);
-      document.getElementById('hd-result-card').classList.remove('hide');
-      hdInitSlider(); hdSetSlider(50);
-      if (data.quotaInfo) { userQuotaData.usedQuota = data.quotaInfo.usedQuota || userQuotaData.usedQuota; updateQuotaDisplay(data.quotaInfo); updateHdQuotaDisplay(); updateNetflixQuotaDisplay(); }
-      if (data.orderId) showToast('✅ Order ID: ' + data.orderId, 'order', 5000);
-      else showToast('Foto HD berhasil!', 'success');
-      setTimeout(function() { loadingEl.classList.add('hide'); }, 1500);
-    } else {
-      if (data.quotaInfo) { updateQuotaDisplay(data.quotaInfo); updateHdQuotaDisplay(); updateNetflixQuotaDisplay(); }
-      else loadVerifiedEmails(true);
-      throw new Error(data.message || 'Gagal');
-    }
-  } catch (err) {
-    clearInterval(hdProgressTimer);
-    statusText.innerText = '❌ Gagal'; logText.innerText = err.message;
-    showToast(err.message, 'error', 4500);
-    setTimeout(function() { loadingEl.classList.add('hide'); }, 3000);
-  } finally { btn.disabled = !hdSelectedDataUrl; btnText.innerText = 'Jadikan HD'; }
 }
 
 function addNetflixResult(result) { netflixResults.unshift(result); renderNetflixResults(); document.getElementById('netflix-results-container').classList.remove('hide'); }
@@ -3084,7 +3163,6 @@ async function handleLogout() {
 }
 
 initFileDrop();
-initHdDrop();
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
@@ -3270,25 +3348,38 @@ const server = http.createServer(async (req, res) => {
       const myResults = Object.values(allResults).filter(r => r.username === cleanUser).sort((a, b) => b.timestamp - a.timestamp).slice(0, 20);
       jsonResponse(res, 200, { success: true, results: myResults });
 
-    } else if (parsedUrl.pathname === '/api/hdfoto/generate' && req.method === 'POST') {
+    } else if (parsedUrl.pathname === '/api/hd/check-quota' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+      const cleanUser = username.toLowerCase();
+      await checkAndExpireBonusQuota(cleanUser);
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      if (now - (userObj.lastResetTime || now) >= twentyFourHours) { userObj.activatedEmails = []; userObj.lastResetTime = now; await saveUserToDb(cleanUser, userObj); }
+      const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
+      const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
+      const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
+      if (userObj.isAdmin || isVipActive) return jsonResponse(res, 200, { success: true, allowed: true, message: 'Unlimited', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+      if (usedQuota >= totalQuota) return jsonResponse(res, 200, { success: true, allowed: false, message: 'Quota habis!', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+      jsonResponse(res, 200, { success: true, allowed: true, message: 'Quota tersedia', quotaInfo: { usedQuota, bonusQuota: userObj.bonusQuota || 0, totalQuota } });
+
+    } else if (parsedUrl.pathname === '/api/hd/upscale' && req.method === 'POST') {
       const body = await readBody(req);
-      const { username, image, fileName } = JSON.parse(body);
-      const cleanUser = username ? username.toLowerCase() : '';
+      const { username, image } = JSON.parse(body);
+      const cleanUser = username ? String(username).toLowerCase() : '';
       await checkAndExpireBonusQuota(cleanUser);
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
       if (currentServerStatus !== 'online' && !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Server offline!' });
 
-      // Validasi foto sebelum kuota dipakai
-      if (typeof image !== 'string' || image.length < 100) return jsonResponse(res, 400, { success: false, message: 'Foto tidak valid!' });
-      const commaIdx = image.indexOf(',');
-      const dataHeader = commaIdx > -1 ? image.slice(0, commaIdx) : '';
-      const mimeMatch = dataHeader.match(/^data:(image\/(?:jpeg|png|webp));base64$/);
-      if (!mimeMatch) return jsonResponse(res, 400, { success: false, message: 'Format harus JPG, PNG, atau WEBP!' });
-      const inputMime = mimeMatch[1];
-      const inputBuffer = Buffer.from(image.slice(commaIdx + 1), 'base64');
-      if (inputBuffer.length === 0) return jsonResponse(res, 400, { success: false, message: 'Foto kosong!' });
-      if (inputBuffer.length > 10 * 1024 * 1024) return jsonResponse(res, 400, { success: false, message: 'Ukuran foto maksimal 10 MB!' });
+      const imgMatch = typeof image === 'string' ? image.match(/^data:(image\/(?:png|jpeg|jpg|webp));base64,([A-Za-z0-9+\/=]+)$/i) : null;
+      if (!imgMatch) return jsonResponse(res, 400, { success: false, message: 'Foto tidak valid! Gunakan JPG, PNG, atau WEBP.' });
+      const imgMime = imgMatch[1].toLowerCase() === 'image/jpg' ? 'image/jpeg' : imgMatch[1].toLowerCase();
+      const imgBuffer = Buffer.from(imgMatch[2], 'base64');
+      if (!imgBuffer.length) return jsonResponse(res, 400, { success: false, message: 'Foto kosong!' });
+      if (imgBuffer.length > HD_MAX_BYTES) return jsonResponse(res, 400, { success: false, message: 'Ukuran foto terlalu besar (maks 10MB)!' });
 
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
@@ -3297,7 +3388,8 @@ const server = http.createServer(async (req, res) => {
       const usedQuota = userObj.activatedEmails ? userObj.activatedEmails.length : 0;
       const totalQuota = (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0);
       if (!userObj.isAdmin && !isVipActive && usedQuota >= totalQuota) return jsonResponse(res, 403, { success: false, message: 'Quota habis!' });
-      const quotaEntry = 'hdfoto_' + now + '_' + Math.random().toString(36).substring(2, 6);
+
+      const quotaEntry = 'hd_' + now + '_' + Math.random().toString(36).substring(2, 6);
       if (!userObj.isAdmin && !isVipActive) {
         if (!userObj.activatedEmails) userObj.activatedEmails = [];
         userObj.activatedEmails.push(quotaEntry);
@@ -3305,38 +3397,23 @@ const server = http.createServer(async (req, res) => {
         await saveUserToDb(cleanUser, userObj);
       }
 
-      let upResult = null;
-      let upError = null;
+      let upResult;
       try {
-        upResult = await upscaleImage(inputBuffer, inputMime);
-        if (!upResult || !upResult.buffer || upResult.buffer.length === 0 || String(upResult.contentType).indexOf('image/') !== 0) {
-          upError = 'Server upscale tidak mengembalikan gambar.';
-        }
-      } catch (e) {
-        upError = (typeof e === 'string' ? e : (e && e.message) || 'Gagal').substring(0, 200);
-      }
-
-      if (upError) {
+        const ext = imgMime === 'image/png' ? 'png' : imgMime === 'image/webp' ? 'webp' : 'jpg';
+        upResult = await upscaleImage(imgBuffer, { contentType: imgMime, filename: 'image.' + ext });
+      } catch (upErr) {
         let refilled = false;
         if (!userObj.isAdmin && !isVipActive) refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
         const refreshedUser = await getUserFromDb(cleanUser);
         const refreshedUsed = refreshedUser && refreshedUser.activatedEmails ? refreshedUser.activatedEmails.length : 0;
-        return jsonResponse(res, 500, { success: false, refilled, message: refilled ? 'HD gagal: ' + upError + ' Kuota dikembalikan.' : 'HD gagal: ' + upError, quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
+        const errMsg = (upErr && upErr.message) ? upErr.message : String(upErr);
+        return jsonResponse(res, 500, { success: false, refilled, message: refilled ? 'HD gagal: ' + errMsg + '. Kuota dikembalikan.' : 'HD gagal: ' + errMsg, quotaInfo: { usedQuota: refreshedUsed, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
       }
 
-      const safeName = String(fileName || 'foto').replace(/[^\w.\- ]/g, '').substring(0, 40) || 'foto';
-      const kb = (n) => Math.max(1, Math.round(n / 1024)) + 'KB';
-      const orderId = generateOrderId('HDF');
-      await saveOrderToDb(orderId, { orderId, username: cleanUser, type: 'hdfoto', detail: 'HD Foto • ' + safeName, result: 'Foto di-upscale ' + kb(inputBuffer.length) + ' → ' + kb(upResult.buffer.length), timestamp: now, quotaEntry });
-      jsonResponse(res, 200, {
-        success: true,
-        orderId,
-        image: 'data:' + upResult.contentType.split(';')[0] + ';base64,' + upResult.buffer.toString('base64'),
-        contentType: upResult.contentType.split(';')[0],
-        beforeSize: inputBuffer.length,
-        afterSize: upResult.buffer.length,
-        quotaInfo: { usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive }
-      });
+      const orderId = generateOrderId('HD');
+      await saveOrderToDb(orderId, { orderId, username: cleanUser, type: 'hd', detail: 'HD Foto • ' + Math.round(imgBuffer.length / 1024) + 'KB → ' + Math.round(upResult.buffer.length / 1024) + 'KB', result: 'Upscale berhasil', timestamp: now, quotaEntry });
+      const afterDataUrl = 'data:' + upResult.contentType + ';base64,' + upResult.buffer.toString('base64');
+      jsonResponse(res, 200, { success: true, orderId, before: image, after: afterDataUrl, contentType: upResult.contentType, quotaInfo: { usedQuota: userObj.isAdmin || isVipActive ? usedQuota : usedQuota + 1, bonusQuota: userObj.bonusQuota || 0, totalQuota, isAdmin: userObj.isAdmin, isVip: isVipActive } });
 
     } else if (parsedUrl.pathname === '/api/transaction/create' && req.method === 'POST') {
       const body = await readBody(req);
@@ -3924,7 +4001,7 @@ server.listen(PORT, () => {
   console.log('║  ✨ FITUR AKTIF:                                             ║');
   console.log('║  🎨 Alight Motion Premium                                    ║');
   console.log('║  🎬 Netflix Token Generator                                  ║');
-  console.log('║  🖼️  HD Foto Upscaler (Sebelum/Sesudah)                      ║');
+  console.log('║  🖼️  HD Foto Generator (Sebelum/Sesudah)                      ║');
   console.log('║  🛒 VIP Shop & Transaksi                                     ║');
   console.log('║  💬 Chat Global & Orderan                                    ║');
   console.log('║  ⚙️  Panel Admin Lengkap                                     ║');
