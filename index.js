@@ -458,6 +458,7 @@ function apkParseIcon(rawIcon) {
   if (buf.length > APK_ICON_MAX_BYTES) return { error: 'Ukuran logo maksimal 1.5MB!' };
   const kind = sniffImageType(buf);
   if (!kind) return { error: 'File logo bukan gambar yang valid!' };
+  if (kind !== 'image/png') return { error: 'Logo harus berformat PNG!' };
   return { value: 'data:' + kind + ';base64,' + m[2] };
 }
 
@@ -4466,7 +4467,7 @@ const server = http.createServer(async (req, res) => {
         let buildId;
         try {
           const buildPayload = { url: spec.url, appName: spec.appName, packageName: spec.packageName, versionName: spec.versionName, versionCode: spec.versionCode };
-          if (spec.icon) buildPayload.icon = spec.icon;
+          if (spec.icon) buildPayload.iconPng = spec.icon;
           if (spec.permissions.length > 0) {
             buildPayload.permissions = apkAndroidPermissions(spec.permissions);
             buildPayload.requestPermissionsOnLaunch = true;
