@@ -187,6 +187,14 @@ async function getOnlineUsersFromDb() {
 async function saveOnlineUserToDb(username, data) { await set(ref(db, `onlineUsers/${username}`), data); }
 async function removeOnlineUserFromDb(username) { await set(ref(db, `onlineUsers/${username}`), null); }
 
+// ====== NOTIFICATION HELPERS (BARU) ======
+async function getNotificationSubscribersFromDb() {
+  const snapshot = await get(child(ref(db), `notificationSubscribers`));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+async function saveNotificationSubscriberToDb(username, data) { await set(ref(db, `notificationSubscribers/${username}`), data); }
+async function removeNotificationSubscriberFromDb(username) { await set(ref(db, `notificationSubscribers/${username}`), null); }
+
 // ====== BONUS QUOTA EXPIRY ======
 async function checkAndExpireBonusQuota(username) {
   try {
@@ -201,7 +209,6 @@ async function checkAndExpireBonusQuota(username) {
     }
 
     if (userObj.bonusQuota > 0) {
-      // Bonus kedaluwarsa tepat 2 hari sejak bonus diterima (tidak diperpanjang oleh pemakaian)
       if (!userObj.bonusGrantedAt) {
         userObj.bonusGrantedAt = userObj.lastBonusActivity || now;
         changed = true;
@@ -336,7 +343,6 @@ async function upscaleImage(input, meta) {
       return { buffer: resp.body, contentType: ct.indexOf('image/') === 0 ? ct : sniffed };
     }
 
-    // Fallback: bila API membalas JSON berisi link hasil
     try {
       const j = JSON.parse(resp.body.toString('utf8'));
       const cand = j.url || (j.result && (j.result.url || j.result)) || (j.data && (j.data.url || j.data));
@@ -345,7 +351,7 @@ async function upscaleImage(input, meta) {
         const t2 = sniffImageType(dl2.body);
         if (dl2.status >= 200 && dl2.status < 300 && t2) return { buffer: dl2.body, contentType: t2 };
       }
-    } catch (e) { /* bukan JSON */ }
+    } catch (e) { }
 
     throw new Error('Respon upscale tidak valid');
   } catch (error) {
@@ -701,6 +707,12 @@ const htmlTemplate = `<!DOCTYPE html>
   .hd-slider-knob { position:absolute; top:50%; left:50%; width:30px; height:30px; margin:-15px 0 0 -15px; border-radius:50%; background:white; color:#0f172a; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; box-shadow:0 2px 8px rgba(0,0,0,0.5); }
   .hd-range { position:absolute; top:0; left:0; width:100%; height:100%; margin:0; opacity:0; cursor:ew-resize; }
   .hd-tag { position:absolute; top:8px; padding:3px 8px; border-radius:6px; background:rgba(0,0,0,0.6); color:white; font-size:10px; font-weight:700; pointer-events:none; }
+  
+  .notif-toggle { display:inline-flex; align-items:center; gap:8px; padding:6px 12px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:8px; font-size:11px; font-weight:600; color:var(--text-1); cursor:pointer; transition:all 0.15s; }
+  .notif-toggle:hover { border-color:var(--accent); background:var(--accent-soft); }
+  .notif-toggle.active { background:var(--ok-soft); border-color:rgba(74,222,128,0.3); color:var(--ok); }
+  .notif-toggle.blocked { background:var(--err-soft); border-color:rgba(248,113,113,0.3); color:var(--err); }
+  .notif-toggle svg { width:14px; height:14px; }
 </style>
 </head>
 <body>
@@ -719,6 +731,10 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
     <div style="display:flex; align-items:center; gap:8px;">
+      <button id="notif-btn" onclick="toggleNotifications()" class="notif-toggle" title="Aktifkan notifikasi browser">
+        <svg id="notif-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span id="notif-text">Notif</span>
+      </button>
       <div id="online-pill-top" class="online-pill hide" title="User online">
         <span class="online-dot"></span>
         <span id="online-count-top">0</span> online
@@ -1374,6 +1390,7 @@ const htmlTemplate = `<!DOCTYPE html>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--netflix); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">3</div><div style="font-size:12px; color:var(--text-1);"><strong>Netflix:</strong> Pilih plan, klik Generate, tunggu proses</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">4</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
         <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">5</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai.</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--ok); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>Aktifkan Notifikasi</strong> (icon 🔔 di atas) untuk dapat pemberitahuan pengumuman & chat baru secara real-time!</div></div>
       </div>
     </div>
 
@@ -1459,6 +1476,15 @@ let lastNetflixHistoryFetch = 0;
 let lastMyOrdersFetch = 0;
 let lastAdminOrdersFetch = 0;
 
+// ====== NOTIFICATION STATE (BARU) ======
+let notificationsEnabled = false;
+let swRegistration = null;
+let lastNotifAnnouncementId = null;
+let lastNotifChatId = null;
+let notifPollInterval = null;
+let lastNotifStatus = 'online';
+let currentNotifTitle = '';
+
 const CACHE_DURATION = { status:30000, video:60000, chat:15000, emails:30000, redeems:60000, announcements:60000, netflixHistory:30000, myOrders:15000, adminOrders:15000, onlineUsers:15000 };
 const memoryCache = {};
 
@@ -1469,6 +1495,175 @@ function getCached(key) {
   return entry.data;
 }
 function setCache(key, data, duration) { memoryCache[key] = { data, time: Date.now(), duration }; }
+
+// ====== NOTIFICATION FUNCTIONS (BARU) ======
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+function updateNotifButton() {
+  const btn = document.getElementById('notif-btn');
+  const txt = document.getElementById('notif-text');
+  if (!btn || !txt) return;
+  if (!('Notification' in window)) { btn.classList.add('blocked'); txt.textContent = 'N/A'; btn.disabled = true; return; }
+  if (Notification.permission === 'granted') {
+    btn.classList.add('active'); btn.classList.remove('blocked'); txt.textContent = 'Notif ON';
+  } else if (Notification.permission === 'denied') {
+    btn.classList.add('blocked'); btn.classList.remove('active'); txt.textContent = 'Blocked';
+  } else {
+    btn.classList.remove('active'); btn.classList.remove('blocked'); txt.textContent = 'Notif';
+  }
+}
+
+async function toggleNotifications() {
+  if (!('Notification' in window)) return showToast('Browser tidak mendukung notifikasi.', 'error');
+  if (Notification.permission === 'denied') return showToast('Notifikasi diblokir. Izinkan lewat setelan browser.', 'error', 5000);
+  if (Notification.permission === 'granted') {
+    // Toggle off (hanya state lokal, permission tetap granted)
+    notificationsEnabled = !notificationsEnabled;
+    localStorage.setItem('notifEnabled', notificationsEnabled ? '1' : '0');
+    if (notificationsEnabled) { showToast('Notifikasi diaktifkan kembali.', 'success'); startNotifPolling(); }
+    else { showToast('Notifikasi dinonaktifkan sementara.', 'info'); stopNotifPolling(); }
+    updateNotifButton();
+    return;
+  }
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm === 'granted') {
+      notificationsEnabled = true;
+      localStorage.setItem('notifEnabled', '1');
+      await registerServiceWorker();
+      await registerNotificationToServer();
+      startNotifPolling();
+      showToast('🔔 Notifikasi browser aktif!', 'success');
+      // Notifikasi perkenalan
+      showBrowserNotification('🔔 Notifikasi Aktif', 'Kamu akan menerima pemberitahuan pengumuman, chat, dan update server.');
+    } else {
+      showToast('Izin notifikasi ditolak.', 'error');
+    }
+  } catch (e) { showToast('Gagal mengaktifkan notifikasi.', 'error'); }
+  updateNotifButton();
+}
+
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return null;
+  if (swRegistration) return swRegistration;
+  try {
+    // Service Worker via Blob (tanpa file terpisah)
+    const swCode = \`
+      self.addEventListener('notificationclick', function(event) {
+        event.notification.close();
+        event.waitUntil(
+          clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+            for (var i = 0; i < clientList.length; i++) {
+              var client = clientList[i];
+              if (client.url.indexOf(self.location.origin) !== -1 && 'focus' in client) return client.focus();
+            }
+            if (clients.openWindow) return clients.openWindow('/');
+          })
+        );
+      });
+      self.addEventListener('push', function(event) {
+        var data = { title: 'AM Premium', body: 'Notifikasi baru' };
+        try { if (event.data) data = event.data.json(); } catch(e) {}
+        event.waitUntil(self.registration.showNotification(data.title, {
+          body: data.body, icon: data.icon || '', badge: data.badge || '',
+          tag: data.tag || 'am-premium', data: data.url || '/', vibrate: [100,50,100]
+        }));
+      });
+    \`;
+    const blob = new Blob([swCode], { type: 'application/javascript' });
+    const swUrl = URL.createObjectURL(blob);
+    swRegistration = await navigator.serviceWorker.register(swUrl, { scope: '/' });
+    return swRegistration;
+  } catch (e) { console.warn('SW register failed:', e); return null; }
+}
+
+async function registerNotificationToServer() {
+  if (!loggedInUsername || !notificationsEnabled) return;
+  try {
+    await fetch('/api/notifications/register', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ username: loggedInUsername, enableAnnouncements: true, enableChat: true, enableStatus: true })
+    });
+  } catch(e) {}
+}
+
+async function showBrowserNotification(title, body, options = {}) {
+  if (!notificationsEnabled || Notification.permission !== 'granted') return;
+  if (document.visibilityState === 'visible' && !options.force) return; // jangan ganggu saat tab aktif
+  try {
+    const reg = swRegistration || await registerServiceWorker();
+    const notifOptions = {
+      body: body, icon: '', badge: '', tag: options.tag || 'am-premium',
+      data: { url: options.url || '/' }, vibrate: [100, 50, 100],
+      requireInteraction: !!options.requireInteraction
+    };
+    if (reg) await reg.showNotification(title, notifOptions);
+    else new Notification(title, notifOptions);
+    currentNotifTitle = title;
+  } catch(e) { try { new Notification(title, { body: body }); } catch(_) {} }
+}
+
+async function startNotifPolling() {
+  if (notifPollInterval) clearInterval(notifPollInterval);
+  if (!notificationsEnabled) return;
+  await checkNotifUpdates();
+  notifPollInterval = setInterval(() => { if (isPageVisible !== undefined) checkNotifUpdates(); }, 25000);
+}
+function stopNotifPolling() { if (notifPollInterval) { clearInterval(notifPollInterval); notifPollInterval = null; } }
+
+async function checkNotifUpdates() {
+  if (!notificationsEnabled || Notification.permission !== 'granted') return;
+  try {
+    // 1) Cek pengumuman baru
+    const annRes = await fetch('/api/announcements');
+    const annData = await annRes.json();
+    if (annData.success && annData.announcements) {
+      const entries = Object.entries(annData.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
+      if (entries.length > 0) {
+        const latest = entries[0];
+        const latestId = latest[0];
+        if (lastNotifAnnouncementId && latestId !== lastNotifAnnouncementId) {
+          showBrowserNotification('📢 Pengumuman Baru: ' + latest[1].title, latest[1].content.substring(0, 180), { tag: 'ann-' + latestId, requireInteraction: true });
+        }
+        lastNotifAnnouncementId = latestId;
+      }
+    }
+    // 2) Cek chat global baru (dari user lain)
+    if (loggedInUsername) {
+      const chatRes = await fetch('/api/chat/messages');
+      const chatData = await chatRes.json();
+      if (chatData.success && chatData.messages) {
+        const entries = Object.entries(chatData.messages).sort((a,b) => a[1].timestamp - b[1].timestamp);
+        if (entries.length > 0) {
+          const latest = entries[entries.length - 1];
+          const latestId = latest[0];
+          if (lastNotifChatId && latestId !== lastNotifChatId && latest[1].username !== loggedInUsername) {
+            showBrowserNotification('💬 ' + latest[1].username, latest[1].message.substring(0, 160), { tag: 'chat-' + latestId });
+            unreadChatCount++; updateChatBadge();
+          }
+          lastNotifChatId = latestId;
+        }
+      }
+    }
+    // 3) Cek perubahan status server
+    const stRes = await fetch('/api/status');
+    const stData = await stRes.json();
+    if (stData.status !== lastNotifStatus) {
+      if (lastNotifStatus === 'online' && stData.status === 'offline') showBrowserNotification('⚠️ Server Offline', 'Server sedang offline. Generator dinonaktifkan.', { tag: 'status', force: true });
+      else if (lastNotifStatus === 'offline' && stData.status === 'online') showBrowserNotification('✅ Server Online', 'Server sudah online kembali!', { tag: 'status', force: true });
+      lastNotifStatus = stData.status;
+    }
+  } catch(e) {}
+}
+
+// ====== END NOTIFICATION FUNCTIONS ======
 
 document.addEventListener('visibilitychange', () => {
   isPageVisible = !document.hidden;
@@ -1972,6 +2167,12 @@ fetchServerStatus();
 fetchFeaturedVideo();
 startPolling();
 fetchOnlineCount();
+updateNotifButton();
+// Cek apakah notif sudah pernah diaktifkan sebelumnya
+if (localStorage.getItem('notifEnabled') === '1' && 'Notification' in window && Notification.permission === 'granted') {
+  notificationsEnabled = true;
+  registerServiceWorker().then(() => { if (loggedInUsername) registerNotificationToServer(); startNotifPolling(); });
+}
 
 function switchAuthTab(mode) {
   currentAuthMode = mode;
@@ -2069,6 +2270,8 @@ function applySession(data) {
   fetchFeaturedVideo(true);
   updateNetflixQuotaDisplay();
   startOnlineTracking();
+  // Register notifikasi ke server jika sudah aktif
+  if (notificationsEnabled) registerNotificationToServer();
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   loadGlobalChat();
   chatRefreshInterval = setInterval(() => { if (!isPageVisible) return; if (currentView !== 'chat') checkNewChatMessages(); else loadGlobalChat(); }, CACHE_DURATION.chat);
@@ -3151,6 +3354,7 @@ function escapeHtml(text) {
 async function handleLogout() {
   await markOffline();
   stopOnlineTracking();
+  stopNotifPolling();
   if (quotaCountdownInterval) clearInterval(quotaCountdownInterval);
   if (globalCountdownInterval) clearInterval(globalCountdownInterval);
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
@@ -3230,6 +3434,38 @@ const server = http.createServer(async (req, res) => {
     } else if (parsedUrl.pathname === '/api/vip-shop' && req.method === 'GET') {
       const items = await getVipShopFromDb();
       jsonResponse(res, 200, { success: true, items });
+
+    } else if (parsedUrl.pathname === '/api/notifications/register' && req.method === 'POST') {
+      try {
+        const body = await readBody(req);
+        const { username, enableAnnouncements, enableChat, enableStatus } = JSON.parse(body);
+        if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
+        const cleanUser = username.toLowerCase();
+        const userObj = await getUserFromDb(cleanUser);
+        if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
+        await saveNotificationSubscriberToDb(cleanUser, {
+          username: cleanUser,
+          enableAnnouncements: !!enableAnnouncements,
+          enableChat: !!enableChat,
+          enableStatus: !!enableStatus,
+          registeredAt: Date.now(),
+          lastActive: Date.now()
+        });
+        jsonResponse(res, 200, { success: true, message: 'Notifikasi terdaftar' });
+      } catch (e) {
+        jsonResponse(res, 500, { success: false, message: e.message });
+      }
+
+    } else if (parsedUrl.pathname === '/api/notifications/unregister' && req.method === 'POST') {
+      try {
+        const body = await readBody(req);
+        const { username } = JSON.parse(body);
+        if (!username) return jsonResponse(res, 400, { success: false });
+        await removeNotificationSubscriberFromDb(username.toLowerCase());
+        jsonResponse(res, 200, { success: true, message: 'Notifikasi dibatalkan' });
+      } catch (e) {
+        jsonResponse(res, 500, { success: false, message: e.message });
+      }
 
     } else if (parsedUrl.pathname === '/api/online/heartbeat' && req.method === 'POST') {
       const body = await readBody(req);
@@ -3994,7 +4230,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 AM Premium Banggus v7.2                                  ║');
+  console.log('║  🚀 AM Premium Banggus v7.3                                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
   console.log('║  💳 DANA Admin: ' + DANA_ADMIN_NUMBER + '                     ║');
   console.log('║  ──────────────────────────────────────────────────────────  ║');
@@ -4004,8 +4240,7 @@ server.listen(PORT, () => {
   console.log('║  🖼️  HD Foto Generator (Sebelum/Sesudah)                      ║');
   console.log('║  🛒 VIP Shop & Transaksi                                     ║');
   console.log('║  💬 Chat Global & Orderan                                    ║');
+  console.log('║  🔔 Browser Notification (BARU!)                             ║');
   console.log('║  ⚙️  Panel Admin Lengkap                                     ║');
-  console.log('║  ──────────────────────────────────────────────────────────  ║');
-  console.log('║  🗑️  APK MOD & TEMP MAIL TELAH DIHAPUS                       ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
