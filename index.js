@@ -4952,7 +4952,6 @@ const server = http.createServer(async (req, res) => {
           customer_email: safeEmailName + '@example.com',
           amount: price,
           description: 'VIP ' + item.name + ' - ' + cleanUser,
-          channel_preference: 'client',
           payment_method: 'qris',
           redirect_url: proto + '://' + (req.headers.host || 'localhost') + '/'
         });
