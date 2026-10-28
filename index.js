@@ -1033,15 +1033,17 @@ const htmlTemplate = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#140a0c">
 <title>AM PREMIUM • BANGGUS</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg-0: #0a0a0f; --bg-1: #12121a; --bg-2: #1a1a24;
-    --line: #26262f; --line-2: #33333f;
-    --text-0: #f0f0f5; --text-1: #a8a8b8; --text-2: #6c6c7c;
-    --accent: #8b7cf6; --accent-2: #6d5ce6; --accent-soft: rgba(139,124,246,0.12);
+    --bg-0: #140a0c; --bg-1: #1e1013; --bg-2: #2a171b;
+    --line: #3b2227; --line-2: #4e2d33;
+    --text-0: #fdf5e8; --text-1: #dcc6b2; --text-2: #a08a78;
+    --accent: #ee4b4b; --accent-2: #c0222d; --accent-soft: rgba(238,75,75,0.14);
+    --gold: #f2c14e; --gold-soft: rgba(242,193,78,0.13);
     --ok: #4ade80; --ok-soft: rgba(74,222,128,0.12);
     --warn: #fbbf24; --warn-soft: rgba(251,191,36,0.12);
     --err: #f87171; --err-soft: rgba(248,113,113,0.12);
@@ -1050,14 +1052,14 @@ const htmlTemplate = `<!DOCTYPE html>
   }
   * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
   html, body { width:100%; max-width:100%; overflow-x:hidden; margin:0; padding:0; background:var(--bg-0); color:var(--text-0); font-family:'Inter',system-ui,sans-serif; font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased; }
-  body { background-image: linear-gradient(rgba(139,124,246,0.015) 1px, transparent 1px), linear-gradient(90deg, rgba(139,124,246,0.015) 1px, transparent 1px); background-size: 32px 32px; min-height:100vh; }
+  body { background-image: linear-gradient(rgba(238,75,75,0.015) 1px, transparent 1px), linear-gradient(90deg, rgba(238,75,75,0.015) 1px, transparent 1px); background-size: 32px 32px; min-height:100vh; }
   .mono { font-family:'IBM Plex Mono','Courier New',monospace; }
   .display-font { font-family:'Space Grotesk',sans-serif; letter-spacing:-0.02em; }
   .app-shell { width:100%; max-width:520px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; padding:12px; position:relative; }
   .card { background:var(--bg-1); border:1px solid var(--line); border-radius:14px; padding:16px; position:relative; }
   .card-elevated { background:linear-gradient(180deg,var(--bg-2) 0%,var(--bg-1) 100%); border:1px solid var(--line-2); border-radius:14px; padding:16px; }
   .topbar { display:flex; align-items:center; justify-content:space-between; padding:4px 0 16px 0; }
-  .brand-mark { width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:18px; color:white; box-shadow:0 4px 14px rgba(109,92,230,0.35); overflow:hidden; }
+  .brand-mark { width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:18px; color:white; box-shadow:0 4px 14px rgba(192,34,45,0.35); overflow:hidden; }
   .brand-text { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px; letter-spacing:-0.01em; }
   .brand-sub { font-size:10px; color:var(--text-2); letter-spacing:0.08em; text-transform:uppercase; font-weight:600; margin-top:1px; }
   .inp { width:100%; padding:11px 14px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; color:var(--text-0); font-size:13px; font-family:inherit; outline:none; transition:border-color 0.15s, box-shadow 0.15s; }
@@ -1065,7 +1067,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .inp::placeholder { color:var(--text-2); }
   .inp.mono { font-family:'IBM Plex Mono',monospace; font-size:12.5px; }
   label.field-label { display:block; font-size:11px; font-weight:600; color:var(--text-1); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px; }
-  .btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:11px 16px; border-radius:10px; font-size:13px; font-weight:600; font-family:inherit; border:none; cursor:pointer; transition:transform 0.1s, box-shadow 0.15s, background 0.15s, border-color 0.15s; width:100%; color:white; background:var(--accent); }
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:11px 16px; border-radius:10px; font-size:13px; font-weight:600; font-family:inherit; border:none; cursor:pointer; transition:transform 0.1s, box-shadow 0.15s, background 0.15s, border-color 0.15s; width:100%; color:white; background:linear-gradient(180deg,#f25a5a,#c0222d); }
   .btn:hover:not(:disabled) { background:var(--accent-2); }
   .btn:active:not(:disabled) { transform:translateY(1px); }
   .btn:disabled { opacity:0.5; cursor:not-allowed; }
@@ -1088,13 +1090,13 @@ const htmlTemplate = `<!DOCTYPE html>
   .badge-err { background:var(--err-soft); color:var(--err); border:1px solid rgba(248,113,113,0.25); }
   .badge-warn { background:var(--warn-soft); color:var(--warn); border:1px solid rgba(251,191,36,0.25); }
   .badge-info { background:var(--info-soft); color:var(--info); border:1px solid rgba(96,165,250,0.25); }
-  .badge-accent { background:var(--accent-soft); color:var(--accent); border:1px solid rgba(139,124,246,0.25); }
+  .badge-accent { background:var(--accent-soft); color:var(--accent); border:1px solid rgba(238,75,75,0.25); }
   .badge-muted { background:var(--bg-2); color:var(--text-1); border:1px solid var(--line-2); }
   #nav-drawer { position:fixed; top:0; bottom:0; right:0; width:86%; max-width:340px; background:var(--bg-1); border-left:1px solid var(--line-2); z-index:50; transform:translateX(105%); transition:transform 0.25s cubic-bezier(0.32,0.72,0,1); display:flex; flex-direction:column; padding:16px; overflow-y:auto; }
   #nav-drawer.open { transform:translateX(0); }
   .nav-link { display:flex; align-items:center; gap:10px; width:100%; padding:10px 12px; border-radius:9px; background:transparent; color:var(--text-1); font-size:13px; font-weight:500; border:1px solid transparent; cursor:pointer; text-align:left; font-family:inherit; transition:background 0.12s, color 0.12s, border-color 0.12s; }
   .nav-link:hover { background:var(--bg-2); color:var(--text-0); }
-  .nav-link.active { background:var(--accent-soft); color:var(--accent); border-color:rgba(139,124,246,0.3); font-weight:600; }
+  .nav-link.active { background:var(--accent-soft); color:var(--accent); border-color:rgba(238,75,75,0.3); font-weight:600; }
   .nav-link.netflix-nav.active { background:rgba(229,9,20,0.12); color:#ff6b6b; border-color:rgba(229,9,20,0.3); }
   .nav-link.orders-nav.active { background:rgba(96,165,250,0.12); color:#7dd3fc; border-color:rgba(96,165,250,0.3); }
   .nav-section-label { font-size:10px; font-weight:700; color:var(--text-2); text-transform:uppercase; letter-spacing:0.1em; padding:14px 12px 6px 12px; }
@@ -1107,7 +1109,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .toast.show { transform:translateX(-50%) translateY(0); }
   .toast-success { background:#1a3a26; color:#a7f3c8; border:1px solid #2d5f3f; }
   .toast-error { background:#3a1a1f; color:#fecaca; border:1px solid #5f2d33; }
-  .toast-info { background:#1f1a3a; color:#ddd6fe; border:1px solid #3d2f5f; }
+  .toast-info { background:#2e2410; color:#fde7a8; border:1px solid #5c4818; }
   .toast-netflix { background:#3a0a0c; color:#fecaca; border:1px solid #5f0a0d; }
   .toast-order { background:#0a2a3a; color:#bae6fd; border:1px solid #0a4a5f; }
   .prog { height:6px; background:var(--bg-0); border-radius:999px; overflow:hidden; }
@@ -1217,6 +1219,27 @@ const htmlTemplate = `<!DOCTYPE html>
   .notif-toggle.active { background:var(--ok-soft); border-color:rgba(74,222,128,0.3); color:var(--ok); }
   .notif-toggle.blocked { background:var(--err-soft); border-color:rgba(248,113,113,0.3); color:var(--err); }
   .notif-toggle svg { width:14px; height:14px; }
+
+  /* ====== TEMA SUMPAH PEMUDA (28 Oktober 1928) ====== */
+  body::before { content:''; position:fixed; top:0; left:0; right:0; height:5px; background:linear-gradient(180deg,#e23b3b 0%,#e23b3b 50%,#fdf5e8 50%,#fdf5e8 100%); z-index:10000; pointer-events:none; }
+  body { background-image: radial-gradient(ellipse at 50% -8%, rgba(238,75,75,0.22), transparent 55%), radial-gradient(ellipse at 100% 100%, rgba(242,193,78,0.08), transparent 50%), linear-gradient(rgba(242,193,78,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(242,193,78,0.025) 1px, transparent 1px); background-size: auto, auto, 32px 32px, 32px 32px; background-attachment: fixed, fixed, scroll, scroll; }
+  .topbar { border-bottom:1px solid rgba(242,193,78,0.25); padding-bottom:12px; }
+  .brand-mark { border:1.5px solid var(--gold); }
+  .brand-sub { color:var(--gold); }
+  .card, .card-elevated { border-top:2px solid rgba(242,193,78,0.45); }
+  .section-head { color:var(--gold); }
+  .nav-section-label { color:var(--gold); opacity:0.85; }
+  #nav-drawer { border-left-color:rgba(242,193,78,0.35); }
+  .nav-link.active { color:var(--gold); border-color:rgba(242,193,78,0.4); }
+  .inp:focus { border-color:var(--gold); box-shadow:0 0 0 3px var(--gold-soft); }
+  .sp-banner { position:relative; margin:12px 0 4px; padding:11px 12px 13px; text-align:center; border-radius:12px; background:linear-gradient(135deg, rgba(238,75,75,0.24), rgba(242,193,78,0.10)); border:1px solid rgba(242,193,78,0.32); overflow:hidden; }
+  .sp-banner::after { content:''; position:absolute; left:0; right:0; bottom:0; height:3px; background:linear-gradient(90deg,#e23b3b 50%,#fdf5e8 50%); }
+  .sp-kicker { font-size:9.5px; letter-spacing:0.22em; text-transform:uppercase; color:var(--gold); font-weight:700; }
+  .sp-title { font-family:'Playfair Display',Georgia,serif; font-weight:800; font-size:20px; letter-spacing:0.08em; color:var(--text-0); margin:2px 0 6px; line-height:1.15; }
+  .sp-vows { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; font-size:10.5px; font-weight:700; color:var(--text-1); letter-spacing:0.06em; text-transform:uppercase; }
+  .sp-vows i { width:4px; height:4px; border-radius:50%; background:var(--gold); display:inline-block; }
+  .sp-quote { margin-top:10px; padding:9px 12px; font-size:11px; font-style:italic; line-height:1.5; color:var(--text-1); border-left:3px solid var(--accent); background:var(--gold-soft); border-radius:0 8px 8px 0; text-align:left; }
+  .sp-quote b { display:block; margin-top:3px; font-style:normal; font-size:9.5px; letter-spacing:0.12em; text-transform:uppercase; color:var(--gold); }
 </style>
 </head>
 <body>
@@ -1226,7 +1249,7 @@ const htmlTemplate = `<!DOCTYPE html>
     <div style="display:flex; align-items:center; gap:10px;">
       <div class="brand-mark">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          <path d="M12 2.5l2.9 6.2 6.8.8-5 4.7 1.3 6.7-6-3.5-6 3.5 1.3-6.7-5-4.7 6.8-.8z" fill="#f2c14e" stroke="#fdf5e8" stroke-width="1.4"/>
         </svg>
       </div>
       <div>
@@ -1247,6 +1270,12 @@ const htmlTemplate = `<!DOCTYPE html>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
     </div>
+  </div>
+
+  <div class="sp-banner">
+    <div class="sp-kicker">★ 28 Oktober 1928 ★</div>
+    <div class="sp-title">SUMPAH PEMUDA</div>
+    <div class="sp-vows"><span>Satu Nusa</span><i></i><span>Satu Bangsa</span><i></i><span>Satu Bahasa</span></div>
   </div>
 
   <div id="drawer-overlay" onclick="toggleMenu()" class="hide" style="position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:40;"></div>
@@ -1293,13 +1322,14 @@ const htmlTemplate = `<!DOCTYPE html>
 
     <div id="auth-view" class="card-elevated" style="display:flex; flex-direction:column; gap:16px;">
       <div style="text-align:center; padding:8px 0 4px;">
-        <div style="width:54px; height:54px; border-radius:14px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:inline-flex; align-items:center; justify-content:center; box-shadow:0 8px 24px rgba(109,92,230,0.4); margin-bottom:10px;">
+        <div style="width:54px; height:54px; border-radius:14px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:inline-flex; align-items:center; justify-content:center; box-shadow:0 8px 24px rgba(192,34,45,0.4); margin-bottom:10px;">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            <path d="M12 2.5l2.9 6.2 6.8.8-5 4.7 1.3 6.7-6-3.5-6 3.5 1.3-6.7-5-4.7 6.8-.8z" fill="#f2c14e" stroke="#fdf5e8" stroke-width="1.4"/>
           </svg>
         </div>
         <h1 class="display-font" style="font-size:22px; font-weight:800; margin:0 0 4px; color:var(--text-0);">Selamat datang</h1>
         <p style="font-size:12.5px; color:var(--text-2); margin:0;">Login atau daftar untuk mulai menggunakan layanan</p>
+        <div class="sp-quote">“Kami putra dan putri Indonesia mengaku bertumpah darah yang satu, tanah air Indonesia.”<b>Ikrar Sumpah Pemuda</b></div>
       </div>
       
       <div style="display:flex; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; padding:3px; position:relative;">
@@ -1417,7 +1447,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
         <div style="padding:8px 4px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--info); font-weight:700; text-transform:uppercase;">Total</div><div id="my-orders-total" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
-        <div style="padding:8px 4px; background:var(--accent-soft); border:1px solid rgba(139,124,246,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--accent); font-weight:700; text-transform:uppercase;">AM</div><div id="my-orders-am" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
+        <div style="padding:8px 4px; background:var(--accent-soft); border:1px solid rgba(238,75,75,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--accent); font-weight:700; text-transform:uppercase;">AM</div><div id="my-orders-am" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
       </div>
       <div style="display:flex; gap:7px;">
         <input type="text" id="order-search-input" oninput="renderMyOrders()" placeholder="Cari Order ID..." class="inp mono" style="flex:1;">
@@ -1896,7 +1926,7 @@ const htmlTemplate = `<!DOCTYPE html>
           <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Memuat...</p>
         </div>
       </div>
-      <div style="padding:11px; background:linear-gradient(135deg,var(--accent-soft),var(--info-soft)); border:1px solid rgba(139,124,246,0.3); border-radius:9px;">
+      <div style="padding:11px; background:linear-gradient(135deg,var(--accent-soft),var(--info-soft)); border:1px solid rgba(238,75,75,0.3); border-radius:9px;">
         <div class="section-head" style="color:var(--accent); margin-top:0;">Buat Akun VIP</div>
         <div style="display:flex; flex-direction:column; gap:7px;">
           <input type="text" id="vip-create-username" placeholder="Username VIP" class="inp">
@@ -1974,9 +2004,9 @@ const htmlTemplate = `<!DOCTYPE html>
           <button onclick="setUserFilter('reset')" data-filter="reset" class="user-filter-btn btn btn-ghost btn-xs">Reset Due</button>
         </div>
         <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:5px; margin-bottom:7px; text-align:center;">
-          <div style="padding:5px; background:var(--accent-soft); border:1px solid rgba(139,124,246,0.2); border-radius:6px;"><div style="font-size:8px; color:var(--accent); font-weight:700; text-transform:uppercase;">Total</div><div id="stat-total" class="mono" style="font-size:11px; font-weight:800;">-</div></div>
+          <div style="padding:5px; background:var(--accent-soft); border:1px solid rgba(238,75,75,0.2); border-radius:6px;"><div style="font-size:8px; color:var(--accent); font-weight:700; text-transform:uppercase;">Total</div><div id="stat-total" class="mono" style="font-size:11px; font-weight:800;">-</div></div>
           <div style="padding:5px; background:var(--warn-soft); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div style="font-size:8px; color:var(--warn); font-weight:700; text-transform:uppercase;">Admin</div><div id="stat-admins" class="mono" style="font-size:11px; font-weight:800; color:var(--warn);">-</div></div>
-          <div style="padding:5px; background:var(--accent-soft); border:1px solid rgba(139,124,246,0.2); border-radius:6px;"><div style="font-size:8px; color:var(--accent); font-weight:700; text-transform:uppercase;">VIP</div><div id="stat-vips" class="mono" style="font-size:11px; font-weight:800; color:var(--accent);">-</div></div>
+          <div style="padding:5px; background:var(--accent-soft); border:1px solid rgba(238,75,75,0.2); border-radius:6px;"><div style="font-size:8px; color:var(--accent); font-weight:700; text-transform:uppercase;">VIP</div><div id="stat-vips" class="mono" style="font-size:11px; font-weight:800; color:var(--accent);">-</div></div>
           <div style="padding:5px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.2); border-radius:6px;"><div style="font-size:8px; color:var(--info); font-weight:700; text-transform:uppercase;">Reset</div><div id="stat-reset" class="mono" style="font-size:11px; font-weight:800; color:var(--info);">-</div></div>
         </div>
         <div id="all-users-list" style="display:flex; flex-direction:column; gap:6px; max-height:250px; overflow-y:auto; font-size:11px;">
@@ -3923,7 +3953,7 @@ function updateQuotaStatusCard(data) {
   document.getElementById('quota-total-display').innerText = (data.isAdmin || data.isVip) ? '∞' : total;
   const card = document.getElementById('quota-status-card');
   const badge = document.getElementById('quota-status-badge');
-  if (data.isAdmin || data.isVip) { card.style.background = 'var(--accent-soft)'; card.style.borderColor = 'rgba(139,124,246,0.3)'; badge.className = 'badge badge-accent'; badge.innerText = data.isAdmin ? '👑 Admin' : '⭐ VIP'; }
+  if (data.isAdmin || data.isVip) { card.style.background = 'var(--accent-soft)'; card.style.borderColor = 'rgba(238,75,75,0.3)'; badge.className = 'badge badge-accent'; badge.innerText = data.isAdmin ? '👑 Admin' : '⭐ VIP'; }
   else if (remain <= 0) { card.style.background = 'var(--err-soft)'; card.style.borderColor = 'rgba(248,113,113,0.3)'; badge.className = 'badge badge-err'; badge.innerText = '✗ Habis'; }
   else if (remain <= 1) { card.style.background = 'var(--warn-soft)'; card.style.borderColor = 'rgba(251,191,36,0.3)'; badge.className = 'badge badge-warn'; badge.innerText = '⚠ Terbatas'; }
   else { card.style.background = 'var(--info-soft)'; card.style.borderColor = 'rgba(96,165,250,0.25)'; badge.className = 'badge badge-ok'; badge.innerText = '✓ Tersedia'; }
@@ -4235,7 +4265,7 @@ function renderUserList() {
   container.innerHTML = filtered.map(u => {
     let badgeClass = 'badge-muted', badgeText = '👤 User', borderColor = 'var(--line-2)';
     if (u.isAdmin) { badgeClass = 'badge-warn'; badgeText = '👑 Admin'; borderColor = 'rgba(251,191,36,0.4)'; }
-    else if (u.isVip) { badgeClass = 'badge-accent'; badgeText = '⭐ VIP'; borderColor = 'rgba(139,124,246,0.45)'; }
+    else if (u.isVip) { badgeClass = 'badge-accent'; badgeText = '⭐ VIP'; borderColor = 'rgba(238,75,75,0.45)'; }
     let quotaText = '', quotaColor = 'var(--info)';
     if (u.isAdmin) { quotaText = '∞ Unlimited'; quotaColor = 'var(--warn)'; }
     else if (u.isVip) { quotaText = '⭐ Unlimited'; quotaColor = 'var(--accent)'; }
@@ -4372,7 +4402,7 @@ function renderUserAnnouncements(data) {
   if (!container) return;
   if (data.success && Object.keys(data.announcements).length > 0) {
     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
-    container.innerHTML = entries.map(([id, val]) => '<div style="padding:11px 13px; background:var(--accent-soft); border:1px solid rgba(139,124,246,0.2); border-radius:9px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="font-size:11.5px; font-weight:700; color:var(--accent);">' + escapeHtml(val.title) + '</div><div class="mono" style="font-size:9px; color:var(--text-2);">' + new Date(val.timestamp).toLocaleDateString('id-ID') + '</div></div><div style="font-size:11px; color:var(--text-1); line-height:1.5; white-space:pre-line;">' + escapeHtml(val.content) + '</div></div>').join('');
+    container.innerHTML = entries.map(([id, val]) => '<div style="padding:11px 13px; background:var(--accent-soft); border:1px solid rgba(238,75,75,0.2); border-radius:9px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="font-size:11.5px; font-weight:700; color:var(--accent);">' + escapeHtml(val.title) + '</div><div class="mono" style="font-size:9px; color:var(--text-2);">' + new Date(val.timestamp).toLocaleDateString('id-ID') + '</div></div><div style="font-size:11px; color:var(--text-1); line-height:1.5; white-space:pre-line;">' + escapeHtml(val.content) + '</div></div>').join('');
   } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada</p>';
 }
 
