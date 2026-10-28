@@ -885,29 +885,61 @@ setInterval(async () => {
 }, ONLINE_CLEANUP_INTERVAL);
 
 // ====== ALIGHT MOTION API ======
+const AM_UA = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36';
+
+// Request manual (https bawaan Node) supaya GET bisa membawa body '{}' persis seperti curl
+function amRequest(method, apiPath, query, bodyObj) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(config.base + apiPath);
+    if (query) Object.keys(query).forEach(k => u.searchParams.set(k, query[k]));
+    const payload = Buffer.from(JSON.stringify(bodyObj || {}));
+    const req = https.request({
+      protocol: u.protocol, hostname: u.hostname, port: u.port || 443,
+      path: u.pathname + u.search, method,
+      headers: {
+        'User-Agent': AM_UA,
+        'Content-Type': 'application/json',
+        'Content-Length': payload.length,
+        'X-apikey': config.kyzznekooApiKey
+      },
+      timeout: 60000
+    }, (res) => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        let data;
+        try { data = JSON.parse(text); } catch (e) { data = { status: false, data: { message: text.substring(0, 200) } }; }
+        resolve({ httpStatus: res.statusCode, data });
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('Timeout menghubungi API AM')));
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+function amCheck(r) {
+  const d = r.data;
+  if (r.httpStatus >= 400 || !d || d.status === false) {
+    const msg = (d && d.data && d.data.message) || (d && d.message) || ('HTTP ' + r.httpStatus);
+    console.error('[AM API]', r.httpStatus, JSON.stringify(d).substring(0, 300));
+    throw new Error(msg);
+  }
+  return d;
+}
+
 const am = {
   async magiclink(email) {
-    if (!email.includes("@") || !email.includes(".")) throw new Error("Invalid email.");
-    const { data } = await go.get('/api/alightmotion/v5/magiclink', {
-      query: { email },
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36',
-        'Content-Type': 'application/json',
-        'X-apikey': config.kyzznekooApiKey
-      }
-    });
-    return data;
+    if (!email || !email.includes("@") || !email.includes(".")) throw new Error("Invalid email.");
+    email = String(email).trim();
+    const r = await amRequest('GET', '/api/alightmotion/v5/magiclink', { email }, {});
+    return amCheck(r);
   },
   async verif(email, url) {
-    const { data } = await go.post('/api/alightmotion/v5/premium', {
-      body: { email, url },
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36',
-        'Content-Type': 'application/json',
-        'X-apikey': config.kyzznekooApiKey
-      }
-    });
-    return data;
+    const r = await amRequest('POST', '/api/alightmotion/v5/premium', null, { email, url });
+    return amCheck(r);
   }
 };
 
