@@ -32,6 +32,18 @@ const db = getDatabase(firebaseApp);
 const DANA_ADMIN_NUMBER = '085377788830';
 const DANA_ADMIN_NAME = 'L,S';
 
+// ====== KONFIGURASI PEMBAYARAN QR OTOMATIS (INVOICE API) ======
+// API key sebaiknya disimpan di environment variable QR_PAY_API_KEY (nilai di bawah hanya cadangan)
+const QR_PAY_API_KEY = process.env.QR_PAY_API_KEY || 'sk_live_847f571682ccb5e89642d69d6b3a2dd9d8150cf1f72804c4';
+// Base URL API invoice (akhiran /v1 otomatis dibuang karena path /v1/invoices sudah ditambahkan di kode)
+const QR_PAY_BASE_URL = (process.env.QR_PAY_BASE_URL || 'https://api.sayabayar.com/v1').replace(/\/+$/, '').replace(/\/v1$/, '');
+const QR_PAY_TIMEOUT = 20 * 1000;
+const QR_PAID_STATUSES = ['paid', 'success', 'succeeded', 'settled', 'completed', 'confirmed', 'sukses', 'berhasil', 'lunas'];
+const QR_FAILED_STATUSES = ['expired', 'failed', 'cancelled', 'canceled', 'void', 'rejected', 'kedaluwarsa', 'gagal'];
+const QR_DEFAULT_VALID_MS = 25 * 60 * 1000;
+const qrActivationLocks = new Set();
+const qrConfirmCooldown = new Map();
+
 // ====== KONFIGURASI ONLINE TRACKING ======
 const ONLINE_TIMEOUT = 45 * 1000;
 const ONLINE_CLEANUP_INTERVAL = 60 * 1000;
@@ -164,6 +176,137 @@ async function getTransactionFromDb(id) {
 }
 async function saveTransactionToDb(id, data) { await set(ref(db, `transactions/${id}`), data); }
 async function removeTransactionFromDb(id) { await set(ref(db, `transactions/${id}`), null); }
+
+// ====== HELPER PEMBAYARAN QR OTOMATIS ======
+function qrPayRequest(method, apiPath, bodyObj) {
+  return new Promise((resolve, reject) => {
+    if (!QR_PAY_BASE_URL || QR_PAY_BASE_URL.includes('ISI-BASE-URL')) {
+      return reject(new Error('QR_PAY_BASE_URL belum diisi di index.js / environment variable'));
+    }
+    let target;
+    try { target = new URL(QR_PAY_BASE_URL + apiPath); } catch (e) { return reject(new Error('QR_PAY_BASE_URL tidak valid')); }
+    const payload = bodyObj ? JSON.stringify(bodyObj) : null;
+    const headers = {
+      'Accept': 'application/json',
+      'Authorization': 'Bearer ' + QR_PAY_API_KEY,
+      'X-API-Key': QR_PAY_API_KEY
+    };
+    if (payload) { headers['Content-Type'] = 'application/json'; headers['Content-Length'] = Buffer.byteLength(payload); }
+    const lib = target.protocol === 'http:' ? http : https;
+    const reqApi = lib.request(target, { method, headers, timeout: QR_PAY_TIMEOUT }, (resp) => {
+      let raw = '';
+      resp.on('data', (c) => { raw += c; });
+      resp.on('end', () => {
+        let json = null;
+        try { json = raw ? JSON.parse(raw) : {}; } catch (e) { json = null; }
+        if (resp.statusCode >= 200 && resp.statusCode < 300 && json) return resolve(json);
+        let msg = json && (json.message || json.error || json.detail);
+        if (msg && typeof msg === 'object') msg = msg.message || JSON.stringify(msg);
+        reject(new Error(msg || ('HTTP ' + resp.statusCode)));
+      });
+    });
+    reqApi.on('timeout', () => reqApi.destroy(new Error('Timeout menghubungi API pembayaran')));
+    reqApi.on('error', reject);
+    if (payload) reqApi.write(payload);
+    reqApi.end();
+  });
+}
+
+function qrPick(obj, keys) {
+  if (!obj || typeof obj !== 'object') return null;
+  for (const k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k]; }
+  return null;
+}
+
+function normalizeQrInvoice(raw) {
+  const d = (raw && raw.data && typeof raw.data === 'object' && !Array.isArray(raw.data)) ? raw.data : (raw || {});
+  const nested = (d.qris && typeof d.qris === 'object') ? d.qris : ((d.qr && typeof d.qr === 'object') ? d.qr : {});
+  const id = qrPick(d, ['id', 'invoice_id', 'invoiceId', 'qris_invoiceid']);
+  const status = String(qrPick(d, ['status', 'payment_status', 'state']) || '').toLowerCase();
+  const isPaidFlag = d.paid === true || !!d.paid_at || !!d.paidAt;
+  const amountRaw = Number(qrPick(d, ['amount', 'total', 'gross_amount', 'total_amount']));
+  let qrImage = qrPick(d, ['qr_image', 'qrImage', 'qr_url', 'qrUrl', 'qr_image_url', 'qris_url']) || qrPick(nested, ['image', 'url', 'qr_image', 'qr_url']);
+  let qrString = qrPick(d, ['qr_string', 'qrString', 'qris_string', 'qris_content', 'qr_content']) || qrPick(nested, ['string', 'content', 'qr_string', 'qris_content']);
+  const qrCode = qrPick(d, ['qr_code', 'qrCode', 'qr']);
+  if (typeof qrCode === 'string') {
+    if (/^(data:image|https?:\/\/)/i.test(qrCode)) { if (!qrImage) qrImage = qrCode; } else if (!qrString) { qrString = qrCode; }
+  }
+  const checkoutUrl = qrPick(d, ['checkout_url', 'payment_url', 'invoice_url', 'url']);
+  let expiresAt = qrPick(d, ['expires_at', 'expired_at', 'expiresAt', 'expiry_time', 'expiry']);
+  if (expiresAt !== null) {
+    if (typeof expiresAt === 'number') expiresAt = expiresAt < 1e12 ? expiresAt * 1000 : expiresAt;
+    else { const t = Date.parse(expiresAt); expiresAt = isNaN(t) ? null : t; }
+  }
+  return {
+    id: id !== null ? String(id) : null,
+    status,
+    isPaidFlag,
+    amount: isNaN(amountRaw) ? null : amountRaw,
+    qrImage: typeof qrImage === 'string' ? qrImage : null,
+    qrString: typeof qrString === 'string' ? qrString : null,
+    checkoutUrl: typeof checkoutUrl === 'string' && /^https?:\/\//i.test(checkoutUrl) ? checkoutUrl : null,
+    expiresAt
+  };
+}
+
+function qrClassify(inv) {
+  if (inv.isPaidFlag || QR_PAID_STATUSES.includes(inv.status)) return 'paid';
+  if (QR_FAILED_STATUSES.includes(inv.status)) return 'failed';
+  return 'pending';
+}
+
+function buildSessionPayload(username, userObj) {
+  const now = Date.now();
+  return {
+    success: true,
+    username,
+    isAdmin: !!userObj.isAdmin,
+    usedQuota: userObj.activatedEmails ? userObj.activatedEmails.length : 0,
+    bonusQuota: userObj.bonusQuota || 0,
+    totalQuota: (userObj.baseQuota || BASE_QUOTA) + (userObj.bonusQuota || 0),
+    isVip: !!(userObj.vipUntil && userObj.vipUntil > now),
+    vipUntil: userObj.vipUntil || 0
+  };
+}
+
+function qrTrxClientView(trx) {
+  return {
+    transactionId: trx.transactionId,
+    invoiceId: trx.invoiceId,
+    vipName: trx.vipName,
+    vipDays: trx.vipDays,
+    amount: trx.qrAmount || trx.vipPrice,
+    qrString: trx.qrString || null,
+    qrImage: trx.qrImage || null,
+    checkoutUrl: trx.checkoutUrl || null,
+    expiresAt: trx.qrExpiresAt || (trx.createdAt + QR_DEFAULT_VALID_MS)
+  };
+}
+
+// Aktivasi VIP otomatis setelah pembayaran terkonfirmasi (aman dipanggil berulang: hanya sekali aktif)
+async function activateVipFromTransaction(transactionId) {
+  if (qrActivationLocks.has(transactionId)) return { activated: false, busy: true };
+  qrActivationLocks.add(transactionId);
+  try {
+    const trx = await getTransactionFromDb(transactionId);
+    if (!trx) return { activated: false };
+    if (trx.status === 'success') return { activated: false, already: true, trx };
+    const targetUser = await getUserFromDb(trx.username);
+    if (!targetUser) return { activated: false };
+    const now = Date.now();
+    const base = (targetUser.vipUntil && targetUser.vipUntil > now) ? targetUser.vipUntil : now;
+    targetUser.vipUntil = base + (trx.vipDays * 24 * 60 * 60 * 1000);
+    await saveUserToDb(trx.username, targetUser);
+    trx.status = 'success';
+    trx.paidAt = now;
+    trx.updatedAt = now;
+    trx.adminNote = trx.adminNote || 'Dikonfirmasi otomatis via pembayaran QR';
+    await saveTransactionToDb(transactionId, trx);
+    return { activated: true, trx, user: targetUser };
+  } finally {
+    qrActivationLocks.delete(transactionId);
+  }
+}
 
 // ====== NETFLIX RESULTS HELPERS ======
 async function getNetflixResultsFromDb() {
@@ -1490,6 +1633,23 @@ const htmlTemplate = `<!DOCTYPE html>
           <div style="font-size:9.5px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em; margin-bottom:3px;">Total</div>
           <div id="selected-vip-price-display" class="mono" style="font-weight:800; font-size:16px; color:var(--info);">Rp 0</div>
         </div>
+        <div id="qris-section" class="hide" style="display:flex; flex-direction:column; gap:10px; padding:12px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:11px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--ok); letter-spacing:0.06em;">Bayar dengan QR (Otomatis)</div>
+            <span id="qris-status-badge" class="badge badge-warn">Menunggu</span>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Nominal sesuai produk</div>
+            <div id="qris-amount-display" class="mono" style="font-size:18px; font-weight:800; color:var(--info);">Rp 0</div>
+          </div>
+          <div id="qris-qr-box" style="background:#ffffff; border-radius:10px; padding:12px; min-height:200px; display:flex; align-items:center; justify-content:center; color:#334155; font-size:12px;">Memuat QR...</div>
+          <div id="qris-expiry-text" style="text-align:center; font-size:10.5px; color:var(--warn);"></div>
+          <div style="text-align:center; font-size:9.5px; color:var(--text-2);">Invoice: <span id="qris-invoice-id" class="mono">-</span></div>
+          <div style="font-size:10.5px; color:var(--text-1); text-align:center;">Scan QR dengan aplikasi e-wallet / m-banking, bayar sesuai nominal, lalu tekan tombol di bawah.</div>
+          <button onclick="handleQrisConfirm()" id="btn-qris-confirm" class="btn btn-ok">✅ Saya Sudah Bayar</button>
+          <a id="qris-checkout-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-xs hide" style="text-align:center;">Buka halaman pembayaran</a>
+          <button onclick="reloadQrisPayment()" id="btn-qris-reload" class="btn btn-ghost btn-xs">↻ Muat Ulang QR</button>
+        </div>
         <div class="dana-card">
           <div class="dana-chip">DANA</div>
           <div style="font-size:10px; color:#60c4ff; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:3px;">Transfer ke</div>
@@ -1838,7 +1998,7 @@ const htmlTemplate = `<!DOCTYPE html>
     </div>
   </div>
 
-  <div style="text-align:center; font-size:10px; color:var(--text-2); padding:10px 0; letter-spacing:0.08em; text-transform:uppercase; font-weight:600;">AM PREMIUM  •  BANGGUS</div>
+  <div style="text-align:center; font-size:10px; color:var(--text-2); padding:10px 0; letter-spacing:0.08em; text-transform:uppercase; font-weight:600;">AM PREMIUM  • BANGGUS</div>
 </div>
 
 <script>
@@ -3242,6 +3402,199 @@ async function loadUserTransactions() {
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
 }
 
+// ====== PEMBAYARAN QR OTOMATIS (CLIENT) ======
+let qrisTrxId = null;
+let qrisVipId = null;
+let qrisPollTimer = null;
+let qrisExpiryTimer = null;
+let qrisCheckBusy = false;
+let qrisReqSeq = 0;
+let qrisLibPromise = null;
+
+function loadQrLib() {
+  if (window.QRCode) return Promise.resolve();
+  if (qrisLibPromise) return qrisLibPromise;
+  qrisLibPromise = new Promise(function(resolve, reject) {
+    var s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+    s.onload = resolve;
+    s.onerror = function() { qrisLibPromise = null; reject(new Error('QR lib gagal dimuat')); };
+    document.head.appendChild(s);
+  });
+  return qrisLibPromise;
+}
+
+function setQrisBadge(type) {
+  var el = document.getElementById('qris-status-badge');
+  if (!el) return;
+  if (type === 'paid') { el.className = 'badge badge-ok'; el.innerText = '✓ Lunas'; }
+  else if (type === 'failed') { el.className = 'badge badge-err'; el.innerText = '✗ Kedaluwarsa'; }
+  else { el.className = 'badge badge-warn'; el.innerText = 'Menunggu'; }
+}
+
+function stopQrisTimers() {
+  if (qrisPollTimer) { clearInterval(qrisPollTimer); qrisPollTimer = null; }
+  if (qrisExpiryTimer) { clearInterval(qrisExpiryTimer); qrisExpiryTimer = null; }
+}
+
+function renderQrisBox(data) {
+  var box = document.getElementById('qris-qr-box');
+  box.innerHTML = '';
+  if (data.qrImage) {
+    var img = document.createElement('img');
+    img.src = data.qrImage;
+    img.alt = 'QR Pembayaran';
+    img.style.cssText = 'width:100%; max-width:260px; height:auto; display:block; margin:0 auto;';
+    box.appendChild(img);
+  } else if (data.qrString) {
+    var holder = document.createElement('div');
+    holder.style.cssText = 'display:flex; justify-content:center;';
+    box.appendChild(holder);
+    loadQrLib().then(function() {
+      new QRCode(holder, { text: data.qrString, width: 260, height: 260, correctLevel: QRCode.CorrectLevel.M });
+    }).catch(function() {
+      box.innerHTML = '<div style="color:#b91c1c; font-size:11px; text-align:center;">Gagal memuat QR. Gunakan tombol Buka halaman pembayaran / Muat Ulang QR.</div>';
+    });
+  } else {
+    box.innerHTML = '<div style="color:#334155; font-size:11px; text-align:center;">QR tidak tersedia. Gunakan tombol Buka halaman pembayaran.</div>';
+  }
+}
+
+function startQrisCountdown(expiresAt) {
+  if (qrisExpiryTimer) { clearInterval(qrisExpiryTimer); qrisExpiryTimer = null; }
+  var el = document.getElementById('qris-expiry-text');
+  if (!el) return;
+  if (!expiresAt) { el.innerText = ''; return; }
+  var tick = function() {
+    var left = expiresAt - Date.now();
+    if (left <= 0) {
+      el.innerText = 'QR kedaluwarsa. Tekan Muat Ulang QR untuk membuat QR baru.';
+      if (qrisExpiryTimer) { clearInterval(qrisExpiryTimer); qrisExpiryTimer = null; }
+      return;
+    }
+    var m = Math.floor(left / 60000);
+    var s = Math.floor((left % 60000) / 1000);
+    el.innerText = 'Berlaku ' + m + ':' + (s < 10 ? '0' : '') + s;
+  };
+  tick();
+  qrisExpiryTimer = setInterval(tick, 1000);
+}
+
+async function startQrisPayment(vipId) {
+  if (!loggedInUsername || !vipId) return;
+  qrisVipId = vipId;
+  var mySeq = ++qrisReqSeq;
+  stopQrisTimers();
+  qrisTrxId = null;
+  var section = document.getElementById('qris-section');
+  if (!section) return;
+  section.classList.remove('hide');
+  setQrisBadge('pending');
+  document.getElementById('btn-qris-confirm').classList.remove('hide');
+  document.getElementById('qris-qr-box').innerHTML = 'Membuat QR...';
+  document.getElementById('qris-expiry-text').innerText = '';
+  document.getElementById('qris-invoice-id').innerText = '-';
+  document.getElementById('qris-checkout-link').classList.add('hide');
+  try {
+    var res = await fetch('/api/qris/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: loggedInUsername, vipId: vipId }) });
+    var data = await res.json();
+    if (mySeq !== qrisReqSeq) return;
+    if (!data.success) {
+      document.getElementById('qris-qr-box').innerHTML = '<div style="color:#b91c1c; font-size:11px; text-align:center;">' + escapeHtml(data.message || 'Gagal membuat QR') + '</div>';
+      showToast(data.message || 'Gagal membuat QR', 'error');
+      return;
+    }
+    qrisTrxId = data.transactionId;
+    document.getElementById('qris-amount-display').innerText = 'Rp ' + Number(data.amount).toLocaleString('id-ID');
+    document.getElementById('qris-invoice-id').innerText = data.invoiceId || '-';
+    var link = document.getElementById('qris-checkout-link');
+    if (data.checkoutUrl) { link.href = data.checkoutUrl; link.classList.remove('hide'); }
+    renderQrisBox(data);
+    startQrisCountdown(data.expiresAt);
+    qrisPollTimer = setInterval(checkQrisStatus, 6000);
+    showToast('QR siap. Scan & bayar sesuai nominal.', 'success');
+    loadUserTransactions();
+  } catch (e) {
+    if (mySeq !== qrisReqSeq) return;
+    document.getElementById('qris-qr-box').innerHTML = '<div style="color:#b91c1c; font-size:11px; text-align:center;">Kesalahan koneksi</div>';
+    showToast('Kesalahan koneksi', 'error');
+  }
+}
+
+function reloadQrisPayment() {
+  if (!qrisVipId) return showToast('Pilih produk VIP dulu!', 'error');
+  startQrisPayment(qrisVipId);
+}
+
+function applyVipSessionUpdate(s) {
+  if (!s) return;
+  isVipUser = !!s.isVip;
+  var dr = document.getElementById('drawer-role'); if (dr) dr.innerText = 'VIP Member';
+  var pr = document.getElementById('profile-role'); if (pr) pr.innerText = 'VIP Member';
+  var pq = document.getElementById('profile-quota'); if (pq) pq.innerText = 'Unlimited';
+  try { checkVipStatus(s); } catch (e) {}
+  try { updateQuotaDisplay(s); } catch (e) {}
+  try { updateNetflixQuotaDisplay(); } catch (e) {}
+}
+
+function onQrisPaid(data) {
+  stopQrisTimers();
+  qrisTrxId = null;
+  setQrisBadge('paid');
+  document.getElementById('btn-qris-confirm').classList.add('hide');
+  document.getElementById('qris-expiry-text').innerText = '';
+  document.getElementById('qris-qr-box').innerHTML = '<div style="color:#047857; font-size:13px; font-weight:700; text-align:center;">✅ Pembayaran berhasil!<br>Akun kamu sekarang VIP.</div>';
+  applyVipSessionUpdate(data.session);
+  showToast(data.message || 'Pembayaran berhasil! Akun VIP aktif.', 'success', 5000);
+  loadUserTransactions();
+}
+
+function onQrisFailed(data) {
+  stopQrisTimers();
+  qrisTrxId = null;
+  setQrisBadge('failed');
+  document.getElementById('qris-qr-box').innerHTML = '<div style="color:#b91c1c; font-size:12px; text-align:center;">QR kedaluwarsa / dibatalkan.<br>Tekan Muat Ulang QR.</div>';
+  showToast(data.message || 'QR kedaluwarsa', 'error');
+  loadUserTransactions();
+}
+
+async function checkQrisStatus() {
+  if (!qrisTrxId || qrisCheckBusy) return;
+  var sec = document.getElementById('section-vipshop');
+  if (sec && sec.classList.contains('hide')) return;
+  qrisCheckBusy = true;
+  var trxAtStart = qrisTrxId;
+  try {
+    var res = await fetch('/api/qris/status?username=' + encodeURIComponent(loggedInUsername) + '&transactionId=' + encodeURIComponent(trxAtStart));
+    var data = await res.json();
+    if (trxAtStart !== qrisTrxId) return;
+    if (data.status === 'paid') onQrisPaid(data);
+    else if (data.status === 'failed') onQrisFailed(data);
+  } catch (e) {}
+  finally { qrisCheckBusy = false; }
+}
+
+async function handleQrisConfirm() {
+  if (!qrisTrxId) return showToast('Pilih produk VIP dulu!', 'error');
+  var btn = document.getElementById('btn-qris-confirm');
+  btn.disabled = true; btn.innerText = 'Memeriksa pembayaran...';
+  try {
+    var res = await fetch('/api/qris/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: loggedInUsername, transactionId: qrisTrxId }) });
+    var data = await res.json();
+    if (data.status === 'paid') onQrisPaid(data);
+    else if (data.status === 'failed') onQrisFailed(data);
+    else showToast(data.message || 'Pembayaran belum terdeteksi', 'error');
+  } catch (e) { showToast('Kesalahan koneksi', 'error'); }
+  finally { btn.disabled = false; btn.innerText = '✅ Saya Sudah Bayar'; }
+}
+
+// Pilih produk VIP -> QR otomatis dibuat sesuai harga produk (fungsi lama tetap dipanggil apa adanya)
+var __origSelectVipItem = selectVipItem;
+selectVipItem = function(itemId) {
+  __origSelectVipItem(itemId);
+  startQrisPayment(itemId);
+};
+
 async function handleSubmitFeatureRequest() {
   const title = document.getElementById('feature-request-title').value.trim();
   const description = document.getElementById('feature-request-desc').value.trim();
@@ -4573,6 +4926,110 @@ const server = http.createServer(async (req, res) => {
       await saveTransactionToDb(transactionId, trx);
       jsonResponse(res, 200, { success: true, message: 'Bukti terkirim!' });
 
+    } else if (parsedUrl.pathname === '/api/qris/create' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, vipId } = JSON.parse(body);
+      const cleanUser = username ? String(username).toLowerCase() : '';
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
+      const shop = await getVipShopFromDb();
+      const item = vipId ? shop[vipId] : null;
+      if (!item || item.active === false) return jsonResponse(res, 400, { success: false, message: 'Produk VIP tidak ditemukan atau tidak aktif!' });
+      const price = parseInt(item.price);
+      const days = parseInt(item.days);
+      if (!price || price < 1 || !days || days < 1) return jsonResponse(res, 400, { success: false, message: 'Data produk VIP tidak valid!' });
+      const nowTs = Date.now();
+      const allTrxQr = await getTransactionsFromDb();
+      const reusable = Object.values(allTrxQr).find(t => t.username === cleanUser && t.method === 'qris' && t.vipId === vipId && t.status === 'pending' && t.vipPrice === price && (t.qrExpiresAt ? t.qrExpiresAt > nowTs + 60000 : (nowTs - t.createdAt) < QR_DEFAULT_VALID_MS - 60000));
+      if (reusable) return jsonResponse(res, 200, Object.assign({ success: true, reused: true }, qrTrxClientView(reusable)));
+      const transactionId = 'TRX-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+      let invoice;
+      try {
+        const raw = await qrPayRequest('POST', '/v1/invoices', {
+          amount: price,
+          description: 'VIP ' + item.name + ' - ' + cleanUser,
+          external_id: transactionId,
+          payment_method: 'qris',
+          customer_name: cleanUser
+        });
+        invoice = normalizeQrInvoice(raw);
+      } catch (apiErr) {
+        return jsonResponse(res, 502, { success: false, message: 'Gagal membuat QR: ' + apiErr.message });
+      }
+      if (!invoice.id) return jsonResponse(res, 502, { success: false, message: 'Respons API pembayaran tidak berisi ID invoice.' });
+      if (!invoice.qrImage && !invoice.qrString && !invoice.checkoutUrl) return jsonResponse(res, 502, { success: false, message: 'Respons API pembayaran tidak berisi data QR.' });
+      const newTrx = {
+        transactionId, username: cleanUser, vipId, vipName: item.name, vipPrice: price, vipDays: days,
+        status: 'pending', method: 'qris', invoiceId: invoice.id,
+        qrAmount: invoice.amount || price, qrString: invoice.qrString, qrImage: invoice.qrImage,
+        checkoutUrl: invoice.checkoutUrl, qrExpiresAt: invoice.expiresAt,
+        proofImage: null, proofFileName: null, createdAt: Date.now(), updatedAt: Date.now(), adminNote: ''
+      };
+      await saveTransactionToDb(transactionId, newTrx);
+      jsonResponse(res, 200, Object.assign({ success: true, reused: false }, qrTrxClientView(newTrx)));
+
+    } else if (parsedUrl.pathname === '/api/qris/status' && req.method === 'GET') {
+      const username = parsedUrl.searchParams.get('username');
+      const transactionId = parsedUrl.searchParams.get('transactionId');
+      const cleanUser = username ? username.toLowerCase() : '';
+      const trx = transactionId ? await getTransactionFromDb(transactionId) : null;
+      if (!trx || trx.method !== 'qris') return jsonResponse(res, 404, { success: false, message: 'Transaksi QR tidak ditemukan!' });
+      if (trx.username !== cleanUser) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      if (trx.status === 'success') {
+        const u = await getUserFromDb(cleanUser);
+        return jsonResponse(res, 200, { success: true, status: 'paid', message: 'Pembayaran berhasil. Akun VIP aktif!', session: u ? buildSessionPayload(cleanUser, u) : null });
+      }
+      if (trx.status === 'failed') return jsonResponse(res, 200, { success: true, status: 'failed', message: trx.adminNote || 'Pembayaran gagal / kedaluwarsa.' });
+      try {
+        const inv = normalizeQrInvoice(await qrPayRequest('GET', '/v1/invoices/' + encodeURIComponent(trx.invoiceId)));
+        const state = qrClassify(inv);
+        if (state === 'paid') {
+          const act = await activateVipFromTransaction(transactionId);
+          const u = await getUserFromDb(cleanUser);
+          return jsonResponse(res, 200, { success: true, status: 'paid', activated: !!act.activated, message: 'Pembayaran berhasil. Akun VIP aktif!', session: u ? buildSessionPayload(cleanUser, u) : null });
+        }
+        if (state === 'failed') {
+          trx.status = 'failed'; trx.adminNote = 'Invoice ' + (inv.status || 'gagal') + ' (QR)'; trx.updatedAt = Date.now();
+          await saveTransactionToDb(transactionId, trx);
+          return jsonResponse(res, 200, { success: true, status: 'failed', message: 'QR kedaluwarsa / dibatalkan. Pilih produk lagi untuk membuat QR baru.' });
+        }
+        jsonResponse(res, 200, { success: true, status: 'pending' });
+      } catch (apiErr) {
+        jsonResponse(res, 200, { success: true, status: 'pending', warning: apiErr.message });
+      }
+
+    } else if (parsedUrl.pathname === '/api/qris/confirm' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, transactionId } = JSON.parse(body);
+      const cleanUser = username ? String(username).toLowerCase() : '';
+      const trx = transactionId ? await getTransactionFromDb(transactionId) : null;
+      if (!trx || trx.method !== 'qris') return jsonResponse(res, 404, { success: false, message: 'Transaksi QR tidak ditemukan!' });
+      if (trx.username !== cleanUser) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      if (trx.status === 'success') {
+        const u0 = await getUserFromDb(cleanUser);
+        return jsonResponse(res, 200, { success: true, status: 'paid', message: 'Akun kamu sudah VIP.', session: u0 ? buildSessionPayload(cleanUser, u0) : null });
+      }
+      const lastTry = qrConfirmCooldown.get(transactionId) || 0;
+      if (Date.now() - lastTry < 3000) return jsonResponse(res, 429, { success: false, status: 'pending', message: 'Tunggu beberapa detik sebelum konfirmasi lagi.' });
+      qrConfirmCooldown.set(transactionId, Date.now());
+      let confirmError = null;
+      try { await qrPayRequest('POST', '/v1/invoices/' + encodeURIComponent(trx.invoiceId) + '/confirm', {}); } catch (cErr) { confirmError = cErr.message; }
+      let inv;
+      try { inv = normalizeQrInvoice(await qrPayRequest('GET', '/v1/invoices/' + encodeURIComponent(trx.invoiceId))); }
+      catch (gErr) { return jsonResponse(res, 502, { success: false, status: 'pending', message: 'Gagal cek status pembayaran: ' + gErr.message }); }
+      const state = qrClassify(inv);
+      if (state === 'paid') {
+        const act = await activateVipFromTransaction(transactionId);
+        const u = await getUserFromDb(cleanUser);
+        return jsonResponse(res, 200, { success: true, status: 'paid', activated: !!act.activated, message: 'Pembayaran terkonfirmasi! Akun kamu sekarang VIP.', session: u ? buildSessionPayload(cleanUser, u) : null });
+      }
+      if (state === 'failed') {
+        trx.status = 'failed'; trx.adminNote = 'Invoice ' + (inv.status || 'gagal') + ' (QR)'; trx.updatedAt = Date.now();
+        await saveTransactionToDb(transactionId, trx);
+        return jsonResponse(res, 200, { success: false, status: 'failed', message: 'QR kedaluwarsa / dibatalkan. Pilih produk lagi untuk membuat QR baru.' });
+      }
+      jsonResponse(res, 200, { success: false, status: 'pending', message: confirmError ? ('Konfirmasi belum berhasil: ' + confirmError) : 'Pembayaran belum terdeteksi. Pastikan sudah membayar, lalu coba lagi.' });
+
     } else if (parsedUrl.pathname === '/api/transaction/my' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
@@ -5145,9 +5602,9 @@ server.listen(PORT, () => {
   console.log('║  🖼️  HD Foto Generator (Sebelum/Sesudah)                      ║');
   console.log('║  📦 APK Builder (Website → APK)                              ║');
   console.log('║  🛒 VIP Shop & Transaksi                                     ║');
+  console.log('║  📲 Bayar QR Otomatis + Aktivasi VIP Otomatis                ║');
   console.log('║  💬 Chat Global & Orderan                                    ║');
   console.log('║  🔔 Browser Notification (BARU!)                             ║');
   console.log('║  ⚙️  Panel Admin Lengkap                                     ║');
-  console.log('║  🖼️  Admin bisa lihat & zoom foto bukti pembayaran (BARU!)   ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
