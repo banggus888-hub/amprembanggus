@@ -43,6 +43,7 @@ const QR_FAILED_STATUSES = ['expired', 'failed', 'cancelled', 'canceled', 'void'
 const QR_DEFAULT_VALID_MS = 25 * 60 * 1000;
 const qrActivationLocks = new Set();
 const qrConfirmCooldown = new Map();
+const qrPendingIds = new Set();
 
 // ====== KONFIGURASI ONLINE TRACKING ======
 const ONLINE_TIMEOUT = 45 * 1000;
@@ -306,6 +307,38 @@ async function activateVipFromTransaction(transactionId) {
     qrActivationLocks.delete(transactionId);
   }
 }
+
+// Cek otomatis di server: pembayaran QR yang terdeteksi lunas langsung mengaktifkan VIP (walau halaman user sudah ditutup)
+let qrSweepRunning = false;
+async function sweepPendingQrTransactions() {
+  if (qrSweepRunning || qrPendingIds.size === 0) return;
+  qrSweepRunning = true;
+  try {
+    for (const trxId of Array.from(qrPendingIds)) {
+      try {
+        const trx = await getTransactionFromDb(trxId);
+        if (!trx || trx.method !== 'qris' || trx.status !== 'pending' || (Date.now() - trx.createdAt) > 60 * 60 * 1000) { qrPendingIds.delete(trxId); continue; }
+        const inv = normalizeQrInvoice(await qrPayRequest('GET', '/v1/invoices/' + encodeURIComponent(trx.invoiceId)));
+        const state = qrClassify(inv);
+        if (state === 'paid') {
+          await activateVipFromTransaction(trxId);
+          qrPendingIds.delete(trxId);
+        } else if (state === 'failed') {
+          trx.status = 'failed'; trx.adminNote = 'Invoice ' + (inv.status || 'gagal') + ' (QR)'; trx.updatedAt = Date.now();
+          await saveTransactionToDb(trxId, trx);
+          qrPendingIds.delete(trxId);
+        }
+      } catch (e) {}
+    }
+  } finally { qrSweepRunning = false; }
+}
+(async () => {
+  try {
+    const all = await getTransactionsFromDb();
+    Object.values(all).forEach(t => { if (t && t.method === 'qris' && t.status === 'pending' && t.invoiceId && (Date.now() - t.createdAt) < 60 * 60 * 1000) qrPendingIds.add(t.transactionId); });
+  } catch (e) {}
+})();
+setInterval(sweepPendingQrTransactions, 15000);
 
 // ====== NETFLIX RESULTS HELPERS ======
 async function getNetflixResultsFromDb() {
@@ -1632,6 +1665,13 @@ const htmlTemplate = `<!DOCTYPE html>
           <div style="font-size:9.5px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em; margin-bottom:3px;">Total</div>
           <div id="selected-vip-price-display" class="mono" style="font-weight:800; font-size:16px; color:var(--info);">Rp 0</div>
         </div>
+        <div id="pay-method-chooser" style="display:flex; flex-direction:column; gap:8px;">
+          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--text-2); letter-spacing:0.06em;">Pilih Metode Pembayaran</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <button onclick="choosePayMethod('qr')" id="pay-method-btn-qr" class="btn btn-ghost btn-sm">📲 QR (Otomatis)</button>
+            <button onclick="choosePayMethod('dana')" id="pay-method-btn-dana" class="btn btn-ghost btn-sm">💳 Nomor DANA</button>
+          </div>
+        </div>
         <div id="qris-section" class="hide" style="display:flex; flex-direction:column; gap:10px; padding:12px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:11px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--ok); letter-spacing:0.06em;">Bayar dengan QR (Otomatis)</div>
@@ -1641,14 +1681,13 @@ const htmlTemplate = `<!DOCTYPE html>
             <div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Nominal sesuai produk</div>
             <div id="qris-amount-display" class="mono" style="font-size:18px; font-weight:800; color:var(--info);">Rp 0</div>
           </div>
-          <div id="qris-qr-box" style="background:#ffffff; border-radius:10px; padding:12px; min-height:200px; display:flex; align-items:center; justify-content:center; color:#334155; font-size:12px;">Memuat QR...</div>
+          <a id="qris-checkout-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-warn hide" style="text-align:center; text-decoration:none;">🔗 Buka Halaman Pembayaran QR</a>
+          <div id="qris-result-text" style="text-align:center; font-size:11px; color:var(--text-1); line-height:1.5;">-</div>
           <div id="qris-expiry-text" style="text-align:center; font-size:10.5px; color:var(--warn);"></div>
           <div style="text-align:center; font-size:9.5px; color:var(--text-2);">Invoice: <span id="qris-invoice-id" class="mono">-</span></div>
-          <div style="font-size:10.5px; color:var(--text-1); text-align:center;">Scan QR dengan aplikasi e-wallet / m-banking, bayar sesuai nominal, lalu tekan tombol di bawah.</div>
-          <button onclick="handleQrisConfirm()" id="btn-qris-confirm" class="btn btn-ok">✅ Saya Sudah Bayar</button>
-          <a id="qris-checkout-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-xs hide" style="text-align:center;">Buka halaman pembayaran</a>
-          <button onclick="reloadQrisPayment()" id="btn-qris-reload" class="btn btn-ghost btn-xs">↻ Muat Ulang QR</button>
+          <button onclick="reloadQrisPayment()" id="btn-qris-reload" class="btn btn-ghost btn-xs">↻ Buat Link Baru</button>
         </div>
+        <div id="dana-method-wrap" class="hide" style="display:flex; flex-direction:column; gap:12px;">
         <div class="dana-card">
           <div class="dana-chip">DANA</div>
           <div style="font-size:10px; color:#60c4ff; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:3px;">Transfer ke</div>
@@ -1680,6 +1719,7 @@ const htmlTemplate = `<!DOCTYPE html>
         <div id="transaction-status-box" class="hide" style="padding:11px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:9px;">
           <div style="font-size:9.5px; font-weight:700; text-transform:uppercase; color:var(--text-2); letter-spacing:0.06em; margin-bottom:5px;">Status</div>
           <div id="transaction-status-content"></div>
+        </div>
         </div>
       </div>
       <div style="padding-top:12px; border-top:1px solid var(--line);">
@@ -3408,20 +3448,6 @@ let qrisPollTimer = null;
 let qrisExpiryTimer = null;
 let qrisCheckBusy = false;
 let qrisReqSeq = 0;
-let qrisLibPromise = null;
-
-function loadQrLib() {
-  if (window.QRCode) return Promise.resolve();
-  if (qrisLibPromise) return qrisLibPromise;
-  qrisLibPromise = new Promise(function(resolve, reject) {
-    var s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
-    s.onload = resolve;
-    s.onerror = function() { qrisLibPromise = null; reject(new Error('QR lib gagal dimuat')); };
-    document.head.appendChild(s);
-  });
-  return qrisLibPromise;
-}
 
 function setQrisBadge(type) {
   var el = document.getElementById('qris-status-badge');
@@ -3431,33 +3457,16 @@ function setQrisBadge(type) {
   else { el.className = 'badge badge-warn'; el.innerText = 'Menunggu'; }
 }
 
+function setQrisMessage(text, color) {
+  var el = document.getElementById('qris-result-text');
+  if (!el) return;
+  el.style.color = color || 'var(--text-1)';
+  el.innerText = text;
+}
+
 function stopQrisTimers() {
   if (qrisPollTimer) { clearInterval(qrisPollTimer); qrisPollTimer = null; }
   if (qrisExpiryTimer) { clearInterval(qrisExpiryTimer); qrisExpiryTimer = null; }
-}
-
-function renderQrisBox(data) {
-  var box = document.getElementById('qris-qr-box');
-  box.innerHTML = '';
-  if (!data.qrImage && !data.qrString && data.checkoutUrl) data = Object.assign({}, data, { qrString: data.checkoutUrl });
-  if (data.qrImage) {
-    var img = document.createElement('img');
-    img.src = data.qrImage;
-    img.alt = 'QR Pembayaran';
-    img.style.cssText = 'width:100%; max-width:260px; height:auto; display:block; margin:0 auto;';
-    box.appendChild(img);
-  } else if (data.qrString) {
-    var holder = document.createElement('div');
-    holder.style.cssText = 'display:flex; justify-content:center;';
-    box.appendChild(holder);
-    loadQrLib().then(function() {
-      new QRCode(holder, { text: data.qrString, width: 260, height: 260, correctLevel: QRCode.CorrectLevel.M });
-    }).catch(function() {
-      box.innerHTML = '<div style="color:#b91c1c; font-size:11px; text-align:center;">Gagal memuat QR. Gunakan tombol Buka halaman pembayaran / Muat Ulang QR.</div>';
-    });
-  } else {
-    box.innerHTML = '<div style="color:#334155; font-size:11px; text-align:center;">QR tidak tersedia. Gunakan tombol Buka halaman pembayaran.</div>';
-  }
 }
 
 function startQrisCountdown(expiresAt) {
@@ -3468,7 +3477,7 @@ function startQrisCountdown(expiresAt) {
   var tick = function() {
     var left = expiresAt - Date.now();
     if (left <= 0) {
-      el.innerText = 'QR kedaluwarsa. Tekan Muat Ulang QR untuk membuat QR baru.';
+      el.innerText = 'Link kedaluwarsa. Tekan Buat Link Baru.';
       if (qrisExpiryTimer) { clearInterval(qrisExpiryTimer); qrisExpiryTimer = null; }
       return;
     }
@@ -3480,43 +3489,76 @@ function startQrisCountdown(expiresAt) {
   qrisExpiryTimer = setInterval(tick, 1000);
 }
 
+function highlightPayMethod(method) {
+  var qrBtn = document.getElementById('pay-method-btn-qr');
+  var danaBtn = document.getElementById('pay-method-btn-dana');
+  if (qrBtn) qrBtn.style.outline = method === 'qr' ? '2px solid var(--ok)' : 'none';
+  if (danaBtn) danaBtn.style.outline = method === 'dana' ? '2px solid var(--info)' : 'none';
+}
+
+function resetPayMethod() {
+  stopQrisTimers();
+  qrisReqSeq++;
+  qrisTrxId = null;
+  var qrSec = document.getElementById('qris-section');
+  var danaWrap = document.getElementById('dana-method-wrap');
+  if (qrSec) qrSec.classList.add('hide');
+  if (danaWrap) danaWrap.classList.add('hide');
+  highlightPayMethod(null);
+}
+
+function choosePayMethod(method) {
+  var vipId = document.getElementById('selected-vip-id').value;
+  if (!vipId) return showToast('Pilih layanan dulu!', 'error');
+  var qrSec = document.getElementById('qris-section');
+  var danaWrap = document.getElementById('dana-method-wrap');
+  highlightPayMethod(method);
+  if (method === 'qr') {
+    danaWrap.classList.add('hide');
+    qrSec.classList.remove('hide');
+    startQrisPayment(vipId);
+  } else {
+    stopQrisTimers();
+    qrisReqSeq++;
+    qrisTrxId = null;
+    qrSec.classList.add('hide');
+    danaWrap.classList.remove('hide');
+  }
+}
+
 async function startQrisPayment(vipId) {
   if (!loggedInUsername || !vipId) return;
   qrisVipId = vipId;
   var mySeq = ++qrisReqSeq;
   stopQrisTimers();
   qrisTrxId = null;
-  var section = document.getElementById('qris-section');
-  if (!section) return;
-  section.classList.remove('hide');
   setQrisBadge('pending');
-  document.getElementById('btn-qris-confirm').classList.remove('hide');
-  document.getElementById('qris-qr-box').innerHTML = 'Membuat QR...';
+  var link = document.getElementById('qris-checkout-link');
+  link.classList.add('hide');
+  setQrisMessage('Membuat link pembayaran...', 'var(--text-1)');
   document.getElementById('qris-expiry-text').innerText = '';
   document.getElementById('qris-invoice-id').innerText = '-';
-  document.getElementById('qris-checkout-link').classList.add('hide');
   try {
     var res = await fetch('/api/qris/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: loggedInUsername, vipId: vipId }) });
     var data = await res.json();
     if (mySeq !== qrisReqSeq) return;
     if (!data.success) {
-      document.getElementById('qris-qr-box').innerHTML = '<div style="color:#b91c1c; font-size:11px; text-align:center;">' + escapeHtml(data.message || 'Gagal membuat QR') + '</div>';
-      showToast(data.message || 'Gagal membuat QR', 'error');
+      setQrisMessage(data.message || 'Gagal membuat link pembayaran', 'var(--err)');
+      showToast(data.message || 'Gagal membuat link pembayaran', 'error');
       return;
     }
     qrisTrxId = data.transactionId;
     document.getElementById('qris-amount-display').innerText = 'Rp ' + Number(data.amount).toLocaleString('id-ID');
     document.getElementById('qris-invoice-id').innerText = data.invoiceId || '-';
-    var link = document.getElementById('qris-checkout-link');
     if (data.checkoutUrl) { link.href = data.checkoutUrl; link.classList.remove('hide'); }
-    renderQrisBox(data);
+    setQrisMessage('Klik tombol di atas untuk membayar lewat QR. Setelah pembayaran terdeteksi, akun otomatis menjadi VIP, tidak perlu konfirmasi lagi.', 'var(--text-1)');
     startQrisCountdown(data.expiresAt);
     qrisPollTimer = setInterval(checkQrisStatus, 6000);
-    showToast('QR siap. Scan & bayar sesuai nominal.', 'success');
+    showToast('Link pembayaran siap.', 'success');
     loadUserTransactions();
   } catch (e) {
     if (mySeq !== qrisReqSeq) return;
-    document.getElementById('qris-qr-box').innerHTML = '<div style="color:#b91c1c; font-size:11px; text-align:center;">Kesalahan koneksi</div>';
+    setQrisMessage('Kesalahan koneksi', 'var(--err)');
     showToast('Kesalahan koneksi', 'error');
   }
 }
@@ -3541,9 +3583,9 @@ function onQrisPaid(data) {
   stopQrisTimers();
   qrisTrxId = null;
   setQrisBadge('paid');
-  document.getElementById('btn-qris-confirm').classList.add('hide');
+  document.getElementById('qris-checkout-link').classList.add('hide');
   document.getElementById('qris-expiry-text').innerText = '';
-  document.getElementById('qris-qr-box').innerHTML = '<div style="color:#047857; font-size:13px; font-weight:700; text-align:center;">✅ Pembayaran berhasil!<br>Akun kamu sekarang VIP.</div>';
+  setQrisMessage('✅ Pembayaran terdeteksi! Akun kamu sekarang VIP.', 'var(--ok)');
   applyVipSessionUpdate(data.session);
   showToast(data.message || 'Pembayaran berhasil! Akun VIP aktif.', 'success', 5000);
   loadUserTransactions();
@@ -3553,8 +3595,9 @@ function onQrisFailed(data) {
   stopQrisTimers();
   qrisTrxId = null;
   setQrisBadge('failed');
-  document.getElementById('qris-qr-box').innerHTML = '<div style="color:#b91c1c; font-size:12px; text-align:center;">QR kedaluwarsa / dibatalkan.<br>Tekan Muat Ulang QR.</div>';
-  showToast(data.message || 'QR kedaluwarsa', 'error');
+  document.getElementById('qris-checkout-link').classList.add('hide');
+  setQrisMessage(data.message || 'Link kedaluwarsa / dibatalkan. Tekan Buat Link Baru.', 'var(--err)');
+  showToast(data.message || 'Link pembayaran kedaluwarsa', 'error');
   loadUserTransactions();
 }
 
@@ -3574,25 +3617,14 @@ async function checkQrisStatus() {
   finally { qrisCheckBusy = false; }
 }
 
-async function handleQrisConfirm() {
-  if (!qrisTrxId) return showToast('Pilih produk VIP dulu!', 'error');
-  var btn = document.getElementById('btn-qris-confirm');
-  btn.disabled = true; btn.innerText = 'Memeriksa pembayaran...';
-  try {
-    var res = await fetch('/api/qris/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: loggedInUsername, transactionId: qrisTrxId }) });
-    var data = await res.json();
-    if (data.status === 'paid') onQrisPaid(data);
-    else if (data.status === 'failed') onQrisFailed(data);
-    else showToast(data.message || 'Pembayaran belum terdeteksi', 'error');
-  } catch (e) { showToast('Kesalahan koneksi', 'error'); }
-  finally { btn.disabled = false; btn.innerText = '✅ Saya Sudah Bayar'; }
-}
+document.addEventListener('visibilitychange', function() { if (!document.hidden) checkQrisStatus(); });
 
-// Pilih produk VIP -> QR otomatis dibuat sesuai harga produk (fungsi lama tetap dipanggil apa adanya)
+// Pilih produk VIP -> tampil pilihan metode (QR / DANA). Fungsi lama tetap dipanggil apa adanya
 var __origSelectVipItem = selectVipItem;
 selectVipItem = function(itemId) {
   __origSelectVipItem(itemId);
-  startQrisPayment(itemId);
+  qrisVipId = itemId;
+  resetPayMethod();
 };
 
 async function handleSubmitFeatureRequest() {
@@ -4960,7 +4992,7 @@ const server = http.createServer(async (req, res) => {
         return jsonResponse(res, 502, { success: false, message: 'Gagal membuat QR: ' + apiErr.message });
       }
       if (!invoice.id) return jsonResponse(res, 502, { success: false, message: 'Respons API pembayaran tidak berisi ID invoice.' });
-      if (!invoice.qrImage && !invoice.qrString && !invoice.checkoutUrl) return jsonResponse(res, 502, { success: false, message: 'Respons API pembayaran tidak berisi data QR.' });
+      if (!invoice.checkoutUrl) return jsonResponse(res, 502, { success: false, message: 'Respons API pembayaran tidak berisi link pembayaran.' });
       const newTrx = {
         transactionId, username: cleanUser, vipId, vipName: item.name, vipPrice: price, vipDays: days,
         status: 'pending', method: 'qris', invoiceId: invoice.id,
@@ -4969,6 +5001,7 @@ const server = http.createServer(async (req, res) => {
         proofImage: null, proofFileName: null, createdAt: Date.now(), updatedAt: Date.now(), adminNote: ''
       };
       await saveTransactionToDb(transactionId, newTrx);
+      qrPendingIds.add(transactionId);
       jsonResponse(res, 200, Object.assign({ success: true, reused: false }, qrTrxClientView(newTrx)));
 
     } else if (parsedUrl.pathname === '/api/qris/status' && req.method === 'GET') {
@@ -4988,6 +5021,7 @@ const server = http.createServer(async (req, res) => {
         const state = qrClassify(inv);
         if (state === 'paid') {
           const act = await activateVipFromTransaction(transactionId);
+          if (act.busy) return jsonResponse(res, 200, { success: true, status: 'pending' });
           const u = await getUserFromDb(cleanUser);
           return jsonResponse(res, 200, { success: true, status: 'paid', activated: !!act.activated, message: 'Pembayaran berhasil. Akun VIP aktif!', session: u ? buildSessionPayload(cleanUser, u) : null });
         }
@@ -5000,38 +5034,6 @@ const server = http.createServer(async (req, res) => {
       } catch (apiErr) {
         jsonResponse(res, 200, { success: true, status: 'pending', warning: apiErr.message });
       }
-
-    } else if (parsedUrl.pathname === '/api/qris/confirm' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { username, transactionId } = JSON.parse(body);
-      const cleanUser = username ? String(username).toLowerCase() : '';
-      const trx = transactionId ? await getTransactionFromDb(transactionId) : null;
-      if (!trx || trx.method !== 'qris') return jsonResponse(res, 404, { success: false, message: 'Transaksi QR tidak ditemukan!' });
-      if (trx.username !== cleanUser) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      if (trx.status === 'success') {
-        const u0 = await getUserFromDb(cleanUser);
-        return jsonResponse(res, 200, { success: true, status: 'paid', message: 'Akun kamu sudah VIP.', session: u0 ? buildSessionPayload(cleanUser, u0) : null });
-      }
-      const lastTry = qrConfirmCooldown.get(transactionId) || 0;
-      if (Date.now() - lastTry < 3000) return jsonResponse(res, 429, { success: false, status: 'pending', message: 'Tunggu beberapa detik sebelum konfirmasi lagi.' });
-      qrConfirmCooldown.set(transactionId, Date.now());
-      let confirmError = null;
-      try { await qrPayRequest('POST', '/v1/invoices/' + encodeURIComponent(trx.invoiceId) + '/confirm', {}); } catch (cErr) { confirmError = cErr.message; }
-      let inv;
-      try { inv = normalizeQrInvoice(await qrPayRequest('GET', '/v1/invoices/' + encodeURIComponent(trx.invoiceId))); }
-      catch (gErr) { return jsonResponse(res, 502, { success: false, status: 'pending', message: 'Gagal cek status pembayaran: ' + gErr.message }); }
-      const state = qrClassify(inv);
-      if (state === 'paid') {
-        const act = await activateVipFromTransaction(transactionId);
-        const u = await getUserFromDb(cleanUser);
-        return jsonResponse(res, 200, { success: true, status: 'paid', activated: !!act.activated, message: 'Pembayaran terkonfirmasi! Akun kamu sekarang VIP.', session: u ? buildSessionPayload(cleanUser, u) : null });
-      }
-      if (state === 'failed') {
-        trx.status = 'failed'; trx.adminNote = 'Invoice ' + (inv.status || 'gagal') + ' (QR)'; trx.updatedAt = Date.now();
-        await saveTransactionToDb(transactionId, trx);
-        return jsonResponse(res, 200, { success: false, status: 'failed', message: 'QR kedaluwarsa / dibatalkan. Pilih produk lagi untuk membuat QR baru.' });
-      }
-      jsonResponse(res, 200, { success: false, status: 'pending', message: confirmError ? ('Konfirmasi belum berhasil: ' + confirmError) : 'Pembayaran belum terdeteksi. Pastikan sudah membayar, lalu coba lagi.' });
 
     } else if (parsedUrl.pathname === '/api/transaction/my' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
