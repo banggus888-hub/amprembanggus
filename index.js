@@ -188,7 +188,6 @@ function qrPayRequest(method, apiPath, bodyObj) {
     const payload = bodyObj ? JSON.stringify(bodyObj) : null;
     const headers = {
       'Accept': 'application/json',
-      'Authorization': 'Bearer ' + QR_PAY_API_KEY,
       'X-API-Key': QR_PAY_API_KEY
     };
     if (payload) { headers['Content-Type'] = 'application/json'; headers['Content-Length'] = Buffer.byteLength(payload); }
@@ -3440,6 +3439,7 @@ function stopQrisTimers() {
 function renderQrisBox(data) {
   var box = document.getElementById('qris-qr-box');
   box.innerHTML = '';
+  if (!data.qrImage && !data.qrString && data.checkoutUrl) data = Object.assign({}, data, { qrString: data.checkoutUrl });
   if (data.qrImage) {
     var img = document.createElement('img');
     img.src = data.qrImage;
@@ -4945,12 +4945,16 @@ const server = http.createServer(async (req, res) => {
       const transactionId = 'TRX-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
       let invoice;
       try {
+        const proto = (req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
+        const safeEmailName = cleanUser.replace(/[^a-z0-9._-]/g, '') || 'user';
         const raw = await qrPayRequest('POST', '/v1/invoices', {
+          customer_name: cleanUser,
+          customer_email: safeEmailName + '@example.com',
           amount: price,
           description: 'VIP ' + item.name + ' - ' + cleanUser,
-          external_id: transactionId,
+          channel_preference: 'client',
           payment_method: 'qris',
-          customer_name: cleanUser
+          redirect_url: proto + '://' + (req.headers.host || 'localhost') + '/'
         });
         invoice = normalizeQrInvoice(raw);
       } catch (apiErr) {
