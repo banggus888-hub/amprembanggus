@@ -1838,7 +1838,7 @@ const htmlTemplate = `<!DOCTYPE html>
     </div>
   </div>
 
-  <div style="text-align:center; font-size:10px; color:var(--text-2); padding:10px 0; letter-spacing:0.08em; text-transform:uppercase; font-weight:600;">AM PREMIUM  • BANGGUS</div>
+  <div style="text-align:center; font-size:10px; color:var(--text-2); padding:10px 0; letter-spacing:0.08em; text-transform:uppercase; font-weight:600;">AM PREMIUM  •  BANGGUS</div>
 </div>
 
 <script>
@@ -5148,5 +5148,6 @@ server.listen(PORT, () => {
   console.log('║  💬 Chat Global & Orderan                                    ║');
   console.log('║  🔔 Browser Notification (BARU!)                             ║');
   console.log('║  ⚙️  Panel Admin Lengkap                                     ║');
+  console.log('║  🖼️  Admin bisa lihat & zoom foto bukti pembayaran (BARU!)   ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
