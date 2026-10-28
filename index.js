@@ -53,12 +53,6 @@ const ONLINE_CLEANUP_INTERVAL = 60 * 1000;
 const BONUS_EXPIRY_MS = 2 * 24 * 60 * 60 * 1000;
 const BASE_QUOTA = 2;
 
-// ====== KONFIGURASI CHAT GLOBAL ======
-// Pesan chat TIDAK dihapus otomatis. Batas di bawah hanya membatasi jumlah pesan terbaru yang dikirim ke browser (data di database tetap utuh).
-const CHAT_MAX_RETURN = 1000;
-const CHAT_REACTIONS = ['like', 'love', 'haha', 'wow', 'sad', 'fire'];
-const CHAT_POLL_MAX_OPTIONS = 6;
-
 // ====== NETFLIX CONFIG ======
 const NETFLIX_BASE = 'https://nftools.aroshi.my.id';
 const NETFLIX_COUNTRY = {
@@ -147,11 +141,6 @@ async function getGlobalChatFromDb() {
 }
 async function saveGlobalChatMessageToDb(id, data) { await set(ref(db, `globalChat/${id}`), data); }
 async function deleteGlobalChatMessageFromDb(id) { await set(ref(db, `globalChat/${id}`), null); }
-async function getGlobalChatMessageFromDb(id) {
-  const snapshot = await get(child(ref(db), `globalChat/${id}`));
-  return snapshot.exists() ? snapshot.val() : null;
-}
-function isValidChatMessageId(id) { return typeof id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(id); }
 
 // ====== VIP ACCOUNTS HELPERS ======
 async function getVipAccountsFromDb() {
@@ -1044,15 +1033,17 @@ const htmlTemplate = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#140a0c">
 <title>AM PREMIUM • BANGGUS</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg-0: #0a0a0f; --bg-1: #12121a; --bg-2: #1a1a24;
-    --line: #26262f; --line-2: #33333f;
-    --text-0: #f0f0f5; --text-1: #a8a8b8; --text-2: #6c6c7c;
-    --accent: #8b7cf6; --accent-2: #6d5ce6; --accent-soft: rgba(139,124,246,0.12);
+    --bg-0: #140a0c; --bg-1: #1e1013; --bg-2: #2a171b;
+    --line: #3b2227; --line-2: #4e2d33;
+    --text-0: #fdf5e8; --text-1: #dcc6b2; --text-2: #a08a78;
+    --accent: #ee4b4b; --accent-2: #c0222d; --accent-soft: rgba(238,75,75,0.14);
+    --gold: #f2c14e; --gold-soft: rgba(242,193,78,0.13);
     --ok: #4ade80; --ok-soft: rgba(74,222,128,0.12);
     --warn: #fbbf24; --warn-soft: rgba(251,191,36,0.12);
     --err: #f87171; --err-soft: rgba(248,113,113,0.12);
@@ -1061,14 +1052,14 @@ const htmlTemplate = `<!DOCTYPE html>
   }
   * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
   html, body { width:100%; max-width:100%; overflow-x:hidden; margin:0; padding:0; background:var(--bg-0); color:var(--text-0); font-family:'Inter',system-ui,sans-serif; font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased; }
-  body { background-image: linear-gradient(rgba(139,124,246,0.015) 1px, transparent 1px), linear-gradient(90deg, rgba(139,124,246,0.015) 1px, transparent 1px); background-size: 32px 32px; min-height:100vh; }
+  body { background-image: linear-gradient(rgba(238,75,75,0.015) 1px, transparent 1px), linear-gradient(90deg, rgba(238,75,75,0.015) 1px, transparent 1px); background-size: 32px 32px; min-height:100vh; }
   .mono { font-family:'IBM Plex Mono','Courier New',monospace; }
   .display-font { font-family:'Space Grotesk',sans-serif; letter-spacing:-0.02em; }
   .app-shell { width:100%; max-width:520px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; padding:12px; position:relative; }
   .card { background:var(--bg-1); border:1px solid var(--line); border-radius:14px; padding:16px; position:relative; }
   .card-elevated { background:linear-gradient(180deg,var(--bg-2) 0%,var(--bg-1) 100%); border:1px solid var(--line-2); border-radius:14px; padding:16px; }
   .topbar { display:flex; align-items:center; justify-content:space-between; padding:4px 0 16px 0; }
-  .brand-mark { width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:18px; color:white; box-shadow:0 4px 14px rgba(109,92,230,0.35); overflow:hidden; }
+  .brand-mark { width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:18px; color:white; box-shadow:0 4px 14px rgba(192,34,45,0.35); overflow:hidden; }
   .brand-text { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px; letter-spacing:-0.01em; }
   .brand-sub { font-size:10px; color:var(--text-2); letter-spacing:0.08em; text-transform:uppercase; font-weight:600; margin-top:1px; }
   .inp { width:100%; padding:11px 14px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; color:var(--text-0); font-size:13px; font-family:inherit; outline:none; transition:border-color 0.15s, box-shadow 0.15s; }
@@ -1076,7 +1067,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .inp::placeholder { color:var(--text-2); }
   .inp.mono { font-family:'IBM Plex Mono',monospace; font-size:12.5px; }
   label.field-label { display:block; font-size:11px; font-weight:600; color:var(--text-1); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px; }
-  .btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:11px 16px; border-radius:10px; font-size:13px; font-weight:600; font-family:inherit; border:none; cursor:pointer; transition:transform 0.1s, box-shadow 0.15s, background 0.15s, border-color 0.15s; width:100%; color:white; background:var(--accent); }
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:11px 16px; border-radius:10px; font-size:13px; font-weight:600; font-family:inherit; border:none; cursor:pointer; transition:transform 0.1s, box-shadow 0.15s, background 0.15s, border-color 0.15s; width:100%; color:white; background:linear-gradient(180deg,#f25a5a,#c0222d); }
   .btn:hover:not(:disabled) { background:var(--accent-2); }
   .btn:active:not(:disabled) { transform:translateY(1px); }
   .btn:disabled { opacity:0.5; cursor:not-allowed; }
@@ -1099,13 +1090,13 @@ const htmlTemplate = `<!DOCTYPE html>
   .badge-err { background:var(--err-soft); color:var(--err); border:1px solid rgba(248,113,113,0.25); }
   .badge-warn { background:var(--warn-soft); color:var(--warn); border:1px solid rgba(251,191,36,0.25); }
   .badge-info { background:var(--info-soft); color:var(--info); border:1px solid rgba(96,165,250,0.25); }
-  .badge-accent { background:var(--accent-soft); color:var(--accent); border:1px solid rgba(139,124,246,0.25); }
+  .badge-accent { background:var(--accent-soft); color:var(--accent); border:1px solid rgba(238,75,75,0.25); }
   .badge-muted { background:var(--bg-2); color:var(--text-1); border:1px solid var(--line-2); }
   #nav-drawer { position:fixed; top:0; bottom:0; right:0; width:86%; max-width:340px; background:var(--bg-1); border-left:1px solid var(--line-2); z-index:50; transform:translateX(105%); transition:transform 0.25s cubic-bezier(0.32,0.72,0,1); display:flex; flex-direction:column; padding:16px; overflow-y:auto; }
   #nav-drawer.open { transform:translateX(0); }
   .nav-link { display:flex; align-items:center; gap:10px; width:100%; padding:10px 12px; border-radius:9px; background:transparent; color:var(--text-1); font-size:13px; font-weight:500; border:1px solid transparent; cursor:pointer; text-align:left; font-family:inherit; transition:background 0.12s, color 0.12s, border-color 0.12s; }
   .nav-link:hover { background:var(--bg-2); color:var(--text-0); }
-  .nav-link.active { background:var(--accent-soft); color:var(--accent); border-color:rgba(139,124,246,0.3); font-weight:600; }
+  .nav-link.active { background:var(--accent-soft); color:var(--accent); border-color:rgba(238,75,75,0.3); font-weight:600; }
   .nav-link.netflix-nav.active { background:rgba(229,9,20,0.12); color:#ff6b6b; border-color:rgba(229,9,20,0.3); }
   .nav-link.orders-nav.active { background:rgba(96,165,250,0.12); color:#7dd3fc; border-color:rgba(96,165,250,0.3); }
   .nav-section-label { font-size:10px; font-weight:700; color:var(--text-2); text-transform:uppercase; letter-spacing:0.1em; padding:14px 12px 6px 12px; }
@@ -1118,46 +1109,25 @@ const htmlTemplate = `<!DOCTYPE html>
   .toast.show { transform:translateX(-50%) translateY(0); }
   .toast-success { background:#1a3a26; color:#a7f3c8; border:1px solid #2d5f3f; }
   .toast-error { background:#3a1a1f; color:#fecaca; border:1px solid #5f2d33; }
-  .toast-info { background:#1f1a3a; color:#ddd6fe; border:1px solid #3d2f5f; }
+  .toast-info { background:#2e2410; color:#fde7a8; border:1px solid #5c4818; }
   .toast-netflix { background:#3a0a0c; color:#fecaca; border:1px solid #5f0a0d; }
   .toast-order { background:#0a2a3a; color:#bae6fd; border:1px solid #0a4a5f; }
   .prog { height:6px; background:var(--bg-0); border-radius:999px; overflow:hidden; }
   .prog-fill { height:100%; background:var(--accent); border-radius:999px; transition:width 0.25s; width:0%; }
   .dropzone { border:1.5px dashed var(--line-2); border-radius:10px; padding:20px 12px; text-align:center; cursor:pointer; transition:border-color 0.15s, background 0.15s; }
   .dropzone:hover, .dropzone.dragover { border-color:var(--accent); background:var(--accent-soft); }
-  .chat-wrap { height:82vh; height:82dvh; min-height:520px; max-height:1000px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:12px; display:flex; flex-direction:column; overflow:hidden; }
-  body.chat-wide .app-shell { max-width:1100px; }
-  .chat-stream { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px; }
-  .chat-msg { max-width:88%; padding:8px 12px; border-radius:12px; font-size:12.5px; line-height:1.45; word-wrap:break-word; overflow-wrap:anywhere; animation:fadeUp 0.25s; }
+  .chat-wrap { height:400px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; display:flex; flex-direction:column; overflow:hidden; }
+  .chat-stream { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; }
+  .chat-msg { max-width:82%; padding:8px 11px; border-radius:10px; font-size:12.5px; line-height:1.45; word-wrap:break-word; animation:fadeUp 0.25s; }
   @keyframes fadeUp { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
   .chat-msg-them { align-self:flex-start; background:var(--bg-2); border:1px solid var(--line-2); border-bottom-left-radius:3px; }
   .chat-msg-me { align-self:flex-end; background:var(--accent); color:white; border-bottom-right-radius:3px; }
-  .chat-msg-header { font-size:10.5px; font-weight:700; opacity:0.9; margin-bottom:3px; display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
-  .chat-time { font-size:9.5px; opacity:0.6; margin-top:4px; }
-  .chat-input-bar { display:flex; gap:10px; padding:12px; border-top:1px solid var(--line-2); background:var(--bg-1); }
-  .chat-input-bar input { flex:1; font-size:13px; padding:11px 13px; }
-  .chat-input-bar button { width:42px; height:42px; border-radius:11px; background:var(--accent); border:none; color:white; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background 0.15s; flex-shrink:0; }
+  .chat-msg-header { font-size:10px; font-weight:700; opacity:0.85; margin-bottom:3px; display:flex; align-items:center; gap:4px; }
+  .chat-time { font-size:9.5px; opacity:0.55; margin-top:3px; }
+  .chat-input-bar { display:flex; gap:8px; padding:10px; border-top:1px solid var(--line-2); background:var(--bg-1); }
+  .chat-input-bar input { flex:1; }
+  .chat-input-bar button { width:40px; height:40px; border-radius:9px; background:var(--accent); border:none; color:white; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background 0.15s; }
   .chat-input-bar button:hover { background:var(--accent-2); }
-  .chat-reacts { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
-  .react-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:999px; border:1px solid rgba(127,127,127,0.35); background:rgba(127,127,127,0.16); color:inherit; font-size:11px; font-family:inherit; cursor:pointer; line-height:1.4; }
-  .react-chip:hover { background:rgba(127,127,127,0.3); }
-  .react-chip.mine { border-color:currentColor; background:rgba(127,127,127,0.34); font-weight:700; }
-  .react-chip.react-add { opacity:0.7; }
-  .react-picker { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; padding:6px; border-radius:12px; background:var(--bg-0); border:1px solid var(--line-2); width:fit-content; }
-  .react-pick { font-size:20px; padding:4px 7px; border-radius:9px; border:none; background:transparent; cursor:pointer; line-height:1.2; }
-  .react-pick:hover { background:var(--bg-2); transform:scale(1.15); }
-  .chat-msg-poll { align-self:stretch; max-width:100%; background:var(--bg-2); border:1px solid var(--accent); color:var(--text-0); border-bottom-left-radius:14px; }
-  .poll-title { font-size:13.5px; font-weight:800; margin:2px 0 4px; }
-  .poll-meta { font-size:10.5px; color:var(--text-2); margin-top:6px; }
-  .poll-opt { position:relative; display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; margin-top:7px; padding:8px 11px; border-radius:10px; border:1px solid var(--line-2); background:var(--bg-0); color:var(--text-0); font-family:inherit; font-size:12.5px; text-align:left; cursor:pointer; overflow:hidden; }
-  .poll-opt:hover:not(:disabled) { border-color:var(--accent); }
-  .poll-opt.chosen { border-color:var(--accent); font-weight:700; }
-  .poll-opt:disabled { cursor:default; opacity:0.85; }
-  .poll-fill { position:absolute; left:0; top:0; bottom:0; background:var(--accent-soft); transition:width 0.3s; z-index:0; }
-  .poll-opt-text, .poll-opt-count { position:relative; z-index:1; }
-  .poll-opt-count { font-size:10.5px; color:var(--text-1); white-space:nowrap; flex-shrink:0; }
-  .poll-admin-btn { margin-top:9px; padding:6px 12px; border-radius:8px; border:1px solid var(--line-2); background:var(--bg-0); color:var(--text-1); font-size:11.5px; font-family:inherit; cursor:pointer; }
-  .poll-form { display:flex; flex-direction:column; gap:8px; padding:12px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:12px; }
   .opt-row { display:flex; align-items:center; justify-content:space-between; padding:11px 13px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:10px; cursor:pointer; margin-bottom:7px; transition:border-color 0.15s, background 0.15s; }
   .opt-row:hover { border-color:var(--line); background:var(--line); }
   .opt-row.selected { border-color:var(--accent); background:var(--accent-soft); }
@@ -1182,7 +1152,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .hist-item-order-id { font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700; color:var(--info); background:var(--info-soft); padding:2px 7px; border-radius:5px; display:inline-block; }
   .link-line { font-family:'IBM Plex Mono',monospace; font-size:11px; word-break:break-all; color:var(--text-1); background:var(--bg-0); border:1px solid var(--line-2); border-radius:7px; padding:8px 10px; cursor:pointer; transition:border-color 0.15s, background 0.15s; }
   .link-line:hover { border-color:var(--accent); background:var(--accent-soft); }
-  @media (max-width:480px) { .app-shell { padding:10px; } .card, .card-elevated { padding:13px; } .chat-wrap { height:80vh; height:80dvh; min-height:460px; } .chat-msg { max-width:94%; } }
+  @media (max-width:480px) { .app-shell { padding:10px; } .card, .card-elevated { padding:13px; } .chat-wrap { height:360px; } }
   ::-webkit-scrollbar { width:5px; height:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
   ::-webkit-scrollbar-thumb { background:var(--line-2); border-radius:999px; }
@@ -1249,6 +1219,27 @@ const htmlTemplate = `<!DOCTYPE html>
   .notif-toggle.active { background:var(--ok-soft); border-color:rgba(74,222,128,0.3); color:var(--ok); }
   .notif-toggle.blocked { background:var(--err-soft); border-color:rgba(248,113,113,0.3); color:var(--err); }
   .notif-toggle svg { width:14px; height:14px; }
+
+  /* ====== TEMA SUMPAH PEMUDA (28 Oktober 1928) ====== */
+  body::before { content:''; position:fixed; top:0; left:0; right:0; height:5px; background:linear-gradient(180deg,#e23b3b 0%,#e23b3b 50%,#fdf5e8 50%,#fdf5e8 100%); z-index:10000; pointer-events:none; }
+  body { background-image: radial-gradient(ellipse at 50% -8%, rgba(238,75,75,0.22), transparent 55%), radial-gradient(ellipse at 100% 100%, rgba(242,193,78,0.08), transparent 50%), linear-gradient(rgba(242,193,78,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(242,193,78,0.025) 1px, transparent 1px); background-size: auto, auto, 32px 32px, 32px 32px; background-attachment: fixed, fixed, scroll, scroll; }
+  .topbar { border-bottom:1px solid rgba(242,193,78,0.25); padding-bottom:12px; }
+  .brand-mark { border:1.5px solid var(--gold); }
+  .brand-sub { color:var(--gold); }
+  .card, .card-elevated { border-top:2px solid rgba(242,193,78,0.45); }
+  .section-head { color:var(--gold); }
+  .nav-section-label { color:var(--gold); opacity:0.85; }
+  #nav-drawer { border-left-color:rgba(242,193,78,0.35); }
+  .nav-link.active { color:var(--gold); border-color:rgba(242,193,78,0.4); }
+  .inp:focus { border-color:var(--gold); box-shadow:0 0 0 3px var(--gold-soft); }
+  .sp-banner { position:relative; margin:12px 0 4px; padding:11px 12px 13px; text-align:center; border-radius:12px; background:linear-gradient(135deg, rgba(238,75,75,0.24), rgba(242,193,78,0.10)); border:1px solid rgba(242,193,78,0.32); overflow:hidden; }
+  .sp-banner::after { content:''; position:absolute; left:0; right:0; bottom:0; height:3px; background:linear-gradient(90deg,#e23b3b 50%,#fdf5e8 50%); }
+  .sp-kicker { font-size:9.5px; letter-spacing:0.22em; text-transform:uppercase; color:var(--gold); font-weight:700; }
+  .sp-title { font-family:'Playfair Display',Georgia,serif; font-weight:800; font-size:20px; letter-spacing:0.08em; color:var(--text-0); margin:2px 0 6px; line-height:1.15; }
+  .sp-vows { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; font-size:10.5px; font-weight:700; color:var(--text-1); letter-spacing:0.06em; text-transform:uppercase; }
+  .sp-vows i { width:4px; height:4px; border-radius:50%; background:var(--gold); display:inline-block; }
+  .sp-quote { margin-top:10px; padding:9px 12px; font-size:11px; font-style:italic; line-height:1.5; color:var(--text-1); border-left:3px solid var(--accent); background:var(--gold-soft); border-radius:0 8px 8px 0; text-align:left; }
+  .sp-quote b { display:block; margin-top:3px; font-style:normal; font-size:9.5px; letter-spacing:0.12em; text-transform:uppercase; color:var(--gold); }
 </style>
 </head>
 <body>
@@ -1258,7 +1249,7 @@ const htmlTemplate = `<!DOCTYPE html>
     <div style="display:flex; align-items:center; gap:10px;">
       <div class="brand-mark">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          <path d="M12 2.5l2.9 6.2 6.8.8-5 4.7 1.3 6.7-6-3.5-6 3.5 1.3-6.7-5-4.7 6.8-.8z" fill="#f2c14e" stroke="#fdf5e8" stroke-width="1.4"/>
         </svg>
       </div>
       <div>
@@ -1279,6 +1270,12 @@ const htmlTemplate = `<!DOCTYPE html>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
     </div>
+  </div>
+
+  <div class="sp-banner">
+    <div class="sp-kicker">★ 28 Oktober 1928 ★</div>
+    <div class="sp-title">SUMPAH PEMUDA</div>
+    <div class="sp-vows"><span>Satu Nusa</span><i></i><span>Satu Bangsa</span><i></i><span>Satu Bahasa</span></div>
   </div>
 
   <div id="drawer-overlay" onclick="toggleMenu()" class="hide" style="position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:40;"></div>
@@ -1325,13 +1322,14 @@ const htmlTemplate = `<!DOCTYPE html>
 
     <div id="auth-view" class="card-elevated" style="display:flex; flex-direction:column; gap:16px;">
       <div style="text-align:center; padding:8px 0 4px;">
-        <div style="width:54px; height:54px; border-radius:14px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:inline-flex; align-items:center; justify-content:center; box-shadow:0 8px 24px rgba(109,92,230,0.4); margin-bottom:10px;">
+        <div style="width:54px; height:54px; border-radius:14px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:inline-flex; align-items:center; justify-content:center; box-shadow:0 8px 24px rgba(192,34,45,0.4); margin-bottom:10px;">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            <path d="M12 2.5l2.9 6.2 6.8.8-5 4.7 1.3 6.7-6-3.5-6 3.5 1.3-6.7-5-4.7 6.8-.8z" fill="#f2c14e" stroke="#fdf5e8" stroke-width="1.4"/>
           </svg>
         </div>
         <h1 class="display-font" style="font-size:22px; font-weight:800; margin:0 0 4px; color:var(--text-0);">Selamat datang</h1>
         <p style="font-size:12.5px; color:var(--text-2); margin:0;">Login atau daftar untuk mulai menggunakan layanan</p>
+        <div class="sp-quote">“Kami putra dan putri Indonesia mengaku bertumpah darah yang satu, tanah air Indonesia.”<b>Ikrar Sumpah Pemuda</b></div>
       </div>
       
       <div style="display:flex; background:var(--bg-0); border:1px solid var(--line-2); border-radius:10px; padding:3px; position:relative;">
@@ -1449,7 +1447,7 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
         <div style="padding:8px 4px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--info); font-weight:700; text-transform:uppercase;">Total</div><div id="my-orders-total" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
-        <div style="padding:8px 4px; background:var(--accent-soft); border:1px solid rgba(139,124,246,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--accent); font-weight:700; text-transform:uppercase;">AM</div><div id="my-orders-am" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
+        <div style="padding:8px 4px; background:var(--accent-soft); border:1px solid rgba(238,75,75,0.2); border-radius:8px; text-align:center;"><div style="font-size:9px; color:var(--accent); font-weight:700; text-transform:uppercase;">AM</div><div id="my-orders-am" class="mono" style="font-size:14px; font-weight:800;">0</div></div>
       </div>
       <div style="display:flex; gap:7px;">
         <input type="text" id="order-search-input" oninput="renderMyOrders()" placeholder="Cari Order ID..." class="inp mono" style="flex:1;">
@@ -1800,29 +1798,12 @@ const htmlTemplate = `<!DOCTYPE html>
     <div id="section-chat" class="hide card" style="display:flex; flex-direction:column; gap:12px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat Global</div>
-        <div style="display:flex; gap:6px; align-items:center;">
-          <button id="chat-poll-btn" onclick="toggleChatPollForm()" class="btn btn-ghost btn-xs hide">📊 Buat Polling</button>
-          <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
-        </div>
-      </div>
-      <div id="chat-poll-form" class="poll-form hide">
-        <div style="font-size:12px; font-weight:700; color:var(--text-1);">📊 Polling Baru (Admin)</div>
-        <input type="text" id="chat-poll-question" class="inp" maxlength="200" placeholder="Pertanyaan polling...">
-        <input type="text" class="inp chat-poll-opt" maxlength="100" placeholder="Pilihan 1 (wajib)">
-        <input type="text" class="inp chat-poll-opt" maxlength="100" placeholder="Pilihan 2 (wajib)">
-        <input type="text" class="inp chat-poll-opt" maxlength="100" placeholder="Pilihan 3 (opsional)">
-        <input type="text" class="inp chat-poll-opt" maxlength="100" placeholder="Pilihan 4 (opsional)">
-        <input type="text" class="inp chat-poll-opt" maxlength="100" placeholder="Pilihan 5 (opsional)">
-        <input type="text" class="inp chat-poll-opt" maxlength="100" placeholder="Pilihan 6 (opsional)">
-        <div style="display:flex; gap:8px;">
-          <button onclick="submitChatPoll()" class="btn btn-xs">Kirim Polling</button>
-          <button onclick="toggleChatPollForm()" class="btn btn-ghost btn-xs">Batal</button>
-        </div>
+        <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
       </div>
       <div class="chat-wrap">
         <div id="chat-messages" class="chat-stream"><p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Memuat...</p></div>
         <div class="chat-input-bar">
-          <input type="text" id="chat-input" placeholder="Tulis pesan..." maxlength="500" class="inp" autocomplete="off" onkeydown="if(event.key==='Enter')sendChatMessage()">
+          <input type="text" id="chat-input" placeholder="Tulis pesan..." maxlength="500" class="inp" onkeydown="if(event.key==='Enter')sendChatMessage()">
           <button onclick="sendChatMessage()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
         </div>
       </div>
@@ -1945,7 +1926,7 @@ const htmlTemplate = `<!DOCTYPE html>
           <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Memuat...</p>
         </div>
       </div>
-      <div style="padding:11px; background:linear-gradient(135deg,var(--accent-soft),var(--info-soft)); border:1px solid rgba(139,124,246,0.3); border-radius:9px;">
+      <div style="padding:11px; background:linear-gradient(135deg,var(--accent-soft),var(--info-soft)); border:1px solid rgba(238,75,75,0.3); border-radius:9px;">
         <div class="section-head" style="color:var(--accent); margin-top:0;">Buat Akun VIP</div>
         <div style="display:flex; flex-direction:column; gap:7px;">
           <input type="text" id="vip-create-username" placeholder="Username VIP" class="inp">
@@ -2023,9 +2004,9 @@ const htmlTemplate = `<!DOCTYPE html>
           <button onclick="setUserFilter('reset')" data-filter="reset" class="user-filter-btn btn btn-ghost btn-xs">Reset Due</button>
         </div>
         <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:5px; margin-bottom:7px; text-align:center;">
-          <div style="padding:5px; background:var(--accent-soft); border:1px solid rgba(139,124,246,0.2); border-radius:6px;"><div style="font-size:8px; color:var(--accent); font-weight:700; text-transform:uppercase;">Total</div><div id="stat-total" class="mono" style="font-size:11px; font-weight:800;">-</div></div>
+          <div style="padding:5px; background:var(--accent-soft); border:1px solid rgba(238,75,75,0.2); border-radius:6px;"><div style="font-size:8px; color:var(--accent); font-weight:700; text-transform:uppercase;">Total</div><div id="stat-total" class="mono" style="font-size:11px; font-weight:800;">-</div></div>
           <div style="padding:5px; background:var(--warn-soft); border:1px solid rgba(251,191,36,0.2); border-radius:6px;"><div style="font-size:8px; color:var(--warn); font-weight:700; text-transform:uppercase;">Admin</div><div id="stat-admins" class="mono" style="font-size:11px; font-weight:800; color:var(--warn);">-</div></div>
-          <div style="padding:5px; background:var(--accent-soft); border:1px solid rgba(139,124,246,0.2); border-radius:6px;"><div style="font-size:8px; color:var(--accent); font-weight:700; text-transform:uppercase;">VIP</div><div id="stat-vips" class="mono" style="font-size:11px; font-weight:800; color:var(--accent);">-</div></div>
+          <div style="padding:5px; background:var(--accent-soft); border:1px solid rgba(238,75,75,0.2); border-radius:6px;"><div style="font-size:8px; color:var(--accent); font-weight:700; text-transform:uppercase;">VIP</div><div id="stat-vips" class="mono" style="font-size:11px; font-weight:800; color:var(--accent);">-</div></div>
           <div style="padding:5px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.2); border-radius:6px;"><div style="font-size:8px; color:var(--info); font-weight:700; text-transform:uppercase;">Reset</div><div id="stat-reset" class="mono" style="font-size:11px; font-weight:800; color:var(--info);">-</div></div>
         </div>
         <div id="all-users-list" style="display:flex; flex-direction:column; gap:6px; max-height:250px; overflow-y:auto; font-size:11px;">
@@ -2139,8 +2120,6 @@ let globalCountdownInterval = null;
 let chatRefreshInterval = null;
 let unreadChatCount = 0;
 let lastChatMessageId = null;
-let openReactPickerId = null;
-const CHAT_REACT_MAP = { like:'👍', love:'❤️', haha:'😂', wow:'😮', sad:'😢', fire:'🔥' };
 let currentView = 'generator';
 let userQuotaData = { usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, nextResetTime: 0, lastResetTime: 0 };
 let claimedRedeemCodes = {};
@@ -2441,7 +2420,6 @@ function toggleMenu() {
 
 function switchView(viewName) {
   currentView = viewName;
-  document.body.classList.toggle('chat-wide', viewName === 'chat');
   document.querySelectorAll('[data-nav]').forEach(el => { el.classList.toggle('active', el.dataset.nav === viewName); });
   toggleMenu();
   ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-hdfoto','section-apk','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
@@ -3975,7 +3953,7 @@ function updateQuotaStatusCard(data) {
   document.getElementById('quota-total-display').innerText = (data.isAdmin || data.isVip) ? '∞' : total;
   const card = document.getElementById('quota-status-card');
   const badge = document.getElementById('quota-status-badge');
-  if (data.isAdmin || data.isVip) { card.style.background = 'var(--accent-soft)'; card.style.borderColor = 'rgba(139,124,246,0.3)'; badge.className = 'badge badge-accent'; badge.innerText = data.isAdmin ? '👑 Admin' : '⭐ VIP'; }
+  if (data.isAdmin || data.isVip) { card.style.background = 'var(--accent-soft)'; card.style.borderColor = 'rgba(238,75,75,0.3)'; badge.className = 'badge badge-accent'; badge.innerText = data.isAdmin ? '👑 Admin' : '⭐ VIP'; }
   else if (remain <= 0) { card.style.background = 'var(--err-soft)'; card.style.borderColor = 'rgba(248,113,113,0.3)'; badge.className = 'badge badge-err'; badge.innerText = '✗ Habis'; }
   else if (remain <= 1) { card.style.background = 'var(--warn-soft)'; card.style.borderColor = 'rgba(251,191,36,0.3)'; badge.className = 'badge badge-warn'; badge.innerText = '⚠ Terbatas'; }
   else { card.style.background = 'var(--info-soft)'; card.style.borderColor = 'rgba(96,165,250,0.25)'; badge.className = 'badge badge-ok'; badge.innerText = '✓ Tersedia'; }
@@ -4287,7 +4265,7 @@ function renderUserList() {
   container.innerHTML = filtered.map(u => {
     let badgeClass = 'badge-muted', badgeText = '👤 User', borderColor = 'var(--line-2)';
     if (u.isAdmin) { badgeClass = 'badge-warn'; badgeText = '👑 Admin'; borderColor = 'rgba(251,191,36,0.4)'; }
-    else if (u.isVip) { badgeClass = 'badge-accent'; badgeText = '⭐ VIP'; borderColor = 'rgba(139,124,246,0.45)'; }
+    else if (u.isVip) { badgeClass = 'badge-accent'; badgeText = '⭐ VIP'; borderColor = 'rgba(238,75,75,0.45)'; }
     let quotaText = '', quotaColor = 'var(--info)';
     if (u.isAdmin) { quotaText = '∞ Unlimited'; quotaColor = 'var(--warn)'; }
     else if (u.isVip) { quotaText = '⭐ Unlimited'; quotaColor = 'var(--accent)'; }
@@ -4360,76 +4338,28 @@ async function loadGlobalChat(force = false) {
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:12px;">Gagal</p>'; }
 }
 
-function renderChatReactions(id, msg) {
-  const me = String(loggedInUsername || '').toLowerCase();
-  const reactions = msg.reactions || {};
-  let chips = '';
-  Object.keys(CHAT_REACT_MAP).forEach(k => {
-    const users = reactions[k] ? Object.keys(reactions[k]) : [];
-    if (users.length > 0) {
-      const mine = users.indexOf(me) !== -1;
-      chips += '<button class="react-chip' + (mine ? ' mine' : '') + '" data-id="' + id + '" data-k="' + k + '" onclick="reactChatMessage(this.dataset.id,this.dataset.k)">' + CHAT_REACT_MAP[k] + ' ' + users.length + '</button>';
-    }
-  });
-  const addBtn = '<button class="react-chip react-add" data-id="' + id + '" onclick="toggleReactPicker(this.dataset.id)">😊 +</button>';
-  let picker = '';
-  if (openReactPickerId === id) {
-    picker = '<div class="react-picker">' + Object.keys(CHAT_REACT_MAP).map(k => '<button class="react-pick" data-id="' + id + '" data-k="' + k + '" onclick="reactChatMessage(this.dataset.id,this.dataset.k)">' + CHAT_REACT_MAP[k] + '</button>').join('') + '</div>';
-  }
-  return '<div class="chat-reacts">' + chips + addBtn + '</div>' + picker;
-}
-
-function renderChatPoll(id, msg) {
-  const me = String(loggedInUsername || '').toLowerCase();
-  const poll = msg.poll || {};
-  const opts = Array.isArray(poll.options) ? poll.options : Object.values(poll.options || {});
-  const votes = msg.votes || {};
-  const voters = Object.keys(votes);
-  const total = voters.length;
-  const counts = opts.map(() => 0);
-  voters.forEach(u => { const v = votes[u]; if (typeof v === 'number' && counts[v] !== undefined) counts[v]++; });
-  const myVote = votes[me];
-  const closed = !!poll.closed;
-  let html = '<div class="poll-title">📊 ' + escapeHtml(poll.question || '') + '</div>';
-  html += '<div class="poll-meta">' + (closed ? '🔒 Polling sudah ditutup' : '🟢 Polling aktif - pilih satu jawaban (bisa diganti)') + '</div>';
-  opts.forEach((opt, i) => {
-    const pct = total > 0 ? Math.round((counts[i] / total) * 100) : 0;
-    const chosen = myVote === i;
-    html += '<button class="poll-opt' + (chosen ? ' chosen' : '') + '"' + (closed ? ' disabled' : '') + ' data-id="' + id + '" data-i="' + i + '" onclick="voteChatPoll(this.dataset.id,Number(this.dataset.i))"><span class="poll-fill" style="width:' + pct + '%"></span><span class="poll-opt-text">' + (chosen ? '✅ ' : '') + escapeHtml(String(opt)) + '</span><span class="poll-opt-count">' + counts[i] + ' suara · ' + pct + '%</span></button>';
-  });
-  html += '<div class="poll-meta">' + total + ' suara' + (myVote === undefined ? '' : ' · kamu sudah memilih') + '</div>';
-  if (isAdminUser) html += '<button class="poll-admin-btn" data-id="' + id + '" onclick="toggleChatPoll(this.dataset.id)">' + (closed ? '🔓 Buka polling lagi' : '🔒 Tutup polling') + '</button>';
-  return html;
-}
-
 function renderGlobalChat(data) {
   const container = document.getElementById('chat-messages');
   if (!container) return;
-  const pollBtn = document.getElementById('chat-poll-btn');
-  if (pollBtn) pollBtn.classList.toggle('hide', !isAdminUser);
-  if (!data.success || !data.messages) { container.innerHTML = '<p style="font-size:12px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada</p>'; return; }
+  if (!data.success || !data.messages) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada</p>'; return; }
   const entries = Object.entries(data.messages).sort((a,b) => a[1].timestamp - b[1].timestamp);
-  if (entries.length === 0) { container.innerHTML = '<p style="font-size:12px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada. Jadilah yang pertama!</p>'; return; }
-  lastChatMessageId = entries[entries.length - 1][0];
+  if (entries.length === 0) { container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada. Jadilah yang pertama!</p>'; return; }
+  if (entries.length > 0) lastChatMessageId = entries[entries.length - 1][0];
   const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 60;
-  const prevTop = container.scrollTop;
   container.innerHTML = entries.map(([id, msg]) => {
-    const isPoll = msg.type === 'poll' && !!msg.poll;
     const isMe = msg.username === loggedInUsername;
     const isAdmin = msg.isAdmin;
     const isVip = msg.isVip;
-    const bubbleClass = isPoll ? 'chat-msg-poll' : (isMe ? 'chat-msg-me' : 'chat-msg-them');
+    const bubbleClass = isMe ? 'chat-msg-me' : 'chat-msg-them';
     const roleIcon = isAdmin ? '👑 ' : isVip ? '⭐ ' : '👤 ';
     const time = new Date(msg.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
     const date = new Date(msg.timestamp).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
     const isToday = new Date(msg.timestamp).toDateString() === new Date().toDateString();
     const timeStr = isToday ? time : date + ' ' + time;
-    const deleteBtn = isAdminUser ? ' <button data-id="' + id + '" onclick="deleteChatMessage(this.dataset.id)" style="background:none; border:none; font-size:12px; opacity:0.6; cursor:pointer; margin-left:2px;">🗑</button>' : '';
-    const bodyHtml = isPoll ? renderChatPoll(id, msg) : '<div>' + escapeHtml(msg.message) + '</div>';
-    return '<div class="chat-msg ' + bubbleClass + '"><div class="chat-msg-header">' + roleIcon + '<span>' + escapeHtml(msg.username) + '</span>' + (isAdmin ? ' · ADMIN' : '') + (isVip && !isAdmin ? ' · VIP' : '') + deleteBtn + '</div>' + bodyHtml + renderChatReactions(id, msg) + '<div class="chat-time">' + timeStr + '</div></div>';
+    const deleteBtn = isAdminUser ? ' <button onclick="deleteChatMessage(\\'' + id + '\\')" style="background:none; border:none; font-size:9px; opacity:0.5; cursor:pointer; margin-left:2px;">🗑</button>' : '';
+    return '<div class="chat-msg ' + bubbleClass + '"><div class="chat-msg-header">' + roleIcon + '<span>' + escapeHtml(msg.username) + '</span>' + (isAdmin ? ' · ADMIN' : '') + (isVip && !isAdmin ? ' · VIP' : '') + deleteBtn + '</div><div>' + escapeHtml(msg.message) + '</div><div class="chat-time">' + timeStr + '</div></div>';
   }).join('');
-  if (wasAtBottom || prevTop === 0) container.scrollTop = container.scrollHeight;
-  else container.scrollTop = prevTop;
+  if (wasAtBottom || container.scrollTop === 0) container.scrollTop = container.scrollHeight;
   updateOnlineCount(onlineUsersCount);
 }
 
@@ -4457,69 +4387,6 @@ async function deleteChatMessage(messageId) {
   } catch(e) {}
 }
 
-function toggleReactPicker(id) {
-  openReactPickerId = (openReactPickerId === id) ? null : id;
-  const cached = getCached('globalChat');
-  if (cached) renderGlobalChat(cached); else loadGlobalChat(true);
-}
-
-async function reactChatMessage(messageId, reaction) {
-  if (!loggedInUsername) return showToast('Harus login!', 'error');
-  openReactPickerId = null;
-  try {
-    const res = await fetch('/api/chat/react', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, messageId, reaction }) });
-    const data = await res.json();
-    if (data.success) { lastChatFetch = 0; await loadGlobalChat(true); }
-    else showToast(data.message || 'Gagal memberi reaksi', 'error');
-  } catch(e) { showToast('Kesalahan koneksi', 'error'); }
-}
-
-function toggleChatPollForm() {
-  if (!isAdminUser) return;
-  const f = document.getElementById('chat-poll-form');
-  if (f) f.classList.toggle('hide');
-}
-
-async function submitChatPoll() {
-  if (!isAdminUser) return showToast('Hanya admin yang bisa membuat polling!', 'error');
-  const question = document.getElementById('chat-poll-question').value.trim();
-  const options = Array.prototype.map.call(document.querySelectorAll('.chat-poll-opt'), el => el.value.trim()).filter(Boolean);
-  if (!question) return showToast('Pertanyaan polling wajib diisi!', 'error');
-  if (options.length < 2) return showToast('Minimal 2 pilihan jawaban!', 'error');
-  try {
-    const res = await fetch('/api/chat/poll', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, question, options }) });
-    const data = await res.json();
-    if (data.success) {
-      showToast('Polling terkirim!', 'success');
-      document.getElementById('chat-poll-question').value = '';
-      document.querySelectorAll('.chat-poll-opt').forEach(el => { el.value = ''; });
-      document.getElementById('chat-poll-form').classList.add('hide');
-      lastChatFetch = 0; await loadGlobalChat(true);
-      const c = document.getElementById('chat-messages'); if (c) c.scrollTop = c.scrollHeight;
-    } else showToast(data.message || 'Gagal mengirim polling', 'error');
-  } catch(e) { showToast('Kesalahan koneksi', 'error'); }
-}
-
-async function voteChatPoll(messageId, optionIndex) {
-  if (!loggedInUsername) return showToast('Harus login!', 'error');
-  try {
-    const res = await fetch('/api/chat/vote', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, messageId, optionIndex }) });
-    const data = await res.json();
-    if (data.success) { showToast('Jawabanmu tersimpan!', 'success'); lastChatFetch = 0; await loadGlobalChat(true); }
-    else showToast(data.message || 'Gagal menyimpan jawaban', 'error');
-  } catch(e) { showToast('Kesalahan koneksi', 'error'); }
-}
-
-async function toggleChatPoll(messageId) {
-  if (!isAdminUser) return;
-  try {
-    const res = await fetch('/api/chat/poll-close', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, messageId }) });
-    const data = await res.json();
-    if (data.success) { showToast(data.message || 'Berhasil', 'success'); lastChatFetch = 0; await loadGlobalChat(true); }
-    else showToast(data.message || 'Gagal', 'error');
-  } catch(e) { showToast('Kesalahan koneksi', 'error'); }
-}
-
 async function loadUserAnnouncements(force = false) {
   const now = Date.now();
   if (!force && now - lastAnnouncementsFetch < CACHE_DURATION.announcements) { const cached = getCached('userAnnouncements'); if (cached) { renderUserAnnouncements(cached); return; } }
@@ -4535,7 +4402,7 @@ function renderUserAnnouncements(data) {
   if (!container) return;
   if (data.success && Object.keys(data.announcements).length > 0) {
     const entries = Object.entries(data.announcements).sort((a,b) => b[1].timestamp - a[1].timestamp);
-    container.innerHTML = entries.map(([id, val]) => '<div style="padding:11px 13px; background:var(--accent-soft); border:1px solid rgba(139,124,246,0.2); border-radius:9px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="font-size:11.5px; font-weight:700; color:var(--accent);">' + escapeHtml(val.title) + '</div><div class="mono" style="font-size:9px; color:var(--text-2);">' + new Date(val.timestamp).toLocaleDateString('id-ID') + '</div></div><div style="font-size:11px; color:var(--text-1); line-height:1.5; white-space:pre-line;">' + escapeHtml(val.content) + '</div></div>').join('');
+    container.innerHTML = entries.map(([id, val]) => '<div style="padding:11px 13px; background:var(--accent-soft); border:1px solid rgba(238,75,75,0.2); border-radius:9px;"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="font-size:11.5px; font-weight:700; color:var(--accent);">' + escapeHtml(val.title) + '</div><div class="mono" style="font-size:9px; color:var(--text-2);">' + new Date(val.timestamp).toLocaleDateString('id-ID') + '</div></div><div style="font-size:11px; color:var(--text-1); line-height:1.5; white-space:pre-line;">' + escapeHtml(val.content) + '</div></div>').join('');
   } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:12px; font-style:italic;">Belum ada</p>';
 }
 
@@ -5405,11 +5272,12 @@ const server = http.createServer(async (req, res) => {
       jsonResponse(res, 200, { success: true, message: 'Password diubah!' });
 
     } else if (parsedUrl.pathname === '/api/chat/messages' && req.method === 'GET') {
-      // Pesan chat TIDAK dihapus otomatis (permanen sampai admin menghapus manual).
-      const allMessages = await getGlobalChatFromDb();
-      const sortedEntries = Object.entries(allMessages).filter(([, m]) => m && typeof m === 'object').sort((a, b) => (a[1].timestamp || 0) - (b[1].timestamp || 0)).slice(-CHAT_MAX_RETURN);
-      const messages = {};
-      sortedEntries.forEach(([id, m]) => { messages[id] = m; });
+      const messages = await getGlobalChatFromDb();
+      const now = Date.now();
+      const threeDays = 3 * 24 * 60 * 60 * 1000;
+      for (const [id, msg] of Object.entries(messages)) {
+        if (now - msg.timestamp > threeDays) { await deleteGlobalChatMessageFromDb(id); delete messages[id]; }
+      }
       jsonResponse(res, 200, { success: true, messages });
 
     } else if (parsedUrl.pathname === '/api/chat/send' && req.method === 'POST') {
@@ -5434,73 +5302,6 @@ const server = http.createServer(async (req, res) => {
       if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
       await deleteGlobalChatMessageFromDb(messageId);
       jsonResponse(res, 200, { success: true, message: 'Pesan dihapus' });
-
-    } else if (parsedUrl.pathname === '/api/chat/react' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { username, messageId, reaction } = JSON.parse(body);
-      if (!username || !messageId || !reaction) return jsonResponse(res, 400, { success: false, message: 'Data tidak lengkap!' });
-      if (!CHAT_REACTIONS.includes(reaction)) return jsonResponse(res, 400, { success: false, message: 'Reaksi tidak valid!' });
-      if (!isValidChatMessageId(messageId)) return jsonResponse(res, 400, { success: false, message: 'ID pesan tidak valid!' });
-      const cleanUser = String(username).toLowerCase();
-      const userObj = await getUserFromDb(cleanUser);
-      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
-      const targetMsg = await getGlobalChatMessageFromDb(messageId);
-      if (!targetMsg) return jsonResponse(res, 404, { success: false, message: 'Pesan tidak ditemukan!' });
-      const alreadyReacted = !!(targetMsg.reactions && targetMsg.reactions[reaction] && targetMsg.reactions[reaction][cleanUser]);
-      await set(ref(db, 'globalChat/' + messageId + '/reactions/' + reaction + '/' + cleanUser), alreadyReacted ? null : true);
-      jsonResponse(res, 200, { success: true, reacted: !alreadyReacted });
-
-    } else if (parsedUrl.pathname === '/api/chat/poll' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { adminUsername, question, options } = JSON.parse(body);
-      const pollAdmin = adminUsername ? await getUserFromDb(String(adminUsername).toLowerCase()) : null;
-      if (!pollAdmin || !pollAdmin.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      const pollQuestion = String(question || '').trim().substring(0, 200);
-      if (!pollQuestion) return jsonResponse(res, 400, { success: false, message: 'Pertanyaan polling wajib diisi!' });
-      let pollOptions = Array.isArray(options) ? options.map(o => String(o || '').trim().substring(0, 100)).filter(Boolean) : [];
-      pollOptions = pollOptions.filter((o, i) => pollOptions.indexOf(o) === i).slice(0, CHAT_POLL_MAX_OPTIONS);
-      if (pollOptions.length < 2) return jsonResponse(res, 400, { success: false, message: 'Minimal 2 pilihan jawaban (tidak boleh sama)!' });
-      const pollNow = Date.now();
-      const pollMsgId = 'msg_' + pollNow + '_' + Math.random().toString(36).substring(2, 8);
-      await saveGlobalChatMessageToDb(pollMsgId, {
-        username: String(adminUsername).toLowerCase(),
-        message: '📊 Polling: ' + pollQuestion,
-        timestamp: pollNow,
-        isAdmin: true,
-        isVip: !!(pollAdmin.vipUntil && pollAdmin.vipUntil > pollNow),
-        type: 'poll',
-        poll: { question: pollQuestion, options: pollOptions, closed: false }
-      });
-      jsonResponse(res, 200, { success: true, message: 'Polling terkirim!', messageId: pollMsgId });
-
-    } else if (parsedUrl.pathname === '/api/chat/vote' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { username, messageId, optionIndex } = JSON.parse(body);
-      if (!username || !messageId) return jsonResponse(res, 400, { success: false, message: 'Data tidak lengkap!' });
-      if (!isValidChatMessageId(messageId)) return jsonResponse(res, 400, { success: false, message: 'ID pesan tidak valid!' });
-      const cleanUser = String(username).toLowerCase();
-      const userObj = await getUserFromDb(cleanUser);
-      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
-      const pollMsg = await getGlobalChatMessageFromDb(messageId);
-      if (!pollMsg || pollMsg.type !== 'poll' || !pollMsg.poll) return jsonResponse(res, 404, { success: false, message: 'Polling tidak ditemukan!' });
-      if (pollMsg.poll.closed) return jsonResponse(res, 400, { success: false, message: 'Polling sudah ditutup!' });
-      const pollOpts = Array.isArray(pollMsg.poll.options) ? pollMsg.poll.options : Object.values(pollMsg.poll.options || {});
-      const idx = Number(optionIndex);
-      if (!Number.isInteger(idx) || idx < 0 || idx >= pollOpts.length) return jsonResponse(res, 400, { success: false, message: 'Pilihan tidak valid!' });
-      await set(ref(db, 'globalChat/' + messageId + '/votes/' + cleanUser), idx);
-      jsonResponse(res, 200, { success: true, message: 'Jawaban tersimpan!' });
-
-    } else if (parsedUrl.pathname === '/api/chat/poll-close' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { adminUsername, messageId } = JSON.parse(body);
-      const closeAdmin = adminUsername ? await getUserFromDb(String(adminUsername).toLowerCase()) : null;
-      if (!closeAdmin || !closeAdmin.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      if (!isValidChatMessageId(messageId)) return jsonResponse(res, 400, { success: false, message: 'ID pesan tidak valid!' });
-      const closeMsg = await getGlobalChatMessageFromDb(messageId);
-      if (!closeMsg || closeMsg.type !== 'poll' || !closeMsg.poll) return jsonResponse(res, 404, { success: false, message: 'Polling tidak ditemukan!' });
-      const nowClosed = !closeMsg.poll.closed;
-      await set(ref(db, 'globalChat/' + messageId + '/poll/closed'), nowClosed);
-      jsonResponse(res, 200, { success: true, closed: nowClosed, message: nowClosed ? 'Polling ditutup' : 'Polling dibuka kembali' });
 
     } else if (parsedUrl.pathname === '/api/admin/create-vip-account' && req.method === 'POST') {
       const body = await readBody(req);
