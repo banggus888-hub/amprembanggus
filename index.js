@@ -1304,7 +1304,6 @@ const htmlTemplate = `<!DOCTYPE html>
     <button onclick="switchView('chat')" data-nav="chat" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat Global<span id="chat-unread-badge" class="badge badge-err hide" style="margin-left:auto; font-size:9px; padding:1px 6px;">0</span></button>
     <button onclick="switchView('profile')" data-nav="profile" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Profil Akun</button>
     <div class="nav-section-label">Lainnya</div>
-    <button onclick="switchView('guide')" data-nav="guide" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Panduan</button>
     <button onclick="switchView('announcement')" data-nav="announcement" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>Pengumuman</button>
     <button onclick="switchView('request')" data-nav="request" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>Request Fitur</button>
     <button id="nav-admin-btn" onclick="switchView('admin')" data-nav="admin" class="nav-link hide"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Panel Admin</button>
@@ -1861,40 +1860,6 @@ const htmlTemplate = `<!DOCTYPE html>
           <button onclick="handleChangePassword()" class="btn">Ubah Password</button>
         </div>
       </div>
-      <div style="padding-top:12px; border-top:1px solid var(--line);">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:9px;">
-          <div class="section-head" style="margin:0; color:var(--info);">Gmail Terverifikasi</div>
-          <button onclick="loadVerifiedEmails()" class="btn btn-ghost btn-xs">Refresh</button>
-        </div>
-        <div id="quota-status-card" style="padding:11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:9px; margin-bottom:9px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:7px;">
-            <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em;">Status Kuota</div>
-            <span id="quota-status-badge" class="badge badge-ok" style="font-size:9px;">Tersedia</span>
-          </div>
-          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; text-align:center;">
-            <div><div style="font-size:9px; color:var(--text-2);">Terpakai</div><div id="quota-used-display" class="mono" style="font-size:13px; font-weight:800;">0</div></div>
-            <div><div style="font-size:9px; color:var(--text-2);">Tersisa</div><div id="quota-remain-display" class="mono" style="font-size:13px; font-weight:800; color:var(--info);">2</div></div>
-            <div><div style="font-size:9px; color:var(--text-2);">Total</div><div id="quota-total-display" class="mono" style="font-size:13px; font-weight:800; color:var(--accent);">2</div></div>
-          </div>
-        </div>
-        <div id="reset-countdown-card" class="hide" style="padding:13px; background:linear-gradient(135deg,var(--err-soft),var(--accent-soft)); border:1px solid rgba(248,113,113,0.3); border-radius:11px; margin-bottom:9px;">
-          <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
-            <div style="width:34px; height:34px; border-radius:9px; background:rgba(248,113,113,0.2); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--err)" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            </div>
-            <div><div style="font-size:12px; font-weight:800; color:var(--err);">Kuota habis</div><div style="font-size:10.5px; color:var(--text-1);">Reset dalam:</div></div>
-          </div>
-          <div class="countdown-grid">
-            <div class="countdown-cell"><div id="countdown-hours" class="countdown-num">00</div><div class="countdown-lbl">Jam</div></div>
-            <div class="countdown-cell"><div id="countdown-minutes" class="countdown-num">00</div><div class="countdown-lbl">Menit</div></div>
-            <div class="countdown-cell"><div id="countdown-seconds" class="countdown-num">00</div><div class="countdown-lbl">Detik</div></div>
-          </div>
-          <p style="font-size:10px; text-align:center; color:var(--text-1); margin-top:8px;">Reset berikutnya: <span id="next-reset-time" class="mono" style="color:var(--err); font-weight:700;">-</span></p>
-        </div>
-        <div id="verified-emails-list" style="display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto;">
-          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
-        </div>
-      </div>
     </div>
 
     <div id="section-admin" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
@@ -2067,21 +2032,6 @@ const htmlTemplate = `<!DOCTYPE html>
         <div id="admin-feature-requests-list" style="display:flex; flex-direction:column; gap:7px; max-height:250px; overflow-y:auto; font-size:11px;">
           <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Memuat...</p>
         </div>
-      </div>
-    </div>
-
-    <div id="section-guide" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
-      <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
-        <div class="section-head" style="margin:0;">Panduan</div>
-        <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
-      </div>
-      <div style="display:flex; flex-direction:column; gap:8px;">
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">1</div><div style="font-size:12px; color:var(--text-1);">Login/daftar dulu dengan akunmu</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">2</div><div style="font-size:12px; color:var(--text-1);"><strong>Alight Motion:</strong> Masukkan email target, kirim magic link, copy URL, verifikasi</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--netflix); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">3</div><div style="font-size:12px; color:var(--text-1);"><strong>Netflix:</strong> Pilih plan, klik Generate, tunggu proses</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">4</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">5</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai.</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--ok); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>Aktifkan Notifikasi</strong> (icon 🔔 di atas) untuk dapat pemberitahuan pengumuman & chat baru secara real-time!</div></div>
       </div>
     </div>
 
@@ -2444,7 +2394,7 @@ function switchView(viewName) {
   document.body.classList.toggle('chat-wide', viewName === 'chat');
   document.querySelectorAll('[data-nav]').forEach(el => { el.classList.toggle('active', el.dataset.nav === viewName); });
   toggleMenu();
-  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-hdfoto','section-apk','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
+  ['terminal-view','section-profile','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-hdfoto','section-apk','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hide');
   else if (viewName === 'orders') { document.getElementById('section-orders').classList.remove('hide'); loadMyOrders(); }
   else if (viewName === 'netflix') { document.getElementById('section-netflix').classList.remove('hide'); loadNetflixHistory(); updateNetflixQuotaDisplay(); }
@@ -2457,7 +2407,6 @@ function switchView(viewName) {
     document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
   }
   else if (viewName === 'profile') { document.getElementById('section-profile').classList.remove('hide'); loadVerifiedEmails(); }
-  else if (viewName === 'guide') document.getElementById('section-guide').classList.remove('hide');
   else if (viewName === 'announcement') { document.getElementById('section-announcement').classList.remove('hide'); loadUserAnnouncements(); }
   else if (viewName === 'request') { document.getElementById('section-request').classList.remove('hide'); loadUserFeatureRequests(); }
   else if (viewName === 'chat') { document.getElementById('section-chat').classList.remove('hide'); loadGlobalChat(true); unreadChatCount = 0; updateChatBadge(); }
@@ -3937,48 +3886,23 @@ async function loadVerifiedEmails(force = false) {
   if (!loggedInUsername) return;
   const now = Date.now();
   if (!force && now - lastEmailsFetch < CACHE_DURATION.emails) { const cached = getCached('verifiedEmails'); if (cached) { renderVerifiedEmails(cached); return; } }
-  const container = document.getElementById('verified-emails-list');
-  if (!container) return;
-  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">⏳ Memuat...</p>';
   try {
     const res = await fetch('/api/user/my-emails?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
-    if (!data.success) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; return; }
+    if (!data.success) return;
     lastEmailsFetch = now; setCache('verifiedEmails', data, CACHE_DURATION.emails); renderVerifiedEmails(data);
-  } catch (e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Kesalahan koneksi</p>'; }
+  } catch (e) {}
 }
 
 function renderVerifiedEmails(data) {
-  const container = document.getElementById('verified-emails-list');
-  if (!container) return;
   updateQuotaStatusCard(data);
   handleCountdown(data);
   updateNetflixQuotaDisplay();
-  const emails = data.activatedEmails || [];
-  if (emails.length === 0) {
-    container.innerHTML = '<div style="padding:11px; text-align:center; background:var(--bg-2); border:1px dashed var(--line-2); border-radius:9px;"><div style="font-size:11.5px; color:var(--text-1); font-weight:600;">Belum ada Gmail</div><div style="font-size:10px; color:var(--text-2); margin-top:2px;">Gmail yang terverifikasi akan muncul di sini</div></div>';
-    return;
-  }
-  container.innerHTML = emails.map((email, idx) => {
-    const isLatest = idx === emails.length - 1;
-    const safeEmail = email.replace(/'/g, "\\\\'");
-    return '<div style="padding:8px 11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px; display:flex; align-items:center; justify-content:space-between; gap:8px;"><div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;"><div style="width:28px; height:28px; border-radius:7px; background:rgba(96,165,250,0.15); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div><div style="min-width:0; flex:1;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(email) + '</div><div style="display:flex; align-items:center; gap:4px; margin-top:2px;"><span style="font-size:9px; color:var(--ok); font-weight:700;">●</span><span style="font-size:9px; color:var(--ok); font-weight:700;">Terverifikasi</span>' + (isLatest ? '<span style="font-size:9px; color:var(--warn); font-weight:700;">• Terbaru</span>' : '') + '</div></div></div><button onclick="copyEmail(\\'' + safeEmail + '\\')" class="btn btn-ghost btn-xs" style="flex-shrink:0;">Copy</button></div>';
-  }).join('');
 }
 
 function updateQuotaStatusCard(data) {
   const total = data.totalQuota || BASE_QUOTA;
   const used = data.usedQuota || 0;
-  const remain = Math.max(0, total - used);
-  document.getElementById('quota-used-display').innerText = used;
-  document.getElementById('quota-remain-display').innerText = (data.isAdmin || data.isVip) ? '∞' : remain;
-  document.getElementById('quota-total-display').innerText = (data.isAdmin || data.isVip) ? '∞' : total;
-  const card = document.getElementById('quota-status-card');
-  const badge = document.getElementById('quota-status-badge');
-  if (data.isAdmin || data.isVip) { card.style.background = 'var(--accent-soft)'; card.style.borderColor = 'rgba(139,124,246,0.3)'; badge.className = 'badge badge-accent'; badge.innerText = data.isAdmin ? '👑 Admin' : '⭐ VIP'; }
-  else if (remain <= 0) { card.style.background = 'var(--err-soft)'; card.style.borderColor = 'rgba(248,113,113,0.3)'; badge.className = 'badge badge-err'; badge.innerText = '✗ Habis'; }
-  else if (remain <= 1) { card.style.background = 'var(--warn-soft)'; card.style.borderColor = 'rgba(251,191,36,0.3)'; badge.className = 'badge badge-warn'; badge.innerText = '⚠ Terbatas'; }
-  else { card.style.background = 'var(--info-soft)'; card.style.borderColor = 'rgba(96,165,250,0.25)'; badge.className = 'badge badge-ok'; badge.innerText = '✓ Tersedia'; }
   userQuotaData = { usedQuota: used, bonusQuota: data.bonusQuota || 0, totalQuota: total, nextResetTime: data.nextResetTime || 0, lastResetTime: data.lastResetTime || 0 };
 }
 
@@ -4044,8 +3968,6 @@ function updateResetTimerDisplay(data) {
   }
   updateStatCard(); globalCountdownInterval = setInterval(updateStatCard, 60000);
 }
-
-function copyEmail(email) { navigator.clipboard.writeText(email).then(() => showToast('Tersalin!', 'success')).catch(() => showToast('Gagal', 'error')); }
 
 function initFileDrop() {
   const dropZone = document.getElementById('file-drop-zone');
