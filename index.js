@@ -58,7 +58,9 @@ const { getDatabase, ref, get: rawGet, set: rawSet, child, remove } = require('f
 function requireEnv(name) {
   const v = process.env[name];
   if (!v || !String(v).trim()) {
-    console.error('\n[ENV] Variabel "' + name + '" belum diisi. Isi di file .env (contoh: lihat .env.example) lalu jalankan ulang.\n');
+    const msg = '[ENV] Variabel "' + name + '" belum diisi. Isi di file .env (lokal) atau Vercel > Settings > Environment Variables, lalu jalankan/redeploy ulang.';
+    console.error('\n' + msg + '\n');
+    if (process.env.VERCEL) throw new Error(msg);
     process.exit(1);
   }
   return String(v).trim();
@@ -202,7 +204,7 @@ setInterval(() => {
   for (const [k, e] of rateBuckets) if (now - e.first > (e.win || 3600000)) rateBuckets.delete(k);
 }, 10 * 60 * 1000).unref();
 function clientIp(req) {
-  if (process.env.TRUST_PROXY === '1') {
+  if (process.env.TRUST_PROXY === '1' || process.env.VERCEL) {
     const xf = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
     if (xf) return xf;
   }
@@ -6458,7 +6460,11 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
+// Di Vercel: jangan listen(), cukup export handler serverless.
+if (process.env.VERCEL) {
+  module.exports = (req, res) => server.emit('request', req, res);
+} else {
+  server.listen(PORT, () => {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
   console.log('║  🚀 AM Premium Banggus v7.3                                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
@@ -6476,3 +6482,4 @@ server.listen(PORT, () => {
   console.log('║  ⚙️  Panel Admin Lengkap                                     ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
+}
