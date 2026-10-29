@@ -28,18 +28,22 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getDatabase(firebaseApp);
 
-// ====== KONFIGURASI WEB TUTUP (LOCKDOWN TOTAL) ======
-// true  = web ditutup untuk SEMUA orang (user & admin), semua API diblokir.
-// Untuk membuka web lagi: set env SITE_CLOSED=false atau ubah nilai default di bawah menjadi false.
-const SITE_CLOSED = String(process.env.SITE_CLOSED || 'true').toLowerCase() !== 'false';
-const SITE_CLOSED_TITLE = 'WEB SEDANG TUTUP';
-const SITE_CLOSED_MESSAGE = 'Mohon maaf, web saat ini sedang tutup. Semua user dan admin tidak dapat login, daftar, atau menggunakan fitur apa pun untuk sementara waktu. Pantau TikTok admin untuk melihat update terbaru web ini.';
-const SITE_CLOSED_TIKTOK = 'https://www.tiktok.com/@banggus.am.free';
-const SITE_CLOSED_TIKTOK_LABEL = '@banggus.am.free';
-
 // ====== KONFIGURASI DANA ADMIN ======
 const DANA_ADMIN_NUMBER = '085377788830';
 const DANA_ADMIN_NAME = 'L,S';
+
+// ====== KONFIGURASI AKUN ADMIN UTAMA + PIN KEAMANAN ======
+// Nilai di bawah adalah default. Bisa ditimpa lewat environment variable (ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_PIN).
+const ADMIN_USERNAME = String(process.env.ADMIN_USERNAME || 'adminbaguss').toLowerCase();
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Baguss999';
+const ADMIN_PIN = String(process.env.ADMIN_PIN || '987622');
+// Penanda reset database. Selama node settings/<nama ini> ada di database, reset user TIDAK diulang saat server restart.
+const ADMIN_RESET_FLAG = 'adminResetV1';
+const ADMIN_SESSION_TTL = 12 * 60 * 60 * 1000;   // sesi admin berlaku 12 jam
+const ADMIN_COOKIE_NAME = 'am_admin';
+const ADMIN_MAX_FAILS = 5;                        // maksimal gagal login admin per IP
+const ADMIN_GLOBAL_MAX_FAILS = 20;                // maksimal gagal login admin dari semua IP
+const ADMIN_LOCK_MS = 15 * 60 * 1000;             // durasi kunci setelah terlalu banyak gagal
 
 // ====== KONFIGURASI PEMBAYARAN QR OTOMATIS (INVOICE API) ======
 // API key sebaiknya disimpan di environment variable QR_PAY_API_KEY (nilai di bawah hanya cadangan)
@@ -866,13 +870,169 @@ async function apkGetJob(buildId) {
   return job;
 }
 
+// ====== KEAMANAN ADMIN: PIN, SESI, ANTI BRUTE-FORCE ======
+const adminSessions = new Map();     // token sesi -> { username, expires }
+const adminFailMap = new Map();      // kunci -> { count, first, lockUntil }
+const adminCheckCache = new Map();   // username -> { val, exp }
+
+function scryptAsync(secret, salt) {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(String(secret), salt, 32, (err, key) => (err ? reject(err) : resolve(key)));
+  });
+}
+async function makePinRecord(pin) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const key = await scryptAsync(pin, salt);
+  return { pinSalt: salt, pinHash: key.toString('hex') };
+}
+async function verifyAdminPin(userObj, pin) {
+  try {
+    if (!userObj || !userObj.pinHash || !userObj.pinSalt || pin === undefined || pin === null) return false;
+    const given = await scryptAsync(String(pin), userObj.pinSalt);
+    const stored = Buffer.from(userObj.pinHash, 'hex');
+    return given.length === stored.length && crypto.timingSafeEqual(given, stored);
+  } catch (e) { return false; }
+}
+
+function getCookie(req, name) {
+  const raw = req.headers.cookie || '';
+  const parts = raw.split(';');
+  for (const part of parts) {
+    const i = part.indexOf('=');
+    if (i < 0) continue;
+    if (part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
+  }
+  return '';
+}
+function adminCookie(req, token, maxAgeSec) {
+  const secure = (req.socket && req.socket.encrypted) || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+  return ADMIN_COOKIE_NAME + '=' + token + '; Path=/; HttpOnly; SameSite=Strict; Max-Age=' + maxAgeSec + (secure ? '; Secure' : '');
+}
+function createAdminSession(username) {
+  const token = crypto.randomBytes(32).toString('hex');
+  adminSessions.set(token, { username, expires: Date.now() + ADMIN_SESSION_TTL });
+  return token;
+}
+function getAdminSession(req) {
+  const token = getCookie(req, ADMIN_COOKIE_NAME);
+  if (!token) return null;
+  const s = adminSessions.get(token);
+  if (!s) return null;
+  if (s.expires < Date.now()) { adminSessions.delete(token); return null; }
+  return s;
+}
+
+function clientIp(req) {
+  const xf = req.headers['x-forwarded-for'];
+  return (xf ? String(xf).split(',')[0].trim() : (req.socket && req.socket.remoteAddress)) || 'unknown';
+}
+function adminLockRemainingMs(req, user) {
+  const now = Date.now();
+  const keys = [clientIp(req) + '|' + user, '*|' + user];
+  for (const key of keys) {
+    const e = adminFailMap.get(key);
+    if (e && e.lockUntil > now) return e.lockUntil - now;
+  }
+  return 0;
+}
+function adminRecordFail(req, user) {
+  const now = Date.now();
+  const rules = [[clientIp(req) + '|' + user, ADMIN_MAX_FAILS], ['*|' + user, ADMIN_GLOBAL_MAX_FAILS]];
+  rules.forEach(([key, max]) => {
+    let e = adminFailMap.get(key);
+    if (!e || now - e.first > ADMIN_LOCK_MS) e = { count: 0, first: now, lockUntil: 0 };
+    e.count++;
+    if (e.count >= max) e.lockUntil = now + ADMIN_LOCK_MS;
+    adminFailMap.set(key, e);
+  });
+}
+function adminClearFails(req, user) { adminFailMap.delete(clientIp(req) + '|' + user); }
+function lockMessage(ms) { return 'Terlalu banyak percobaan gagal. Coba lagi dalam ' + Math.max(1, Math.ceil(ms / 60000)) + ' menit.'; }
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [t, s] of adminSessions) if (s.expires < now) adminSessions.delete(t);
+  for (const [k, e] of adminFailMap) if (e.lockUntil < now && now - e.first > ADMIN_LOCK_MS) adminFailMap.delete(k);
+  for (const [k, c] of adminCheckCache) if (c.exp < now) adminCheckCache.delete(k);
+}, 10 * 60 * 1000);
+
+// Apakah username (persis seperti yang akan dibaca handler) menunjuk ke akun admin?
+async function isAdminAccount(name) {
+  if (!name) return false;
+  if (name === ADMIN_USERNAME) return true;
+  const now = Date.now();
+  const c = adminCheckCache.get(name);
+  if (c && c.exp > now) return c.val;
+  let val = false;
+  try { const u = await getUserFromDb(name); val = !!(u && u.isAdmin); } catch (e) { val = false; }
+  if (adminCheckCache.size > 5000) adminCheckCache.clear();
+  adminCheckCache.set(name, { val, exp: now + 30000 });
+  return val;
+}
+
+// Gerbang keamanan: setiap request yang memakai identitas admin (atau endpoint /api/admin/*)
+// wajib membawa sesi admin yang hanya bisa didapat setelah lolos password + PIN.
+const ADMIN_GATE_EXEMPT = new Set(['/', '/api/status', '/api/auth', '/api/auth/session', '/api/auth/logout']);
+async function adminAccessGate(req, parsedUrl) {
+  const p = parsedUrl.pathname;
+  if (ADMIN_GATE_EXEMPT.has(p)) return null;
+  const claims = [];
+  ['username', 'adminUsername', 'currentUsername'].forEach(k => { const v = parsedUrl.searchParams.get(k); if (v) claims.push(v); });
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    try {
+      const raw = await readBody(req);
+      if (raw) {
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === 'object') {
+          ['username', 'adminUsername', 'currentUsername'].forEach(k => { if (typeof obj[k] === 'string' && obj[k]) claims.push(obj[k]); });
+        }
+      }
+    } catch (e) {}
+  }
+  const session = getAdminSession(req);
+  const deny = { success: false, adminAuthRequired: true, message: 'Akses admin ditolak. Login ulang dan masukkan PIN admin.' };
+  for (const c of claims) {
+    const name = c.toLowerCase();
+    if (await isAdminAccount(name)) {
+      if (!session || session.username !== name) return deny;
+    }
+  }
+  if (p.indexOf('/api/admin/') === 0 && !session) return deny;
+  return null;
+}
+
+function buildAdminRecord(pinRecord) {
+  return Object.assign({
+    password: ADMIN_PASSWORD, isAdmin: true, activatedEmails: [], bonusQuota: 0,
+    baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0
+  }, pinRecord);
+}
+
 async function initAdmin() {
-  const adminData = await getUserFromDb('adminbaguss');
-  if (!adminData) {
-    await saveUserToDb('adminbaguss', {
-      password: 'baguss', isAdmin: true, activatedEmails: [], bonusQuota: 0,
-      baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0
-    });
+  try {
+    const flagSnap = await get(child(ref(db), `settings/${ADMIN_RESET_FLAG}`));
+    if (!flagSnap.exists()) {
+      // RESET SEKALI JALAN: hapus semua akun user (termasuk admin lama) lalu buat ulang admin utama.
+      await set(ref(db, 'users'), null);
+      await set(ref(db, 'vipAccounts'), null);
+      await set(ref(db, 'onlineUsers'), null);
+      await set(ref(db, 'notificationSubscribers'), null);
+      await saveUserToDb(ADMIN_USERNAME, buildAdminRecord(await makePinRecord(ADMIN_PIN)));
+      await set(ref(db, `settings/${ADMIN_RESET_FLAG}`), { doneAt: Date.now() });
+      console.log('[ADMIN] Database user direset. Admin utama "' + ADMIN_USERNAME + '" dibuat ulang dengan PIN.');
+      return;
+    }
+    const adminData = await getUserFromDb(ADMIN_USERNAME);
+    if (!adminData) {
+      await saveUserToDb(ADMIN_USERNAME, buildAdminRecord(await makePinRecord(ADMIN_PIN)));
+      console.log('[ADMIN] Admin utama dibuat ulang.');
+    } else if (!adminData.pinHash || !adminData.pinSalt) {
+      Object.assign(adminData, await makePinRecord(ADMIN_PIN));
+      await saveUserToDb(ADMIN_USERNAME, adminData);
+      console.log('[ADMIN] PIN admin dipasang.');
+    }
+  } catch (e) {
+    console.error('[ADMIN] initAdmin gagal:', e.message);
   }
 }
 initAdmin();
@@ -3391,6 +3551,55 @@ function switchAuthTab(mode) {
   }
 }
 
+function askAdminPin(message) {
+  return new Promise(function (resolve) {
+    var old = document.getElementById('admin-pin-overlay');
+    if (old) old.remove();
+    var ov = document.createElement('div');
+    ov.id = 'admin-pin-overlay';
+    ov.style.cssText = 'position:fixed; inset:0; z-index:99999; background:rgba(0,0,0,0.78); display:flex; align-items:center; justify-content:center; padding:16px;';
+    var box = document.createElement('div');
+    box.style.cssText = 'width:100%; max-width:320px; background:var(--bg-1, #111827); border:1px solid var(--line, #334155); border-radius:14px; padding:20px; text-align:center; color:var(--text-0, #ffffff);';
+    var icon = document.createElement('div');
+    icon.style.cssText = 'font-size:30px; margin-bottom:6px;';
+    icon.textContent = '🔐';
+    var title = document.createElement('div');
+    title.style.cssText = 'font-weight:700; font-size:15px; margin-bottom:4px;';
+    title.textContent = 'Verifikasi PIN Admin';
+    var msg = document.createElement('div');
+    msg.style.cssText = 'font-size:12px; opacity:0.75; margin-bottom:12px;';
+    msg.textContent = message || 'Masukkan PIN admin untuk melanjutkan.';
+    var input = document.createElement('input');
+    input.type = 'password';
+    input.inputMode = 'numeric';
+    input.maxLength = 12;
+    input.autocomplete = 'off';
+    input.placeholder = 'PIN';
+    input.style.cssText = 'width:100%; box-sizing:border-box; padding:11px 12px; border-radius:9px; border:1px solid var(--line, #334155); background:var(--bg-0, #0b1220); color:inherit; font-size:18px; letter-spacing:0.35em; text-align:center; margin-bottom:12px; outline:none;';
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex; gap:8px;';
+    var cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.textContent = 'Batal';
+    cancel.style.cssText = 'flex:1; padding:10px; border-radius:9px; border:1px solid var(--line, #334155); background:transparent; color:inherit; cursor:pointer; font-weight:600;';
+    var ok = document.createElement('button');
+    ok.type = 'button';
+    ok.textContent = 'Masuk';
+    ok.style.cssText = 'flex:1; padding:10px; border-radius:9px; border:none; background:var(--accent, #6366f1); color:#ffffff; cursor:pointer; font-weight:700;';
+    function done(v) { document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); }
+    function onKey(e) { if (e.key === 'Escape') done(null); }
+    cancel.onclick = function () { done(null); };
+    ok.onclick = function () { var v = input.value.trim(); if (!v) { input.focus(); return; } done(v); };
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') ok.onclick(); });
+    document.addEventListener('keydown', onKey, true);
+    row.appendChild(cancel); row.appendChild(ok);
+    box.appendChild(icon); box.appendChild(title); box.appendChild(msg); box.appendChild(input); box.appendChild(row);
+    ov.appendChild(box);
+    document.body.appendChild(ov);
+    setTimeout(function () { input.focus(); }, 50);
+  });
+}
+
 async function handleAuthAction() {
   const username = document.getElementById('auth-username').value.trim();
   const password = document.getElementById('auth-password').value.trim();
@@ -3413,7 +3622,15 @@ async function handleAuthAction() {
   document.getElementById('auth-btn-text').innerText = '';
   try {
     const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, deviceToken }) });
-    const data = await res.json();
+    let data = await res.json();
+    let pinTries = 0;
+    while (data && data.pinRequired && pinTries < 5) {
+      pinTries++;
+      const adminPin = await askAdminPin(data.message);
+      if (!adminPin) { data = { success: false, message: 'Login admin dibatalkan.' }; break; }
+      const resPin = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, deviceToken, pin: adminPin }) });
+      data = await resPin.json();
+    }
     if (data.success) {
       if (currentAuthMode === 'register' && data.deviceToken) localStorage.setItem('am_device_token', data.deviceToken);
       if (data.token) { localStorage.setItem('authToken', data.token); localStorage.setItem('savedUsername', data.username); }
@@ -4826,6 +5043,7 @@ async function handleLogout() {
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   if (statusPollInterval) clearInterval(statusPollInterval);
   if (videoPollInterval) clearInterval(videoPollInterval);
+  try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (e) {}
   localStorage.removeItem('authToken');
   localStorage.removeItem('savedUsername');
   sessionStorage.clear();
@@ -4844,70 +5062,6 @@ document.addEventListener('keydown', (e) => {
 </body>
 </html>`;
 
-// ====== OVERLAY & BANNER WEB TUTUP ======
-function buildSiteClosedSnippet() {
-  return `
-<style>
-#site-closed-overlay{position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;background:rgba(8,6,24,0.97);display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto;font-family:inherit;}
-#site-closed-overlay .sc-card{max-width:440px;width:100%;text-align:center;background:#16103a;border:3px solid #fff;border-radius:16px;padding:28px 22px;box-shadow:6px 6px 0 #f87171;color:#fff;}
-#site-closed-overlay .sc-icon{font-size:46px;line-height:1;margin-bottom:10px;}
-#site-closed-overlay h1{font-size:26px;font-weight:800;margin:0 0 12px;color:#f87171;letter-spacing:0.05em;}
-#site-closed-overlay p{font-size:14px;line-height:1.6;margin:0 0 18px;color:#e5e7eb;}
-#site-closed-overlay a.sc-btn{display:inline-block;padding:12px 22px;background:#fff;color:#000;border-radius:10px;font-weight:700;font-size:14px;text-decoration:none;border:3px solid #000;}
-#site-closed-banner{background:rgba(248,113,113,0.15);border:2px solid #f87171;color:#f87171;border-radius:10px;padding:10px 12px;font-size:12.5px;font-weight:700;text-align:center;line-height:1.5;}
-#site-closed-banner a{color:#fff;text-decoration:underline;}
-html,body{overflow:hidden !important;}
-</style>
-<script>
-(function(){
-  var TITLE = ${JSON.stringify(SITE_CLOSED_TITLE)};
-  var MSG = ${JSON.stringify(SITE_CLOSED_MESSAGE)};
-  var TIKTOK = ${JSON.stringify(SITE_CLOSED_TIKTOK)};
-  var LABEL = ${JSON.stringify(SITE_CLOSED_TIKTOK_LABEL)};
-
-  function addBanner(){
-    var auth = document.getElementById('auth-view');
-    if (!auth || document.getElementById('site-closed-banner')) return;
-    var b = document.createElement('div');
-    b.id = 'site-closed-banner';
-    b.innerHTML = '\u26A0 ' + TITLE + ' \u2014 login & daftar ditutup. Pantau TikTok admin <a href="' + TIKTOK + '" target="_blank" rel="noopener">' + LABEL + '</a> untuk update.';
-    auth.insertBefore(b, auth.firstChild);
-  }
-
-  function addOverlay(){
-    if (document.getElementById('site-closed-overlay')) return;
-    var o = document.createElement('div');
-    o.id = 'site-closed-overlay';
-    o.innerHTML = '<div class="sc-card"><div class="sc-icon">\uD83D\uDD12</div><h1></h1><p></p><a class="sc-btn" target="_blank" rel="noopener"></a></div>';
-    o.querySelector('h1').textContent = TITLE;
-    o.querySelector('p').textContent = MSG;
-    var a = o.querySelector('a');
-    a.href = TIKTOK;
-    a.textContent = 'Pantau TikTok ' + LABEL;
-    document.body.appendChild(o);
-  }
-
-  function apply(){ addBanner(); addOverlay(); }
-  apply();
-  setInterval(apply, 1000);
-
-  var origFetch = window.fetch;
-  if (origFetch) {
-    window.fetch = function(){
-      return origFetch.apply(this, arguments).then(function(r){
-        if (r && r.status === 503) apply();
-        return r;
-      });
-    };
-  }
-})();
-</script>`;
-}
-const siteClosedHtml = (() => {
-  const idx = htmlTemplate.lastIndexOf('</body>');
-  return htmlTemplate.slice(0, idx) + buildSiteClosedSnippet() + htmlTemplate.slice(idx);
-})();
-
 // ==========================================
 // SERVER
 // ==========================================
@@ -4924,7 +5078,8 @@ function jsonResponse(res, code, data) {
 }
 
 function readBody(req) {
-  return new Promise((resolve, reject) => {
+  if (req._bodyPromise) return req._bodyPromise;
+  req._bodyPromise = new Promise((resolve, reject) => {
     let body = '';
     let size = 0;
     req.on('data', chunk => {
@@ -4935,42 +5090,17 @@ function readBody(req) {
     req.on('end', () => resolve(body));
     req.on('error', reject);
   });
+  return req._bodyPromise;
 }
 
 const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
-
-  // ====== LOCKDOWN: WEB TUTUP UNTUK SEMUA USER & ADMIN ======
-  if (SITE_CLOSED) {
-    const p = parsedUrl.pathname;
-    if (req.method === 'GET' && p === '/') {
-      res.writeHead(200, {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'no-store, no-cache, must-revalidate',
-        'Content-Length': Buffer.byteLength(siteClosedHtml)
-      });
-      return res.end(siteClosedHtml);
-    }
-    const payload = JSON.stringify({
-      success: false,
-      siteClosed: true,
-      status: 'closed',
-      title: SITE_CLOSED_TITLE,
-      message: SITE_CLOSED_MESSAGE,
-      tiktok: SITE_CLOSED_TIKTOK
-    });
-    res.writeHead(503, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-      'Retry-After': '3600',
-      'Content-Length': Buffer.byteLength(payload)
-    });
-    return res.end(payload);
-  }
-
   let currentServerStatus = await getServerStatusFromDb();
 
   try {
+    const gateBlock = await adminAccessGate(req, parsedUrl);
+    if (gateBlock) return jsonResponse(res, 403, gateBlock);
+
     if (parsedUrl.pathname === '/' && req.method === 'GET') {
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
@@ -5956,6 +6086,12 @@ const server = http.createServer(async (req, res) => {
       await saveRedeemToDb(code, redeemObj);
       jsonResponse(res, 200, { success: true, message: 'Berhasil! +' + rewardQuota + ' kuota bonus.', usedQuota: userObj.activatedEmails ? userObj.activatedEmails.length : 0, bonusQuota: userObj.bonusQuota, totalQuota: (userObj.baseQuota || BASE_QUOTA) + userObj.bonusQuota, isVip: userObj.vipUntil && userObj.vipUntil > Date.now(), isAdmin: userObj.isAdmin });
 
+    } else if (parsedUrl.pathname === '/api/auth/logout' && req.method === 'POST') {
+      const logoutToken = getCookie(req, ADMIN_COOKIE_NAME);
+      if (logoutToken) adminSessions.delete(logoutToken);
+      res.setHeader('Set-Cookie', adminCookie(req, '', 0));
+      jsonResponse(res, 200, { success: true });
+
     } else if (parsedUrl.pathname === '/api/auth/session' && req.method === 'POST') {
       const body = await readBody(req);
       const { username, token } = JSON.parse(body);
@@ -5964,6 +6100,10 @@ const server = http.createServer(async (req, res) => {
       await checkAndExpireBonusQuota(cleanUser);
       const existingUser = await getUserFromDb(cleanUser);
       if (!existingUser) return jsonResponse(res, 404, { success: false });
+      if (existingUser.isAdmin) {
+        const adminSess = getAdminSession(req);
+        if (!adminSess || adminSess.username !== cleanUser) return jsonResponse(res, 401, { success: false, message: 'Sesi admin berakhir. Login ulang dengan PIN.' });
+      }
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
       if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
@@ -5974,7 +6114,7 @@ const server = http.createServer(async (req, res) => {
 
     } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
       const body = await readBody(req);
-      const { mode, username, password, deviceToken } = JSON.parse(body);
+      const { mode, username, password, deviceToken, pin } = JSON.parse(body);
       if (!username || !password) return jsonResponse(res, 400, { success: false, message: 'Username dan password wajib!' });
       const cleanUser = String(username).trim().toLowerCase();
       if (!cleanUser || /[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false, message: 'Username tidak boleh mengandung spasi atau karakter . # $ [ ] /' });
@@ -5988,7 +6128,28 @@ const server = http.createServer(async (req, res) => {
         const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
         return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: fakeAuthToken });
       } else {
+        const isAdminTarget = !!(existingUser && existingUser.isAdmin);
+        if (isAdminTarget) {
+          const lockedMs = adminLockRemainingMs(req, cleanUser);
+          if (lockedMs > 0) return jsonResponse(res, 429, { success: false, message: lockMessage(lockedMs) });
+        }
         if (existingUser && existingUser.password === password) {
+          if (isAdminTarget) {
+            // KEAMANAN ADMIN: password benar saja belum cukup, wajib PIN.
+            if (pin === undefined || pin === null || String(pin).trim() === '') {
+              return jsonResponse(res, 401, { success: false, pinRequired: true, message: 'Masukkan PIN admin untuk melanjutkan.' });
+            }
+            const pinOk = await verifyAdminPin(existingUser, String(pin).trim());
+            if (!pinOk) {
+              adminRecordFail(req, cleanUser);
+              const lm = adminLockRemainingMs(req, cleanUser);
+              if (lm > 0) return jsonResponse(res, 429, { success: false, message: lockMessage(lm) });
+              return jsonResponse(res, 401, { success: false, pinRequired: true, message: 'PIN salah!' });
+            }
+            adminClearFails(req, cleanUser);
+            const adminSessionToken = createAdminSession(cleanUser);
+            res.setHeader('Set-Cookie', adminCookie(req, adminSessionToken, Math.floor(ADMIN_SESSION_TTL / 1000)));
+          }
           await checkAndExpireBonusQuota(cleanUser);
           existingUser = await getUserFromDb(cleanUser);
           const now = Date.now();
@@ -6000,6 +6161,7 @@ const server = http.createServer(async (req, res) => {
           const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
           return jsonResponse(res, 200, { success: true, message: 'Login berhasil!', username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus, token: fakeAuthToken });
         }
+        if (isAdminTarget) adminRecordFail(req, cleanUser);
         return jsonResponse(res, 401, { success: false, message: 'Username atau password salah!' });
       }
 
@@ -6074,5 +6236,6 @@ server.listen(PORT, () => {
   console.log('║  💬 Chat Global & Orderan                                    ║');
   console.log('║  🔔 Browser Notification (BARU!)                             ║');
   console.log('║  ⚙️  Panel Admin Lengkap                                     ║');
+  console.log('║  🔐 Keamanan Admin: Password + PIN + Anti Brute-Force        ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
