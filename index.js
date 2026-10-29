@@ -857,14 +857,265 @@ async function apkGetJob(buildId) {
   return job;
 }
 
-async function initAdmin() {
-  const adminData = await getUserFromDb('adminbaguss');
-  if (!adminData) {
-    await saveUserToDb('adminbaguss', {
-      password: 'baguss', isAdmin: true, activatedEmails: [], bonusQuota: 0,
-      baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0
-    });
+// ====== KEAMANAN AKUN & ADMIN ======
+// - Password disimpan ter-hash (scrypt). Password lama (plaintext) otomatis di-upgrade saat login berhasil.
+// - Login menghasilkan token sesi bertanda tangan (HMAC). Setiap request yang membawa identitas user
+//   (username / adminUsername / currentUsername) WAJIB membawa token valid milik username tersebut.
+//   Jadi mengetahui username admin saja TIDAK cukup untuk masuk atau memakai fitur admin.
+// - Akun admin: sesi pendek (8 jam), terikat ke browser, batas percobaan login lebih ketat,
+//   reset password lewat web dinonaktifkan, username admin tidak bisa diganti.
+// Environment opsional: SESSION_SECRET, ADMIN_PASSWORD, ADMIN_FORCE_RESET=1, TRUST_PROXY=1
+const MAIN_ADMIN_USERNAME = 'adminbaguss';
+const ADMIN_TOKEN_TTL = 8 * 60 * 60 * 1000;
+const USER_TOKEN_TTL = 30 * 24 * 60 * 60 * 1000;
+const AUTH_CACHE_TTL = 15 * 1000;
+const TRUST_PROXY = process.env.TRUST_PROXY === '1';
+const LOGIN_RULES = {
+  user: { max: 8, windowMs: 10 * 60 * 1000, lockMs: 10 * 60 * 1000 },
+  admin: { max: 5, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 }
+};
+const IP_LOGIN_RULE = { max: 25, windowMs: 10 * 60 * 1000, lockMs: 10 * 60 * 1000 };
+const AUTH_IDENTITY_FIELDS = ['username', 'adminUsername', 'currentUsername'];
+const AUTH_GATE_PUBLIC = new Set([
+  '/', '/api/status', '/api/video', '/api/announcements', '/api/vip-shop', '/api/online/count', '/api/online/offline',
+  '/api/auth', '/api/auth/session', '/api/auth/forgot', '/api/auth/reset', '/api/auth/logout'
+]);
+const SESSION_SECRET_FILE = path.join(__dirname, '.session_secret');
+
+function loadSessionSecret() {
+  if (process.env.SESSION_SECRET && process.env.SESSION_SECRET.length >= 16) return process.env.SESSION_SECRET;
+  try {
+    if (fs.existsSync(SESSION_SECRET_FILE)) {
+      const saved = fs.readFileSync(SESSION_SECRET_FILE, 'utf8').trim();
+      if (saved.length >= 32) return saved;
+    }
+  } catch (e) {}
+  const fresh = crypto.randomBytes(48).toString('hex');
+  try { fs.writeFileSync(SESSION_SECRET_FILE, fresh, { mode: 0o600 }); }
+  catch (e) { console.warn('[SECURITY] Tidak bisa menyimpan .session_secret, sesi login akan reset tiap server restart. Isi env SESSION_SECRET agar permanen.'); }
+  return fresh;
+}
+const SESSION_SECRET = loadSessionSecret();
+
+function b64u(buf) { return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function b64uDecode(str) {
+  let s = String(str).replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  return Buffer.from(s, 'base64');
+}
+
+// ---- Hash password (scrypt) ----
+const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
+const DUMMY_SALT = crypto.randomBytes(16);
+function scryptAsync(password, salt, keylen, opts) {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(password, salt, keylen, Object.assign({ maxmem: 64 * 1024 * 1024 }, opts), (err, key) => err ? reject(err) : resolve(key));
+  });
+}
+async function hashPassword(plain) {
+  const salt = crypto.randomBytes(16);
+  const dk = await scryptAsync(String(plain), salt, 64, SCRYPT_PARAMS);
+  return 'scrypt$' + SCRYPT_PARAMS.N + '$' + SCRYPT_PARAMS.r + '$' + SCRYPT_PARAMS.p + '$' + salt.toString('base64') + '$' + dk.toString('base64');
+}
+// Mengembalikan { ok, legacy }. legacy=true artinya password tersimpan masih plaintext (perlu di-upgrade ke hash).
+async function verifyPassword(stored, given) {
+  given = String(given === undefined || given === null ? '' : given);
+  if (typeof stored === 'string' && stored.indexOf('scrypt$') === 0) {
+    const parts = stored.split('$');
+    if (parts.length !== 6) return { ok: false, legacy: false };
+    const N = parseInt(parts[1], 10), r = parseInt(parts[2], 10), p = parseInt(parts[3], 10);
+    if (!(N >= 1024 && N <= 65536) || !(r >= 1 && r <= 16) || !(p >= 1 && p <= 4)) return { ok: false, legacy: false };
+    const salt = Buffer.from(parts[4], 'base64');
+    const expected = Buffer.from(parts[5], 'base64');
+    const derived = await scryptAsync(given, salt, expected.length, { N, r, p });
+    return { ok: derived.length === expected.length && crypto.timingSafeEqual(derived, expected), legacy: false };
   }
+  if (typeof stored === 'string' && stored.length > 0) {
+    const a = crypto.createHash('sha256').update(stored).digest();
+    const b = crypto.createHash('sha256').update(given).digest();
+    return { ok: crypto.timingSafeEqual(a, b), legacy: true };
+  }
+  await scryptAsync(given, DUMMY_SALT, 64, SCRYPT_PARAMS); // samakan waktu proses untuk user yang tidak ada
+  return { ok: false, legacy: false };
+}
+
+// ---- Token sesi (stateless, bertanda tangan HMAC) ----
+const revokedTokenIds = new Map();
+const authUserCache = new Map();
+function uaFingerprint(req) {
+  const ua = String((req && req.headers && req.headers['user-agent']) || '').replace(/[0-9._]+/g, '');
+  return crypto.createHash('sha256').update(ua).digest('hex').slice(0, 16);
+}
+function signTokenPart(part) { return b64u(crypto.createHmac('sha256', SESSION_SECRET).update(part).digest()); }
+function issueAuthToken(username, isAdmin, req) {
+  const now = Date.now();
+  const payload = { u: String(username), a: isAdmin ? 1 : 0, iat: now, exp: now + (isAdmin ? ADMIN_TOKEN_TTL : USER_TOKEN_TTL), n: crypto.randomBytes(8).toString('hex') };
+  if (isAdmin) payload.d = uaFingerprint(req);
+  const part = b64u(Buffer.from(JSON.stringify(payload)));
+  return { token: part + '.' + signTokenPart(part), expiresAt: payload.exp };
+}
+function verifyAuthToken(token) {
+  if (typeof token !== 'string' || token.length < 10 || token.length > 1024) return null;
+  const dot = token.indexOf('.');
+  if (dot < 1) return null;
+  const part = token.slice(0, dot);
+  const sig = Buffer.from(token.slice(dot + 1));
+  const expected = Buffer.from(signTokenPart(part));
+  if (sig.length !== expected.length || !crypto.timingSafeEqual(sig, expected)) return null;
+  let payload = null;
+  try { payload = JSON.parse(b64uDecode(part).toString('utf8')); } catch (e) { return null; }
+  if (!payload || typeof payload.u !== 'string' || typeof payload.exp !== 'number' || typeof payload.iat !== 'number') return null;
+  if (payload.exp < Date.now()) return null;
+  return payload;
+}
+function extractAuthToken(req) {
+  const h = req.headers['x-auth-token'];
+  if (typeof h === 'string' && h) return h.trim();
+  const a = req.headers['authorization'];
+  if (typeof a === 'string' && a.slice(0, 7).toLowerCase() === 'bearer ') return a.slice(7).trim();
+  return '';
+}
+async function getAuthUserState(username) {
+  const now = Date.now();
+  const cached = authUserCache.get(username);
+  if (cached && now - cached.at < AUTH_CACHE_TTL) return cached;
+  const u = await getUserFromDb(username);
+  const isObj = !!(u && typeof u === 'object');
+  const st = { at: now, exists: isObj, isAdmin: isObj && !!u.isAdmin, validFrom: isObj ? (Number(u.sessionsValidFrom) || 0) : 0 };
+  authUserCache.set(username, st);
+  return st;
+}
+function invalidateAuthCache(username) { authUserCache.delete(String(username || '').toLowerCase()); }
+async function validateAuthToken(req, token) {
+  const payload = verifyAuthToken(token);
+  if (!payload) return { ok: false };
+  if (payload.n && revokedTokenIds.has(payload.n)) return { ok: false };
+  const st = await getAuthUserState(payload.u);
+  if (!st.exists) return { ok: false };
+  if (payload.iat < st.validFrom) return { ok: false };
+  if (st.isAdmin) {
+    if (payload.a !== 1) return { ok: false };
+    if (payload.d !== uaFingerprint(req)) return { ok: false };
+  }
+  return { ok: true, payload, state: st };
+}
+async function revokeAllSessions(username) {
+  const uname = String(username || '').toLowerCase();
+  try {
+    const u = await getUserFromDb(uname);
+    if (u && typeof u === 'object') { u.sessionsValidFrom = Date.now(); await saveUserToDb(uname, u); }
+  } catch (e) { console.error('[SECURITY] revokeAllSessions gagal:', e.message); }
+  invalidateAuthCache(uname);
+}
+
+// ---- Batas percobaan login ----
+const loginAttempts = new Map();
+function getClientIpInfo(req) {
+  const sock = (req.socket && req.socket.remoteAddress) || 'unknown';
+  const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  if (TRUST_PROXY && xff) return { ip: xff, reliable: true };
+  if (xff) return { ip: sock, reliable: false };
+  return { ip: sock, reliable: true };
+}
+function lockRemaining(key, now) {
+  const s = loginAttempts.get(key);
+  return s && s.lockedUntil && s.lockedUntil > now ? s.lockedUntil - now : 0;
+}
+function addFailure(key, rule, now) {
+  let s = loginAttempts.get(key);
+  if (s && s.lockedUntil && s.lockedUntil > now) return;
+  if (!s || now - s.first > rule.windowMs) s = { count: 0, first: now, lockedUntil: 0 };
+  s.count++;
+  if (s.count >= rule.max) { s.lockedUntil = now + rule.lockMs; s.count = 0; s.first = now; }
+  loginAttempts.set(key, s);
+}
+function getLoginLockRemaining(username, ipInfo) {
+  const now = Date.now();
+  let ms = lockRemaining('u|' + username, now);
+  if (ipInfo && ipInfo.reliable) ms = Math.max(ms, lockRemaining('ip|' + ipInfo.ip, now));
+  return ms;
+}
+function recordLoginFailure(username, ipInfo, userExists, isAdmin) {
+  const now = Date.now();
+  if (userExists) addFailure('u|' + username, isAdmin ? LOGIN_RULES.admin : LOGIN_RULES.user, now);
+  if (ipInfo && ipInfo.reliable) addFailure('ip|' + ipInfo.ip, IP_LOGIN_RULE, now);
+}
+function clearLoginFailures(username) { loginAttempts.delete('u|' + username); }
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, s] of loginAttempts) { if ((!s.lockedUntil || s.lockedUntil < now) && now - s.first > 15 * 60 * 1000) loginAttempts.delete(k); }
+  for (const [n, exp] of revokedTokenIds) { if (exp < now) revokedTokenIds.delete(n); }
+  for (const [u, c] of authUserCache) { if (now - c.at > 5 * 60 * 1000) authUserCache.delete(u); }
+}, 10 * 60 * 1000).unref();
+
+function applySecurityHeaders(req, res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  if (String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https') res.setHeader('Strict-Transport-Security', 'max-age=15552000');
+}
+
+// Gerbang keamanan: dijalankan sebelum semua endpoint /api/*. Mengembalikan true jika request boleh lanjut.
+async function authGate(req, res, parsedUrl) {
+  const p = parsedUrl.pathname;
+  if (p.indexOf('/api/') !== 0 || AUTH_GATE_PUBLIC.has(p)) return true;
+  let bodyObj = null;
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+    const raw = await readBody(req);
+    if (raw) { try { bodyObj = JSON.parse(raw); } catch (e) { bodyObj = null; } }
+  }
+  const claims = [];
+  const qUser = parsedUrl.searchParams.get('username');
+  if (qUser !== null) claims.push(qUser);
+  if (bodyObj && typeof bodyObj === 'object' && !Array.isArray(bodyObj)) {
+    for (const k of AUTH_IDENTITY_FIELDS) {
+      if (bodyObj[k] !== undefined && bodyObj[k] !== null) claims.push(bodyObj[k]);
+    }
+  }
+  const cleanClaims = [];
+  for (const c of claims) {
+    if (typeof c !== 'string') { jsonResponse(res, 400, { success: false, message: 'Format username tidak valid.' }); return false; }
+    const v = c.trim().toLowerCase();
+    if (!v) continue;
+    if (v.length > 64 || /[.#$\[\]\/\s]/.test(v)) { jsonResponse(res, 400, { success: false, message: 'Username tidak valid.' }); return false; }
+    cleanClaims.push(v);
+  }
+  if (!cleanClaims.length) return true;
+  const check = await validateAuthToken(req, extractAuthToken(req));
+  if (!check.ok) {
+    jsonResponse(res, 401, { success: false, sessionExpired: true, message: 'Sesi login tidak valid atau sudah berakhir. Silakan login ulang.' });
+    return false;
+  }
+  for (const c of cleanClaims) {
+    if (c !== check.payload.u) {
+      console.warn('[SECURITY] Identitas tidak cocok dengan sesi. Sesi=' + check.payload.u + ' klaim=' + c + ' ip=' + getClientIpInfo(req).ip + ' path=' + p);
+      jsonResponse(res, 403, { success: false, message: 'Akses ditolak: identitas tidak sesuai dengan akun yang sedang login.' });
+      return false;
+    }
+  }
+  return true;
+}
+
+async function initAdmin() {
+  try {
+    const envPass = process.env.ADMIN_PASSWORD || '';
+    const forceReset = process.env.ADMIN_FORCE_RESET === '1';
+    const adminData = await getUserFromDb(MAIN_ADMIN_USERNAME);
+    if (!adminData) {
+      const initialPass = envPass || crypto.randomBytes(10).toString('hex');
+      await saveUserToDb(MAIN_ADMIN_USERNAME, {
+        password: await hashPassword(initialPass), isAdmin: true, activatedEmails: [], bonusQuota: 0,
+        baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0
+      });
+      if (!envPass) {
+        console.log('\n[SECURITY] Akun admin dibuat. Username : ' + MAIN_ADMIN_USERNAME);
+        console.log('[SECURITY] Password awal : ' + initialPass + '   <-- catat sekarang, tidak akan ditampilkan lagi\n');
+      }
+      return;
+    }
+    // Password admin yang sudah ada TIDAK diubah sama sekali (tidak di-reset, tidak di-hash ulang, tidak diganti otomatis).
+  } catch (e) { console.error('[SECURITY] initAdmin gagal:', e.message); }
 }
 initAdmin();
 
@@ -1046,7 +1297,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>AM PREMIUM • BANGGUS</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Bangers&family=Comic+Neue:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg-0: #0a0a0f; --bg-1: #12121a; --bg-2: #1a1a24;
@@ -1249,6 +1500,184 @@ const htmlTemplate = `<!DOCTYPE html>
   .notif-toggle.active { background:var(--ok-soft); border-color:rgba(74,222,128,0.3); color:var(--ok); }
   .notif-toggle.blocked { background:var(--err-soft); border-color:rgba(248,113,113,0.3); color:var(--err); }
   .notif-toggle svg { width:14px; height:14px; }
+
+  /* ============================================================
+     TEMA KOMIK (POP-ART) - hanya tampilan, semua fitur tetap sama
+     ============================================================ */
+  :root {
+    --bg-0: #140f3a; --bg-1: #211a5a; --bg-2: #2c2475;
+    --line: #07041c; --line-2: #07041c;
+    --text-0: #fff8e7; --text-1: #e4dcc0; --text-2: #a9a1d6;
+    --accent: #ffd23f; --accent-2: #ffb700; --accent-soft: rgba(255,210,63,0.16);
+    --ok: #3ddc84; --ok-soft: rgba(61,220,132,0.16);
+    --warn: #ff9f1c; --warn-soft: rgba(255,159,28,0.18);
+    --err: #ff4d6d; --err-soft: rgba(255,77,109,0.18);
+    --info: #4cc9f0; --info-soft: rgba(76,201,240,0.16);
+    --netflix: #e50914;
+    --ink: #07041c;
+  }
+  html, body { font-family:'Comic Neue','Comic Sans MS',system-ui,sans-serif; font-size:14.5px; font-weight:700; }
+  body {
+    background-color:#140f3a;
+    background-image:
+      radial-gradient(rgba(255,210,63,0.16) 1.6px, transparent 2px),
+      radial-gradient(rgba(255,77,109,0.12) 1.4px, transparent 1.8px),
+      linear-gradient(180deg, #1b1450 0%, #140f3a 60%, #0d0a2b 100%);
+    background-size:16px 16px, 16px 16px, 100% 100%;
+    background-position:0 0, 8px 8px, 0 0;
+    background-attachment:fixed;
+  }
+  .display-font, .brand-text, .section-head, .stat-label, .nav-section-label, .btn, .badge, .field-label, .poll-title, .toast, .brand-sub {
+    font-family:'Bangers','Comic Neue',cursive; letter-spacing:0.06em; font-weight:400;
+  }
+  .brand-text { font-size:22px; color:var(--accent); text-shadow:2px 2px 0 var(--ink), 3px 3px 0 var(--err); }
+  .brand-sub { font-size:12px; color:var(--text-0); }
+  .brand-mark { background:var(--accent); border:3px solid var(--ink); border-radius:12px; box-shadow:3px 3px 0 var(--err); transform:rotate(-6deg); }
+  .brand-mark svg { stroke:var(--ink); }
+  .brand-mark span { color:var(--ink) !important; font-family:'Bangers',cursive; }
+  .display-font { color:var(--accent) !important; font-size:30px !important; text-shadow:3px 3px 0 var(--ink), 4px 4px 0 var(--err); }
+
+  .card, .card-elevated {
+    background:var(--bg-1); border:3px solid var(--ink); border-radius:14px;
+    box-shadow:5px 5px 0 var(--ink), 5px 5px 0 2px rgba(255,210,63,0.55);
+    animation:comicPop 0.35s cubic-bezier(0.34,1.56,0.64,1);
+  }
+  .card-elevated { background:linear-gradient(135deg, #2c2475 0%, #211a5a 100%); position:relative; }
+  @keyframes comicPop { 0% { opacity:0; transform:scale(0.94) rotate(-0.6deg); } 100% { opacity:1; transform:scale(1) rotate(0); } }
+
+  #auth-view::before {
+    content:'NEW ISSUE #1!'; position:absolute; top:-14px; right:-6px; padding:4px 12px;
+    background:var(--err); color:#fff; border:3px solid var(--ink); border-radius:8px;
+    font-family:'Bangers',cursive; letter-spacing:0.08em; font-size:14px; transform:rotate(5deg);
+    box-shadow:3px 3px 0 var(--ink); z-index:2;
+  }
+  #auth-view h1::after { content:' POW!'; color:var(--err); }
+  #terminal-view > .card:first-of-type, #terminal-view > div:nth-child(2) { position:relative; }
+
+  .inp { background:#120d33; border:3px solid var(--ink); border-radius:10px; color:var(--text-0); font-family:'Comic Neue',sans-serif; font-weight:700; box-shadow:inset 2px 2px 0 rgba(255,255,255,0.06); }
+  .inp:focus { border-color:var(--accent); box-shadow:3px 3px 0 var(--accent); }
+  .inp.mono { font-family:'IBM Plex Mono',monospace; font-weight:600; }
+  label.field-label { color:var(--accent); font-size:13px; }
+
+  .btn {
+    color:var(--ink); background:var(--accent); border:3px solid var(--ink); border-radius:10px;
+    box-shadow:4px 4px 0 var(--ink); text-transform:uppercase; font-size:15px; letter-spacing:0.07em;
+    transition:transform 0.08s, box-shadow 0.08s, background 0.12s;
+  }
+  .btn:hover:not(:disabled) { background:#ffe27a; transform:translate(-1px,-1px) rotate(-0.6deg); box-shadow:5px 5px 0 var(--ink); }
+  .btn:active:not(:disabled) { transform:translate(3px,3px); box-shadow:1px 1px 0 var(--ink); }
+  .btn-ghost { background:var(--bg-2); color:var(--text-0); border-color:var(--ink); }
+  .btn-ghost:hover:not(:disabled) { background:#3a3190; }
+  .btn-ok { background:var(--ok); color:var(--ink); }
+  .btn-ok:hover:not(:disabled) { background:#6af0a6; }
+  .btn-err { background:var(--err); color:#fff; text-shadow:1px 1px 0 var(--ink); }
+  .btn-err:hover:not(:disabled) { background:#ff7a92; }
+  .btn-info { background:var(--info); color:var(--ink); }
+  .btn-info:hover:not(:disabled) { background:#86dbf5; }
+  .btn-warn { background:var(--warn); color:var(--ink); }
+  .btn-netflix { background:var(--netflix); color:#fff; text-shadow:1px 1px 0 var(--ink); }
+  .btn-hd { background:linear-gradient(135deg,#22d3ee,#6366f1); color:#fff; text-shadow:1px 1px 0 var(--ink); }
+  .btn-apk { background:linear-gradient(135deg,#34d399,#10b981); color:var(--ink); text-shadow:none; }
+  .btn-sm { font-size:14px; }
+  .btn-xs { font-size:12.5px; box-shadow:2px 2px 0 var(--ink); border-width:2.5px; }
+  .btn-loading::after { border-color:rgba(7,4,28,0.3); border-top-color:var(--ink); }
+  .user-filter-btn[style*="var(--accent)"] { color:var(--ink) !important; }
+
+  .badge { border:2px solid var(--ink); border-radius:8px; box-shadow:2px 2px 0 var(--ink); font-size:12px; }
+  .badge-ok { background:var(--ok); color:var(--ink); }
+  .badge-err { background:var(--err); color:#fff; }
+  .badge-warn { background:var(--warn); color:var(--ink); }
+  .badge-info { background:var(--info); color:var(--ink); }
+  .badge-accent { background:var(--accent); color:var(--ink); }
+  .badge-muted { background:var(--bg-2); color:var(--text-0); }
+  .online-pill { background:var(--ok); color:var(--ink); border:2.5px solid var(--ink); box-shadow:2px 2px 0 var(--ink); font-family:'Bangers',cursive; letter-spacing:0.06em; font-size:13px; }
+  .online-pill .online-dot { background:var(--ink); box-shadow:none; }
+
+  #nav-drawer { background:var(--bg-1); border-left:4px solid var(--ink); box-shadow:-6px 0 0 rgba(255,210,63,0.45); }
+  .nav-link { color:var(--text-0); border:2.5px solid transparent; border-radius:10px; font-family:'Bangers',cursive; letter-spacing:0.06em; font-size:16px; font-weight:400; }
+  .nav-link:hover { background:var(--bg-2); border-color:var(--ink); transform:translateX(3px) rotate(-0.5deg); }
+  .nav-link.active { background:var(--accent); color:var(--ink); border-color:var(--ink); box-shadow:3px 3px 0 var(--ink); }
+  .nav-link.netflix-nav.active { background:var(--netflix); color:#fff; }
+  .nav-link.orders-nav.active { background:var(--info); color:var(--ink); }
+  .nav-link.hd-nav.active { background:#22d3ee; color:var(--ink); }
+  .nav-link.apk-nav.active { background:#34d399; color:var(--ink); }
+  .nav-section-label { color:var(--err); font-size:14px; }
+
+  .stat { background:var(--bg-2); border:3px solid var(--ink); border-radius:12px; box-shadow:3px 3px 0 var(--ink); }
+  .stat-label { color:var(--accent); font-size:12.5px; }
+  .stat-value { font-family:'Bangers',cursive; font-weight:400; letter-spacing:0.05em; font-size:20px; }
+  .divider { height:0; background:none; border-top:3px dashed rgba(255,210,63,0.5); }
+  .section-head { color:var(--accent); font-size:16px; text-shadow:2px 2px 0 var(--ink); }
+
+  .toast { border:3px solid var(--ink) !important; box-shadow:5px 5px 0 var(--ink); font-size:15px; border-radius:14px; }
+  .toast-success { background:var(--ok); color:var(--ink); }
+  .toast-error { background:var(--err); color:#fff; text-shadow:1px 1px 0 var(--ink); }
+  .toast-info { background:var(--accent); color:var(--ink); }
+  .toast-netflix { background:var(--netflix); color:#fff; text-shadow:1px 1px 0 var(--ink); }
+  .toast-order { background:var(--info); color:var(--ink); }
+
+  .prog { height:14px; background:#120d33; border:2.5px solid var(--ink); border-radius:999px; }
+  .prog-fill { background:repeating-linear-gradient(45deg, var(--accent), var(--accent) 8px, var(--accent-2) 8px, var(--accent-2) 16px); }
+  .dropzone, #hd-dropzone { border:3px dashed var(--accent) !important; border-radius:12px; }
+  .dropzone:hover, .dropzone.dragover { background:var(--accent-soft); }
+
+  /* Chat: balon bicara komik */
+  .chat-wrap { background:#120d33; border:3px solid var(--ink); border-radius:14px; box-shadow:4px 4px 0 var(--ink); }
+  .chat-msg { border:2.5px solid var(--ink); box-shadow:3px 3px 0 var(--ink); font-size:14px; position:relative; }
+  .chat-msg-them { background:#fff8e7; color:var(--ink); border-radius:16px 16px 16px 3px; }
+  .chat-msg-them .chat-msg-header, .chat-msg-them .chat-time { color:var(--ink); }
+  .chat-msg-me { background:var(--accent); color:var(--ink); border-radius:16px 16px 3px 16px; }
+  .chat-msg-poll { background:var(--bg-2); color:var(--text-0); border-color:var(--ink); border-radius:14px; }
+  .chat-msg-header { font-family:'Bangers',cursive; letter-spacing:0.05em; font-weight:400; font-size:13px; }
+  .chat-input-bar { background:var(--bg-1); border-top:3px solid var(--ink); }
+  .chat-input-bar button { background:var(--err); border:3px solid var(--ink); box-shadow:3px 3px 0 var(--ink); color:#fff; }
+  .chat-input-bar button:hover { background:#ff7a92; }
+  .react-chip { border:2px solid var(--ink); background:var(--bg-2); color:var(--text-0); box-shadow:2px 2px 0 var(--ink); }
+  .chat-msg-them .react-chip { background:#ffe9b0; color:var(--ink); }
+  .react-chip.mine { background:var(--accent); color:var(--ink); }
+  .react-picker { background:var(--bg-1); border:2.5px solid var(--ink); box-shadow:3px 3px 0 var(--ink); }
+  .poll-opt { border:2.5px solid var(--ink); background:#120d33; box-shadow:2px 2px 0 var(--ink); }
+  .poll-opt.chosen { border-color:var(--accent); }
+  .poll-fill { background:rgba(255,210,63,0.3); }
+  .poll-form { border:3px solid var(--ink); box-shadow:3px 3px 0 var(--ink); }
+  .poll-admin-btn { border:2.5px solid var(--ink); background:var(--bg-2); color:var(--text-0); box-shadow:2px 2px 0 var(--ink); }
+
+  .opt-row, .hist-item, .shop-item { border:3px solid var(--ink); border-radius:12px; box-shadow:3px 3px 0 var(--ink); }
+  .opt-row:hover { background:#3a3190; transform:translate(-1px,-1px); }
+  .opt-row.selected { border-color:var(--accent); background:var(--accent-soft); box-shadow:3px 3px 0 var(--accent); }
+  .opt-row.netflix.selected { border-color:var(--netflix); box-shadow:3px 3px 0 var(--netflix); }
+  .shop-item:hover { border-color:var(--accent); transform:translate(-2px,-2px) rotate(-0.5deg); box-shadow:5px 5px 0 var(--accent); }
+  .hist-item-order-id { background:var(--info); color:var(--ink); border:2px solid var(--ink); }
+  .link-line { border:2.5px solid var(--ink); background:#120d33; }
+  .dana-card { border:3px solid var(--ink); box-shadow:4px 4px 0 #0084ff; }
+  .dana-chip { border:2.5px solid var(--ink); font-family:'Bangers',cursive; font-weight:400; letter-spacing:0.08em; }
+  .dana-copy { border:3px solid var(--ink); box-shadow:3px 3px 0 var(--ink); font-family:'Bangers',cursive; font-weight:400; letter-spacing:0.06em; font-size:14px; }
+  .countdown-cell { border:3px solid var(--ink); box-shadow:2px 2px 0 var(--ink); }
+  .countdown-num { font-family:'Bangers',cursive; font-weight:400; font-size:24px; }
+  .apk-perm { border:2.5px solid var(--ink); box-shadow:2px 2px 0 var(--ink); }
+  .apk-perm.on { background:rgba(61,220,132,0.2); border-color:var(--ok); }
+  .apk-icon-box { border:3px dashed #34d399; }
+  .hd-compare { border:3px solid var(--ink); box-shadow:4px 4px 0 var(--ink); }
+  .hd-tag { border:2px solid var(--ink); font-family:'Bangers',cursive; font-weight:400; letter-spacing:0.06em; }
+  .notif-toggle { border:2.5px solid var(--ink); box-shadow:2px 2px 0 var(--ink); font-family:'Bangers',cursive; letter-spacing:0.06em; font-weight:400; font-size:13px; color:var(--text-0); }
+  .notif-toggle.active { background:var(--ok); color:var(--ink); }
+  .notif-toggle.blocked { background:var(--err); color:#fff; }
+  #tab-indicator { background:var(--err) !important; border:2.5px solid var(--ink); box-shadow:2px 2px 0 var(--ink); }
+  #tab-login-btn, #tab-reg-btn { font-family:'Bangers',cursive !important; letter-spacing:0.08em; font-weight:400 !important; font-size:15px !important; }
+  #auth-view [style*="border:1px solid var(--line-2); border-radius:10px; padding:3px"] { border:3px solid var(--ink) !important; background:#120d33 !important; }
+  #offline-banner { border:3px solid var(--ink) !important; box-shadow:3px 3px 0 var(--ink); font-family:'Bangers',cursive; letter-spacing:0.06em; font-size:15px; }
+  #main-display-video { border-radius:10px; }
+  #terminal-view > div[style*="height:150px"] { border:4px solid var(--ink) !important; box-shadow:5px 5px 0 var(--err); border-radius:12px !important; }
+
+  /* Info-box inline bergaya komik */
+  [style*="border-radius:9px"][style*="padding:11px"], [style*="border-radius:11px"][style*="padding:13px"], [style*="border-radius:10px"][style*="padding:10px 12px"] { border-width:2.5px !important; }
+
+  ::-webkit-scrollbar { width:9px; height:9px; }
+  ::-webkit-scrollbar-track { background:var(--bg-0); }
+  ::-webkit-scrollbar-thumb { background:var(--accent); border:2px solid var(--ink); border-radius:999px; }
+  ::-webkit-scrollbar-thumb:hover { background:var(--accent-2); }
+  ::selection { background:var(--err); color:#fff; }
+  @media (prefers-reduced-motion: reduce) { .card, .card-elevated { animation:none; } .btn, .nav-link, .shop-item, .opt-row { transition:none; } }
 </style>
 </head>
 <body>
@@ -1304,7 +1733,6 @@ const htmlTemplate = `<!DOCTYPE html>
     <button onclick="switchView('chat')" data-nav="chat" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat Global<span id="chat-unread-badge" class="badge badge-err hide" style="margin-left:auto; font-size:9px; padding:1px 6px;">0</span></button>
     <button onclick="switchView('profile')" data-nav="profile" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Profil Akun</button>
     <div class="nav-section-label">Lainnya</div>
-    <button onclick="switchView('guide')" data-nav="guide" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Panduan</button>
     <button onclick="switchView('announcement')" data-nav="announcement" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>Pengumuman</button>
     <button onclick="switchView('request')" data-nav="request" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>Request Fitur</button>
     <button id="nav-admin-btn" onclick="switchView('admin')" data-nav="admin" class="nav-link hide"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Panel Admin</button>
@@ -1344,10 +1772,23 @@ const htmlTemplate = `<!DOCTYPE html>
         <div><label class="field-label">Username</label><input type="text" id="auth-username" placeholder="username_kamu" class="inp mono"></div>
         <div><label class="field-label">Password</label><input type="password" id="auth-password" placeholder="••••••••" class="inp"></div>
         <div id="email-field-container" class="hide">
+          <label class="field-label">Email (untuk reset password)</label><input type="email" id="auth-email" placeholder="email@gmail.com" class="inp" style="margin-bottom:8px;">
           <p style="font-size:10.5px; color:var(--warn); margin:0;">1 perangkat hanya bisa mendaftar 1 akun</p>
         </div>
       </div>
       <button onclick="handleAuthAction()" id="auth-submit-btn" class="btn"><span id="auth-btn-text">Masuk</span></button>
+      <div id="forgot-link-wrap" style="text-align:center;"><a href="#" onclick="toggleForgotPanel(true); return false;" style="font-size:12px; color:var(--accent);">Lupa password?</a></div>
+      <div id="forgot-panel" class="hide" style="display:flex; flex-direction:column; gap:10px;">
+        <div style="font-size:12px; color:var(--text-1);">Masukkan username. Kode 6 digit akan dikirim ke email yang kamu daftarkan.</div>
+        <input type="text" id="forgot-username" placeholder="username_kamu" class="inp mono">
+        <button onclick="sendResetCode()" id="forgot-send-btn" class="btn">Kirim Kode</button>
+        <div id="forgot-step2" class="hide" style="display:flex; flex-direction:column; gap:10px;">
+          <input type="text" id="forgot-code" placeholder="Kode 6 digit" inputmode="numeric" maxlength="6" class="inp mono">
+          <input type="password" id="forgot-newpass" placeholder="Password baru" class="inp">
+          <button onclick="submitResetPassword()" id="forgot-submit-btn" class="btn">Ubah Password</button>
+        </div>
+        <button onclick="toggleForgotPanel(false)" class="btn btn-ghost btn-sm">Kembali ke login</button>
+      </div>
     </div>
 
     <div id="terminal-view" class="hide" style="display:flex; flex-direction:column; gap:10px;">
@@ -1861,40 +2302,6 @@ const htmlTemplate = `<!DOCTYPE html>
           <button onclick="handleChangePassword()" class="btn">Ubah Password</button>
         </div>
       </div>
-      <div style="padding-top:12px; border-top:1px solid var(--line);">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:9px;">
-          <div class="section-head" style="margin:0; color:var(--info);">Gmail Terverifikasi</div>
-          <button onclick="loadVerifiedEmails()" class="btn btn-ghost btn-xs">Refresh</button>
-        </div>
-        <div id="quota-status-card" style="padding:11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:9px; margin-bottom:9px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:7px;">
-            <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em;">Status Kuota</div>
-            <span id="quota-status-badge" class="badge badge-ok" style="font-size:9px;">Tersedia</span>
-          </div>
-          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; text-align:center;">
-            <div><div style="font-size:9px; color:var(--text-2);">Terpakai</div><div id="quota-used-display" class="mono" style="font-size:13px; font-weight:800;">0</div></div>
-            <div><div style="font-size:9px; color:var(--text-2);">Tersisa</div><div id="quota-remain-display" class="mono" style="font-size:13px; font-weight:800; color:var(--info);">2</div></div>
-            <div><div style="font-size:9px; color:var(--text-2);">Total</div><div id="quota-total-display" class="mono" style="font-size:13px; font-weight:800; color:var(--accent);">2</div></div>
-          </div>
-        </div>
-        <div id="reset-countdown-card" class="hide" style="padding:13px; background:linear-gradient(135deg,var(--err-soft),var(--accent-soft)); border:1px solid rgba(248,113,113,0.3); border-radius:11px; margin-bottom:9px;">
-          <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
-            <div style="width:34px; height:34px; border-radius:9px; background:rgba(248,113,113,0.2); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--err)" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            </div>
-            <div><div style="font-size:12px; font-weight:800; color:var(--err);">Kuota habis</div><div style="font-size:10.5px; color:var(--text-1);">Reset dalam:</div></div>
-          </div>
-          <div class="countdown-grid">
-            <div class="countdown-cell"><div id="countdown-hours" class="countdown-num">00</div><div class="countdown-lbl">Jam</div></div>
-            <div class="countdown-cell"><div id="countdown-minutes" class="countdown-num">00</div><div class="countdown-lbl">Menit</div></div>
-            <div class="countdown-cell"><div id="countdown-seconds" class="countdown-num">00</div><div class="countdown-lbl">Detik</div></div>
-          </div>
-          <p style="font-size:10px; text-align:center; color:var(--text-1); margin-top:8px;">Reset berikutnya: <span id="next-reset-time" class="mono" style="color:var(--err); font-weight:700;">-</span></p>
-        </div>
-        <div id="verified-emails-list" style="display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto;">
-          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
-        </div>
-      </div>
     </div>
 
     <div id="section-admin" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
@@ -2070,21 +2477,6 @@ const htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
 
-    <div id="section-guide" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
-      <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
-        <div class="section-head" style="margin:0;">Panduan</div>
-        <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
-      </div>
-      <div style="display:flex; flex-direction:column; gap:8px;">
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">1</div><div style="font-size:12px; color:var(--text-1);">Login/daftar dulu dengan akunmu</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">2</div><div style="font-size:12px; color:var(--text-1);"><strong>Alight Motion:</strong> Masukkan email target, kirim magic link, copy URL, verifikasi</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--netflix); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">3</div><div style="font-size:12px; color:var(--text-1);"><strong>Netflix:</strong> Pilih plan, klik Generate, tunggu proses</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">4</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">5</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai.</div></div>
-        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--ok); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>Aktifkan Notifikasi</strong> (icon 🔔 di atas) untuk dapat pemberitahuan pengumuman & chat baru secara real-time!</div></div>
-      </div>
-    </div>
-
     <div id="section-announcement" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
         <div class="section-head" style="margin:0; color:var(--info);">Pengumuman</div>
@@ -2122,6 +2514,42 @@ const htmlTemplate = `<!DOCTYPE html>
 </div>
 
 <script>
+(function () {
+  var nativeFetch = window.fetch.bind(window);
+  var sessionHandled = false;
+  window.fetch = function (input, init) {
+    var url = '';
+    try { url = typeof input === 'string' ? input : ((input && input.url) || ''); } catch (e) {}
+    var isApi = url.indexOf('/api/') === 0 || url.indexOf(location.origin + '/api/') === 0;
+    if (isApi) {
+      try {
+        var tk = localStorage.getItem('authToken');
+        if (tk) {
+          init = init || {};
+          var hd = new Headers(init.headers || ((typeof input !== 'string' && input && input.headers) ? input.headers : undefined));
+          hd.set('X-Auth-Token', tk);
+          init.headers = hd;
+        }
+      } catch (e) {}
+    }
+    return nativeFetch(input, init).then(function (resp) {
+      if (isApi && resp && resp.status === 401) {
+        resp.clone().json().then(function (d) {
+          if (d && d.sessionExpired) {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('savedUsername');
+            if (url.indexOf('/api/auth/session') === -1 && !sessionHandled) {
+              sessionHandled = true;
+              if (typeof showToast === 'function') showToast('Sesi login berakhir. Silakan login ulang.', 'error');
+              setTimeout(function () { location.reload(); }, 1200);
+            }
+          }
+        }).catch(function () {});
+      }
+      return resp;
+    });
+  };
+})();
 const DANA_ADMIN_NUMBER = '${DANA_ADMIN_NUMBER}';
 const DANA_ADMIN_NAME = '${DANA_ADMIN_NAME}';
 const BASE_QUOTA = 2;
@@ -2444,7 +2872,7 @@ function switchView(viewName) {
   document.body.classList.toggle('chat-wide', viewName === 'chat');
   document.querySelectorAll('[data-nav]').forEach(el => { el.classList.toggle('active', el.dataset.nav === viewName); });
   toggleMenu();
-  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-hdfoto','section-apk','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
+  ['terminal-view','section-profile','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-hdfoto','section-apk','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hide');
   else if (viewName === 'orders') { document.getElementById('section-orders').classList.remove('hide'); loadMyOrders(); }
   else if (viewName === 'netflix') { document.getElementById('section-netflix').classList.remove('hide'); loadNetflixHistory(); updateNetflixQuotaDisplay(); }
@@ -2457,7 +2885,6 @@ function switchView(viewName) {
     document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
   }
   else if (viewName === 'profile') { document.getElementById('section-profile').classList.remove('hide'); loadVerifiedEmails(); }
-  else if (viewName === 'guide') document.getElementById('section-guide').classList.remove('hide');
   else if (viewName === 'announcement') { document.getElementById('section-announcement').classList.remove('hide'); loadUserAnnouncements(); }
   else if (viewName === 'request') { document.getElementById('section-request').classList.remove('hide'); loadUserFeatureRequests(); }
   else if (viewName === 'chat') { document.getElementById('section-chat').classList.remove('hide'); loadGlobalChat(true); unreadChatCount = 0; updateChatBadge(); }
@@ -3249,10 +3676,49 @@ function switchAuthTab(mode) {
   if (mode === 'login') {
     ind.style.transform = 'translateX(0%)'; loginBtn.style.color = 'white'; regBtn.style.color = 'var(--text-1)';
     emailField.classList.add('hide'); btnText.innerText = 'Masuk';
+    const fl = document.getElementById('forgot-link-wrap'); if (fl) fl.classList.remove('hide');
   } else {
     ind.style.transform = 'translateX(100%)'; regBtn.style.color = 'white'; loginBtn.style.color = 'var(--text-1)';
     emailField.classList.remove('hide'); btnText.innerText = 'Daftar';
+    const fl2 = document.getElementById('forgot-link-wrap'); if (fl2) fl2.classList.add('hide');
+    toggleForgotPanel(false);
   }
+}
+
+function toggleForgotPanel(show) {
+  var p = document.getElementById('forgot-panel');
+  var f = document.getElementById('auth-form-container');
+  var s = document.getElementById('auth-submit-btn');
+  var l = document.getElementById('forgot-link-wrap');
+  if (!p) return;
+  if (show) { p.classList.remove('hide'); f.classList.add('hide'); s.classList.add('hide'); l.classList.add('hide'); }
+  else { p.classList.add('hide'); f.classList.remove('hide'); s.classList.remove('hide'); if (currentAuthMode === 'login') l.classList.remove('hide'); document.getElementById('forgot-step2').classList.add('hide'); }
+}
+async function sendResetCode() {
+  var username = document.getElementById('forgot-username').value.trim();
+  if (!username) return showToast('Isi username dulu!', 'error');
+  var btn = document.getElementById('forgot-send-btn'); btn.disabled = true;
+  try {
+    var res = await fetch('/api/auth/forgot', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: username }) });
+    var data = await res.json();
+    showToast(data.message, data.success ? 'success' : 'error', 5000);
+    if (data.success) document.getElementById('forgot-step2').classList.remove('hide');
+  } catch (e) { showToast('Kesalahan koneksi', 'error'); }
+  finally { btn.disabled = false; }
+}
+async function submitResetPassword() {
+  var username = document.getElementById('forgot-username').value.trim();
+  var code = document.getElementById('forgot-code').value.trim();
+  var newPassword = document.getElementById('forgot-newpass').value;
+  if (!username || !code || !newPassword) return showToast('Semua field wajib!', 'error');
+  var btn = document.getElementById('forgot-submit-btn'); btn.disabled = true;
+  try {
+    var res = await fetch('/api/auth/reset', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: username, code: code, newPassword: newPassword }) });
+    var data = await res.json();
+    showToast(data.message, data.success ? 'success' : 'error', 5000);
+    if (data.success) { document.getElementById('forgot-code').value = ''; document.getElementById('forgot-newpass').value = ''; toggleForgotPanel(false); }
+  } catch (e) { showToast('Kesalahan koneksi', 'error'); }
+  finally { btn.disabled = false; }
 }
 
 async function handleAuthAction() {
@@ -3276,7 +3742,7 @@ async function handleAuthAction() {
   btn.disabled = true;
   document.getElementById('auth-btn-text').innerText = '';
   try {
-    const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, deviceToken }) });
+    const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, deviceToken, email: (document.getElementById('auth-email') || {}).value || '' }) });
     const data = await res.json();
     if (data.success) {
       if (currentAuthMode === 'register' && data.deviceToken) localStorage.setItem('am_device_token', data.deviceToken);
@@ -3907,6 +4373,7 @@ async function handleChangePassword() {
     const res = await fetch('/api/user/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, oldPassword, newPassword }) });
     const data = await res.json();
     if (data.success) {
+      if (data.token) localStorage.setItem('authToken', data.token);
       showToast('Password diubah!', 'success');
       document.getElementById('old-password-input').value = '';
       document.getElementById('new-password-input').value = '';
@@ -3925,6 +4392,7 @@ async function triggerUpdateUsername() {
       showToast('Username diubah!', 'success');
       loggedInUsername = result.newUsername;
       localStorage.setItem('savedUsername', loggedInUsername);
+      if (result.token) localStorage.setItem('authToken', result.token);
       document.getElementById('logged-username').innerText = loggedInUsername;
       document.getElementById('profile-uname').innerText = loggedInUsername;
       document.getElementById('drawer-username').innerText = loggedInUsername;
@@ -3937,48 +4405,23 @@ async function loadVerifiedEmails(force = false) {
   if (!loggedInUsername) return;
   const now = Date.now();
   if (!force && now - lastEmailsFetch < CACHE_DURATION.emails) { const cached = getCached('verifiedEmails'); if (cached) { renderVerifiedEmails(cached); return; } }
-  const container = document.getElementById('verified-emails-list');
-  if (!container) return;
-  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">⏳ Memuat...</p>';
   try {
     const res = await fetch('/api/user/my-emails?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
-    if (!data.success) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; return; }
+    if (!data.success) return;
     lastEmailsFetch = now; setCache('verifiedEmails', data, CACHE_DURATION.emails); renderVerifiedEmails(data);
-  } catch (e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Kesalahan koneksi</p>'; }
+  } catch (e) {}
 }
 
 function renderVerifiedEmails(data) {
-  const container = document.getElementById('verified-emails-list');
-  if (!container) return;
   updateQuotaStatusCard(data);
   handleCountdown(data);
   updateNetflixQuotaDisplay();
-  const emails = data.activatedEmails || [];
-  if (emails.length === 0) {
-    container.innerHTML = '<div style="padding:11px; text-align:center; background:var(--bg-2); border:1px dashed var(--line-2); border-radius:9px;"><div style="font-size:11.5px; color:var(--text-1); font-weight:600;">Belum ada Gmail</div><div style="font-size:10px; color:var(--text-2); margin-top:2px;">Gmail yang terverifikasi akan muncul di sini</div></div>';
-    return;
-  }
-  container.innerHTML = emails.map((email, idx) => {
-    const isLatest = idx === emails.length - 1;
-    const safeEmail = email.replace(/'/g, "\\\\'");
-    return '<div style="padding:8px 11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px; display:flex; align-items:center; justify-content:space-between; gap:8px;"><div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;"><div style="width:28px; height:28px; border-radius:7px; background:rgba(96,165,250,0.15); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div><div style="min-width:0; flex:1;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(email) + '</div><div style="display:flex; align-items:center; gap:4px; margin-top:2px;"><span style="font-size:9px; color:var(--ok); font-weight:700;">●</span><span style="font-size:9px; color:var(--ok); font-weight:700;">Terverifikasi</span>' + (isLatest ? '<span style="font-size:9px; color:var(--warn); font-weight:700;">• Terbaru</span>' : '') + '</div></div></div><button onclick="copyEmail(\\'' + safeEmail + '\\')" class="btn btn-ghost btn-xs" style="flex-shrink:0;">Copy</button></div>';
-  }).join('');
 }
 
 function updateQuotaStatusCard(data) {
   const total = data.totalQuota || BASE_QUOTA;
   const used = data.usedQuota || 0;
-  const remain = Math.max(0, total - used);
-  document.getElementById('quota-used-display').innerText = used;
-  document.getElementById('quota-remain-display').innerText = (data.isAdmin || data.isVip) ? '∞' : remain;
-  document.getElementById('quota-total-display').innerText = (data.isAdmin || data.isVip) ? '∞' : total;
-  const card = document.getElementById('quota-status-card');
-  const badge = document.getElementById('quota-status-badge');
-  if (data.isAdmin || data.isVip) { card.style.background = 'var(--accent-soft)'; card.style.borderColor = 'rgba(139,124,246,0.3)'; badge.className = 'badge badge-accent'; badge.innerText = data.isAdmin ? '👑 Admin' : '⭐ VIP'; }
-  else if (remain <= 0) { card.style.background = 'var(--err-soft)'; card.style.borderColor = 'rgba(248,113,113,0.3)'; badge.className = 'badge badge-err'; badge.innerText = '✗ Habis'; }
-  else if (remain <= 1) { card.style.background = 'var(--warn-soft)'; card.style.borderColor = 'rgba(251,191,36,0.3)'; badge.className = 'badge badge-warn'; badge.innerText = '⚠ Terbatas'; }
-  else { card.style.background = 'var(--info-soft)'; card.style.borderColor = 'rgba(96,165,250,0.25)'; badge.className = 'badge badge-ok'; badge.innerText = '✓ Tersedia'; }
   userQuotaData = { usedQuota: used, bonusQuota: data.bonusQuota || 0, totalQuota: total, nextResetTime: data.nextResetTime || 0, lastResetTime: data.lastResetTime || 0 };
 }
 
@@ -4044,8 +4487,6 @@ function updateResetTimerDisplay(data) {
   }
   updateStatCard(); globalCountdownInterval = setInterval(updateStatCard, 60000);
 }
-
-function copyEmail(email) { navigator.clipboard.writeText(email).then(() => showToast('Tersalin!', 'success')).catch(() => showToast('Gagal', 'error')); }
 
 function initFileDrop() {
   const dropZone = document.getElementById('file-drop-zone');
@@ -4717,6 +5158,7 @@ async function handleLogout() {
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   if (statusPollInterval) clearInterval(statusPollInterval);
   if (videoPollInterval) clearInterval(videoPollInterval);
+  try { await fetch('/api/auth/logout', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' }); } catch (e) {}
   localStorage.removeItem('authToken');
   localStorage.removeItem('savedUsername');
   sessionStorage.clear();
@@ -4751,6 +5193,7 @@ function jsonResponse(res, code, data) {
 }
 
 function readBody(req) {
+  if (typeof req._cachedBody === 'string') return Promise.resolve(req._cachedBody);
   return new Promise((resolve, reject) => {
     let body = '';
     let size = 0;
@@ -4759,16 +5202,50 @@ function readBody(req) {
       if (size > 50 * 1024 * 1024) { reject(new Error('Payload too large')); req.destroy(); }
       body += chunk;
     });
-    req.on('end', () => resolve(body));
+    req.on('end', () => { req._cachedBody = body; resolve(body); });
     req.on('error', reject);
   });
 }
 
+// ====== LUPA PASSWORD (KODE VIA EMAIL) ======
+// Set di environment: MAIL_USER=emailkamu@gmail.com  MAIL_PASS=<App Password 16 digit Gmail>
+const MAIL_USER = process.env.MAIL_USER || '';
+const MAIL_PASS = process.env.MAIL_PASS || '';
+const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || 'AM Premium';
+let mailer = null;
+try {
+  if (MAIL_USER && MAIL_PASS) {
+    mailer = require('nodemailer').createTransport({ service: 'gmail', auth: { user: MAIL_USER, pass: MAIL_PASS } });
+  } else {
+    console.warn('[RESET] MAIL_USER / MAIL_PASS belum diisi, fitur lupa password nonaktif.');
+  }
+} catch (e) { console.warn('[RESET] nodemailer belum terpasang. Jalankan: npm i nodemailer'); }
+
+const RESET_CODE_TTL = 10 * 60 * 1000;   // kode berlaku 10 menit
+const RESET_COOLDOWN = 60 * 1000;        // minta kode lagi minimal 60 detik
+const RESET_MAX_ATTEMPTS = 5;            // maksimal salah input kode
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function hashResetCode(code) { return crypto.createHash('sha256').update(String(code)).digest('hex'); }
+async function sendResetEmail(to, username, code) {
+  if (!mailer) throw new Error('Layanan email belum dikonfigurasi');
+  await mailer.sendMail({
+    from: '"' + MAIL_FROM_NAME + '" <' + MAIL_USER + '>',
+    to,
+    subject: 'Kode reset password: ' + code,
+    text: 'Halo ' + username + ',\n\nKode reset password kamu: ' + code + '\nBerlaku 10 menit. Jangan bagikan kode ini ke siapa pun.\n\nAbaikan email ini jika kamu tidak memintanya.'
+  });
+}
+
 const server = http.createServer(async (req, res) => {
-  const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
-  let currentServerStatus = await getServerStatusFromDb();
+  let parsedUrl;
+  try { parsedUrl = new URL(req.url, 'http://' + (req.headers.host || 'localhost')); }
+  catch (e) { res.writeHead(400, { 'Content-Type': 'text/plain' }); return res.end('Bad request'); }
+  let currentServerStatus = 'online';
+  try { currentServerStatus = await getServerStatusFromDb(); } catch (e) { console.error('[STATUS]', e.message); }
 
   try {
+    applySecurityHeaders(req, res);
+    if (!(await authGate(req, res, parsedUrl))) return;
     if (parsedUrl.pathname === '/' && req.method === 'GET') {
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
@@ -5399,10 +5876,20 @@ const server = http.createServer(async (req, res) => {
       const cleanUser = username.toLowerCase();
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-      if (userObj.password !== oldPassword) return jsonResponse(res, 401, { success: false, message: 'Password lama salah!' });
-      userObj.password = newPassword;
+      const cpIp = getClientIpInfo(req);
+      const cpLocked = getLoginLockRemaining(cleanUser, cpIp);
+      if (cpLocked > 0) return jsonResponse(res, 429, { success: false, message: 'Terlalu banyak percobaan gagal. Coba lagi dalam ' + Math.max(1, Math.ceil(cpLocked / 60000)) + ' menit.' });
+      const oldCheck = await verifyPassword(userObj.password, oldPassword);
+      if (!oldCheck.ok) {
+        recordLoginFailure(cleanUser, cpIp, true, !!userObj.isAdmin);
+        return jsonResponse(res, 401, { success: false, message: 'Password lama salah!' });
+      }
+      userObj.password = await hashPassword(String(newPassword));
+      userObj.sessionsValidFrom = Date.now();
       await saveUserToDb(cleanUser, userObj);
-      jsonResponse(res, 200, { success: true, message: 'Password diubah!' });
+      invalidateAuthCache(cleanUser);
+      const cpSess = issueAuthToken(cleanUser, !!userObj.isAdmin, req);
+      jsonResponse(res, 200, { success: true, message: 'Password diubah!', token: cpSess.token });
 
     } else if (parsedUrl.pathname === '/api/chat/messages' && req.method === 'GET') {
       // Pesan chat TIDAK dihapus otomatis (permanen sampai admin menghapus manual).
@@ -5556,6 +6043,7 @@ const server = http.createServer(async (req, res) => {
       const targetUser = await getUserFromDb(cleanTarget);
       if (!targetUser) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan!' });
       await deleteUserFromDb(cleanTarget);
+      invalidateAuthCache(cleanTarget);
       const vipAccounts = await getVipAccountsFromDb();
       for (const [id, acc] of Object.entries(vipAccounts)) {
         if (acc.username === cleanTarget) await removeVipAccountFromDb(id);
@@ -5628,15 +6116,21 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const { currentUsername, newUsername } = JSON.parse(body);
       if (!currentUsername || !newUsername) return jsonResponse(res, 400, { success: false, message: 'Username lama dan baru diperlukan.' });
-      const cleanOld = currentUsername.toLowerCase();
-      const cleanNew = newUsername.trim().toLowerCase();
+      const cleanOld = String(currentUsername).toLowerCase();
+      const cleanNew = String(newUsername).trim().toLowerCase();
+      if (cleanNew.length < 3 || cleanNew.length > 32 || /[.#$\[\]\/\s]/.test(cleanNew)) return jsonResponse(res, 400, { success: false, message: 'Username baru minimal 3 karakter dan tidak boleh mengandung spasi atau karakter . # $ [ ] /' });
+      if (cleanNew === MAIN_ADMIN_USERNAME) return jsonResponse(res, 400, { success: false, message: 'Username sudah digunakan.' });
       const existingUser = await getUserFromDb(cleanNew);
       if (existingUser) return jsonResponse(res, 400, { success: false, message: 'Username sudah digunakan.' });
       const userData = await getUserFromDb(cleanOld);
       if (!userData) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan.' });
+      if (userData.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Username akun admin tidak dapat diubah.' });
       await saveUserToDb(cleanNew, userData);
       await set(ref(db, `users/${cleanOld}`), null);
-      jsonResponse(res, 200, { success: true, newUsername: cleanNew });
+      invalidateAuthCache(cleanOld);
+      invalidateAuthCache(cleanNew);
+      const renSess = issueAuthToken(cleanNew, false, req);
+      jsonResponse(res, 200, { success: true, newUsername: cleanNew, token: renSess.token });
 
     } else if (parsedUrl.pathname === '/api/admin/set-status' && req.method === 'POST') {
       const body = await readBody(req);
@@ -5758,7 +6252,10 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const { username, token } = JSON.parse(body);
       if (!username || !token) return jsonResponse(res, 400, { success: false });
-      const cleanUser = username.toLowerCase();
+      const cleanUser = String(username).trim().toLowerCase();
+      if (/[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false });
+      const sessCheck = await validateAuthToken(req, String(token));
+      if (!sessCheck.ok || sessCheck.payload.u !== cleanUser) return jsonResponse(res, 401, { success: false, sessionExpired: true, message: 'Sesi login tidak valid atau sudah berakhir. Silakan login ulang.' });
       await checkAndExpireBonusQuota(cleanUser);
       const existingUser = await getUserFromDb(cleanUser);
       if (!existingUser) return jsonResponse(res, 404, { success: false });
@@ -5772,7 +6269,7 @@ const server = http.createServer(async (req, res) => {
 
     } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
       const body = await readBody(req);
-      const { mode, username, password, deviceToken } = JSON.parse(body);
+      const { mode, username, password, deviceToken, email } = JSON.parse(body);
       if (!username || !password) return jsonResponse(res, 400, { success: false, message: 'Username dan password wajib!' });
       const cleanUser = String(username).trim().toLowerCase();
       if (!cleanUser || /[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false, message: 'Username tidak boleh mengandung spasi atau karakter . # $ [ ] /' });
@@ -5781,12 +6278,25 @@ const server = http.createServer(async (req, res) => {
         if (cleanUser === 'adminbaguss' || existingUser) return jsonResponse(res, 400, { success: false, message: 'Username tidak tersedia!' });
         if (cleanUser.length < 3) return jsonResponse(res, 400, { success: false, message: 'Username minimal 3 karakter!' });
         if (String(password).length < 4) return jsonResponse(res, 400, { success: false, message: 'Password minimal 4 karakter!' });
+        const cleanEmail = String(email || '').trim().toLowerCase();
+        if (!EMAIL_REGEX.test(cleanEmail)) return jsonResponse(res, 400, { success: false, message: 'Email valid wajib diisi (untuk reset password)!' });
         const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
-        await saveUserToDb(cleanUser, { password, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
-        const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
-        return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: fakeAuthToken });
+        await saveUserToDb(cleanUser, { password: await hashPassword(password), email: cleanEmail, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
+        const authSess = issueAuthToken(cleanUser, false, req);
+        return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: authSess.token });
       } else {
-        if (existingUser && existingUser.password === password) {
+        const ipInfo = getClientIpInfo(req);
+        const targetExists = !!(existingUser && typeof existingUser === 'object');
+        const targetIsAdmin = targetExists && !!existingUser.isAdmin;
+        const lockedMs = getLoginLockRemaining(cleanUser, ipInfo);
+        if (lockedMs > 0) {
+          console.warn('[SECURITY] Login diblokir sementara (terlalu banyak gagal) user=' + cleanUser + ' ip=' + ipInfo.ip);
+          return jsonResponse(res, 429, { success: false, message: 'Terlalu banyak percobaan login gagal. Coba lagi dalam ' + Math.max(1, Math.ceil(lockedMs / 60000)) + ' menit.' });
+        }
+        const pwCheck = await verifyPassword(targetExists ? existingUser.password : null, password);
+        if (targetExists && pwCheck.ok) {
+          clearLoginFailures(cleanUser);
+          // Password tidak diubah/di-hash ulang saat login.
           await checkAndExpireBonusQuota(cleanUser);
           existingUser = await getUserFromDb(cleanUser);
           const now = Date.now();
@@ -5795,11 +6305,77 @@ const server = http.createServer(async (req, res) => {
           if (now - existingUser.lastResetTime >= twentyFourHours) { existingUser.activatedEmails = []; existingUser.lastResetTime = now; await saveUserToDb(cleanUser, existingUser); }
           const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
           const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
-          const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
-          return jsonResponse(res, 200, { success: true, message: 'Login berhasil!', username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus, token: fakeAuthToken });
+          const authSess = issueAuthToken(cleanUser, !!existingUser.isAdmin, req);
+          if (existingUser.isAdmin) console.log('[SECURITY] Login admin berhasil user=' + cleanUser + ' ip=' + ipInfo.ip);
+          return jsonResponse(res, 200, { success: true, message: 'Login berhasil!', username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus, token: authSess.token, tokenExpiresAt: authSess.expiresAt });
         }
+        recordLoginFailure(cleanUser, ipInfo, targetExists, targetIsAdmin);
+        if (targetIsAdmin) console.warn('[SECURITY] Gagal login ke akun admin user=' + cleanUser + ' ip=' + ipInfo.ip);
         return jsonResponse(res, 401, { success: false, message: 'Username atau password salah!' });
       }
+
+    } else if (parsedUrl.pathname === '/api/auth/logout' && req.method === 'POST') {
+      const outCheck = await validateAuthToken(req, extractAuthToken(req));
+      if (outCheck.ok) {
+        if (outCheck.state.isAdmin) await revokeAllSessions(outCheck.payload.u);
+        else if (outCheck.payload.n) revokedTokenIds.set(outCheck.payload.n, outCheck.payload.exp);
+      }
+      return jsonResponse(res, 200, { success: true });
+
+    } else if (parsedUrl.pathname === '/api/auth/forgot' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username } = JSON.parse(body);
+      const generic = { success: true, message: 'Jika akun ada dan punya email terdaftar, kode sudah dikirim.' };
+      const cleanUser = String(username || '').trim().toLowerCase();
+      if (!cleanUser || /[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 200, generic);
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj || userObj.isAdmin || !userObj.email || !EMAIL_REGEX.test(userObj.email) || /@am-premium\.local$/.test(userObj.email)) return jsonResponse(res, 200, generic);
+      const snap = await get(child(ref(db), 'passwordResets/' + cleanUser));
+      const old = snap.exists() ? snap.val() : null;
+      const now = Date.now();
+      if (old && old.sentAt && now - old.sentAt < RESET_COOLDOWN) {
+        return jsonResponse(res, 429, { success: false, message: 'Tunggu ' + Math.ceil((RESET_COOLDOWN - (now - old.sentAt)) / 1000) + ' detik sebelum minta kode lagi.' });
+      }
+      const code = String(crypto.randomInt(100000, 1000000));
+      try {
+        await sendResetEmail(userObj.email, cleanUser, code);
+      } catch (mailErr) {
+        console.error('[RESET] gagal kirim email:', mailErr.message);
+        return jsonResponse(res, 500, { success: false, message: 'Gagal mengirim email. Hubungi admin.' });
+      }
+      await set(ref(db, 'passwordResets/' + cleanUser), { codeHash: hashResetCode(code), expiresAt: now + RESET_CODE_TTL, attempts: 0, sentAt: now });
+      jsonResponse(res, 200, generic);
+
+    } else if (parsedUrl.pathname === '/api/auth/reset' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, code, newPassword } = JSON.parse(body);
+      const cleanUser = String(username || '').trim().toLowerCase();
+      if (!cleanUser || !code || !newPassword) return jsonResponse(res, 400, { success: false, message: 'Semua field wajib!' });
+      if (/[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false, message: 'Username tidak valid' });
+      { const adminProbe = await getUserFromDb(cleanUser); if (adminProbe && adminProbe.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Reset password akun admin tidak tersedia lewat web.' }); }
+      if (String(newPassword).length < 4) return jsonResponse(res, 400, { success: false, message: 'Password minimal 4 karakter!' });
+      const snap = await get(child(ref(db), 'passwordResets/' + cleanUser));
+      const rec = snap.exists() ? snap.val() : null;
+      if (!rec || rec.expiresAt < Date.now()) return jsonResponse(res, 400, { success: false, message: 'Kode tidak valid atau sudah kedaluwarsa. Minta kode baru.' });
+      if ((rec.attempts || 0) >= RESET_MAX_ATTEMPTS) {
+        await set(ref(db, 'passwordResets/' + cleanUser), null);
+        return jsonResponse(res, 429, { success: false, message: 'Terlalu banyak percobaan. Minta kode baru.' });
+      }
+      const given = Buffer.from(hashResetCode(String(code).trim()), 'hex');
+      const saved = Buffer.from(rec.codeHash, 'hex');
+      if (given.length !== saved.length || !crypto.timingSafeEqual(given, saved)) {
+        rec.attempts = (rec.attempts || 0) + 1;
+        await set(ref(db, 'passwordResets/' + cleanUser), rec);
+        return jsonResponse(res, 400, { success: false, message: 'Kode salah.' });
+      }
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
+      userObj.password = await hashPassword(String(newPassword));
+      userObj.sessionsValidFrom = Date.now();
+      await saveUserToDb(cleanUser, userObj);
+      invalidateAuthCache(cleanUser);
+      await set(ref(db, 'passwordResets/' + cleanUser), null);
+      jsonResponse(res, 200, { success: true, message: 'Password berhasil diubah. Silakan login.' });
 
     } else if (parsedUrl.pathname === '/api/magiclink' && req.method === 'POST') {
       const body = await readBody(req);
