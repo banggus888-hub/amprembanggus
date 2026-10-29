@@ -32,6 +32,21 @@ const db = getDatabase(firebaseApp);
 const DANA_ADMIN_NUMBER = '085377788830';
 const DANA_ADMIN_NAME = 'L,S';
 
+// ====== KONFIGURASI MODE TUTUP (WEB SEDANG TUTUP) ======
+// Saat admin mengubah status server menjadi OFFLINE, semua user biasa dihalangi layar "Website Sedang Tutup".
+// Admin tetap bisa login supaya bisa membuka web lagi.
+// Isi link TikTok admin lewat environment variable ADMIN_TIKTOK_URL, atau langsung ganti nilai cadangan di bawah.
+const ADMIN_TIKTOK_URL = (process.env.ADMIN_TIKTOK_URL || 'tiktok.com/@banggus.am.free').trim();   // contoh: https://www.tiktok.com/@username_admin
+const MAINTENANCE_MESSAGE = 'Website sedang tutup. Pantau TikTok admin untuk melihat update website.';
+const MAINTENANCE_OPEN_PATHS = new Set(['/api/status', '/api/auth', '/api/auth/session', '/api/auth/logout']);
+function getMaintenanceInfo() {
+  const url = /^https:\/\//i.test(ADMIN_TIKTOK_URL) ? ADMIN_TIKTOK_URL : '';
+  return { maintenance: true, message: MAINTENANCE_MESSAGE, tiktok: url };
+}
+function maintenanceResponse(res) {
+  return jsonResponse(res, 503, Object.assign({ success: false, error: MAINTENANCE_MESSAGE }, getMaintenanceInfo()));
+}
+
 // ====== KONFIGURASI PEMBAYARAN QR OTOMATIS (INVOICE API) ======
 // API key sebaiknya disimpan di environment variable QR_PAY_API_KEY (nilai di bawah hanya cadangan)
 const QR_PAY_API_KEY = process.env.QR_PAY_API_KEY || 'sk_live_847f571682ccb5e89642d69d6b3a2dd9d8150cf1f72804c4';
@@ -1677,11 +1692,30 @@ const htmlTemplate = `<!DOCTYPE html>
   ::-webkit-scrollbar-thumb { background:var(--accent); border:2px solid var(--ink); border-radius:999px; }
   ::-webkit-scrollbar-thumb:hover { background:var(--accent-2); }
   ::selection { background:var(--err); color:#fff; }
+  #maintenance-overlay { position:fixed; inset:0; z-index:9000; display:none; align-items:center; justify-content:center; padding:20px; background:rgba(8,8,12,0.97); overflow-y:auto; }
+  #maintenance-overlay.show { display:flex; }
+  #maintenance-overlay .mt-box { width:100%; max-width:380px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:14px; }
+  #maintenance-overlay .mt-icon { width:72px; height:72px; border-radius:20px; background:var(--err-soft); border:1px solid rgba(248,113,113,0.35); display:flex; align-items:center; justify-content:center; font-size:34px; }
+  #maintenance-overlay .mt-title { font-size:22px; font-weight:800; color:var(--text-0); letter-spacing:0.2px; }
+  #maintenance-overlay .mt-text { font-size:13.5px; line-height:1.6; color:var(--text-1); }
+  #maintenance-overlay .mt-btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:12px 16px; border-radius:12px; font-size:13.5px; font-weight:700; text-decoration:none; cursor:pointer; border:1px solid var(--line-2); background:var(--bg-2); color:var(--text-0); font-family:inherit; }
+  #maintenance-overlay .mt-btn-tiktok { background:#fe2c55; border-color:#fe2c55; color:#fff; }
+  #maintenance-overlay .mt-link { background:none; border:none; color:var(--text-2); font-size:11px; cursor:pointer; text-decoration:underline; font-family:inherit; padding:4px; }
   @media (prefers-reduced-motion: reduce) { .card, .card-elevated { animation:none; } .btn, .nav-link, .shop-item, .opt-row { transition:none; } }
 </style>
 </head>
 <body>
 <div id="toast-container"></div>
+<div id="maintenance-overlay" role="alertdialog" aria-modal="true" aria-labelledby="mt-title">
+  <div class="mt-box">
+    <div class="mt-icon">🔒</div>
+    <div class="mt-title" id="mt-title">Website Sedang Tutup</div>
+    <div class="mt-text" id="mt-text">Website sedang tutup untuk sementara. Pantau TikTok admin untuk melihat update website. Login dan semua fitur dinonaktifkan sampai website dibuka kembali.</div>
+    <a id="mt-tiktok-btn" class="mt-btn mt-btn-tiktok" href="#" target="_blank" rel="noopener noreferrer" style="display:none;">🎵 Buka TikTok Admin</a>
+    <button type="button" class="mt-btn" onclick="recheckMaintenance()">🔄 Cek Lagi</button>
+    <button type="button" class="mt-link" onclick="openAdminLoginFromMaintenance()">Masuk sebagai admin</button>
+  </div>
+</div>
 <div class="app-shell">
   <div class="topbar">
     <div style="display:flex; align-items:center; gap:10px;">
@@ -2544,6 +2578,11 @@ const htmlTemplate = `<!DOCTYPE html>
               setTimeout(function () { location.reload(); }, 1200);
             }
           }
+        }).catch(function () {});
+      }
+      if (isApi && resp && resp.status === 503) {
+        resp.clone().json().then(function (d) {
+          if (d && d.maintenance && typeof showMaintenance === 'function') showMaintenance(d);
         }).catch(function () {});
       }
       return resp;
@@ -3618,6 +3657,7 @@ async function fetchServerStatus(force = false) {
   try {
     const res = await fetch('/api/status');
     const data = await res.json();
+    if (data.maintenance) setMaintenanceInfo(data);
     updateStatusUI(data.status); serverOnline = (data.status === 'online'); lastStatusFetch = now;
     setCache('serverStatus', data.status, CACHE_DURATION.status);
   } catch(e) {}
@@ -3634,7 +3674,45 @@ async function fetchFeaturedVideo(force = false) {
   } catch(e) {}
 }
 
+var lastKnownStatus = 'online';
+var adminLoginPeek = false;
+function setMaintenanceInfo(d) {
+  if (!d) return;
+  var t = document.getElementById('mt-text');
+  var b = document.getElementById('mt-tiktok-btn');
+  if (t && d.message) t.textContent = d.message + ' Login dan semua fitur dinonaktifkan sampai website dibuka kembali.';
+  if (b) {
+    var u = String(d.tiktok || '');
+    if (u.toLowerCase().indexOf('https://') === 0) { b.href = u; b.style.display = 'inline-flex'; }
+    else { b.style.display = 'none'; }
+  }
+}
+function applyMaintenanceState(status) {
+  var ov = document.getElementById('maintenance-overlay');
+  if (!ov) return;
+  if (status) lastKnownStatus = status;
+  var closed = lastKnownStatus !== 'online';
+  if (closed && !isAdminUser && !adminLoginPeek) { ov.classList.add('show'); document.body.style.overflow = 'hidden'; }
+  else { ov.classList.remove('show'); document.body.style.overflow = ''; }
+}
+function showMaintenance(d) {
+  setMaintenanceInfo(d);
+  adminLoginPeek = false;
+  serverOnline = false;
+  applyMaintenanceState('offline');
+}
+function openAdminLoginFromMaintenance() {
+  adminLoginPeek = true;
+  applyMaintenanceState();
+  showToast('Hanya admin yang bisa login saat website tutup.', 'info', 4000);
+}
+async function recheckMaintenance() {
+  await fetchServerStatus(true);
+  if (lastKnownStatus !== 'online') showToast('Website masih tutup. Pantau TikTok admin ya.', 'info', 3500);
+  else showToast('Website sudah dibuka kembali!', 'success');
+}
 function updateStatusUI(status) {
+  applyMaintenanceState(status);
   const ind = document.getElementById('server-status-indicator');
   const dot = document.getElementById('server-dot');
   const txt = document.getElementById('server-status-text');
@@ -5246,6 +5324,11 @@ const server = http.createServer(async (req, res) => {
   try {
     applySecurityHeaders(req, res);
     if (!(await authGate(req, res, parsedUrl))) return;
+    // Gerbang MODE TUTUP: saat server offline, hanya admin yang boleh memakai API (selain endpoint login/status).
+    if (currentServerStatus !== 'online' && parsedUrl.pathname.indexOf('/api/') === 0 && !MAINTENANCE_OPEN_PATHS.has(parsedUrl.pathname)) {
+      const mCheck = await validateAuthToken(req, extractAuthToken(req));
+      if (!(mCheck.ok && mCheck.state.isAdmin)) return maintenanceResponse(res);
+    }
     if (parsedUrl.pathname === '/' && req.method === 'GET') {
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
@@ -5255,7 +5338,9 @@ const server = http.createServer(async (req, res) => {
       res.end(htmlTemplate);
 
     } else if (parsedUrl.pathname === '/api/status') {
-      jsonResponse(res, 200, { status: currentServerStatus });
+      jsonResponse(res, 200, currentServerStatus === 'online'
+        ? { status: currentServerStatus, maintenance: false }
+        : Object.assign({ status: currentServerStatus }, getMaintenanceInfo()));
 
     } else if (parsedUrl.pathname === '/api/video') {
       const videoUrl = await getVideoFromDb();
@@ -6259,6 +6344,7 @@ const server = http.createServer(async (req, res) => {
       await checkAndExpireBonusQuota(cleanUser);
       const existingUser = await getUserFromDb(cleanUser);
       if (!existingUser) return jsonResponse(res, 404, { success: false });
+      if (currentServerStatus !== 'online' && !existingUser.isAdmin) return maintenanceResponse(res);
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
       if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
@@ -6275,6 +6361,7 @@ const server = http.createServer(async (req, res) => {
       if (!cleanUser || /[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false, message: 'Username tidak boleh mengandung spasi atau karakter . # $ [ ] /' });
       let existingUser = await getUserFromDb(cleanUser);
       if (mode === 'register') {
+        if (currentServerStatus !== 'online') return maintenanceResponse(res);
         if (cleanUser === 'adminbaguss' || existingUser) return jsonResponse(res, 400, { success: false, message: 'Username tidak tersedia!' });
         if (cleanUser.length < 3) return jsonResponse(res, 400, { success: false, message: 'Username minimal 3 karakter!' });
         if (String(password).length < 4) return jsonResponse(res, 400, { success: false, message: 'Password minimal 4 karakter!' });
@@ -6294,6 +6381,7 @@ const server = http.createServer(async (req, res) => {
           return jsonResponse(res, 429, { success: false, message: 'Terlalu banyak percobaan login gagal. Coba lagi dalam ' + Math.max(1, Math.ceil(lockedMs / 60000)) + ' menit.' });
         }
         const pwCheck = await verifyPassword(targetExists ? existingUser.password : null, password);
+        if (targetExists && pwCheck.ok && currentServerStatus !== 'online' && !existingUser.isAdmin) return maintenanceResponse(res);
         if (targetExists && pwCheck.ok) {
           clearLoginFailures(cleanUser);
           // Password tidak diubah/di-hash ulang saat login.
