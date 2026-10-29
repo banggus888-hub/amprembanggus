@@ -1,3 +1,48 @@
+// ====== LOADER .env (tanpa dependensi) ======
+// Semua data rahasia (API key, Firebase, nomor DANA, dll) dibaca dari file ".env" di folder yang sama.
+const __fsBoot = require('fs');
+const __pathBoot = require('path');
+const ENV_FILE = __pathBoot.join(__dirname, '.env');
+(function loadEnvFile() {
+  try {
+    if (!__fsBoot.existsSync(ENV_FILE)) return;
+    const lines = __fsBoot.readFileSync(ENV_FILE, 'utf8').split(/\r?\n/);
+    for (const line of lines) {
+      if (!line.trim() || line.trim().startsWith('#')) continue;
+      const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
+      if (!m) continue;
+      let v = m[2];
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+      if (process.env[m[1]] === undefined || process.env[m[1]] === '') process.env[m[1]] = v;
+    }
+  } catch (e) { console.warn('[ENV] Gagal membaca .env:', e.message); }
+})();
+
+// Proses tidak boleh mati hanya karena satu error yang tidak tertangkap
+process.on('unhandledRejection', (e) => console.error('[UNHANDLED REJECTION]', e && e.message ? e.message : e));
+process.on('uncaughtException', (e) => console.error('[UNCAUGHT EXCEPTION]', e && e.message ? e.message : e));
+
+// Rahasia internal dibuat otomatis (sekali) dan disimpan ke .env bila belum ada
+function ensureSecret(name) {
+  const cur = process.env[name];
+  if (cur && String(cur).length >= 32) return String(cur);
+  const val = require('crypto').randomBytes(32).toString('hex');
+  process.env[name] = val;
+  try {
+    let txt = __fsBoot.existsSync(ENV_FILE) ? __fsBoot.readFileSync(ENV_FILE, 'utf8') : '';
+    const emptyLine = new RegExp('^' + name + '=[ \\t]*$', 'm');
+    if (emptyLine.test(txt)) txt = txt.replace(emptyLine, name + '=' + val);   // isi baris kosong yang sudah ada
+    else txt = txt + (txt && !txt.endsWith('\n') ? '\n' : '') + name + '=' + val + '\n';
+    __fsBoot.writeFileSync(ENV_FILE, txt, { mode: 0o600 });
+    console.log('[ENV] ' + name + ' dibuat otomatis dan disimpan ke .env');
+  } catch (e) {
+    console.warn('[ENV] ' + name + ' tidak bisa disimpan ke .env (login/enkripsi akan berubah setiap restart)');
+  }
+  return val;
+}
+const AUTH_SECRET = ensureSecret('AUTH_SECRET');   // kunci penanda tangan token login
+const DATA_KEY_RAW = ensureSecret('DATA_KEY');     // kunci enkripsi data sensitif di database
+
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
@@ -7,34 +52,174 @@ const tls = require('tls');
 const crypto = require('crypto');
 const Go = require('@xof/fetch');
 const { initializeApp } = require('firebase/app');
-const { getDatabase, ref, get, set, child, remove } = require('firebase/database');
+const { getDatabase, ref, get: rawGet, set: rawSet, child, remove } = require('firebase/database');
 
-// ====== KONFIGURASI ======
+// ====== KONFIGURASI (semua rahasia dibaca dari .env / environment variable) ======
+function requireEnv(name) {
+  const v = process.env[name];
+  if (!v || !String(v).trim()) {
+    console.error('\n[ENV] Variabel "' + name + '" belum diisi. Isi di file .env (contoh: lihat .env.example) lalu jalankan ulang.\n');
+    process.exit(1);
+  }
+  return String(v).trim();
+}
+
 const config = {
-  base: 'https://app.kyzznekoo.my.id',
-  kyzznekooApiKey: 'sk_xof_c55534e72b71ed35f19e214cdd8d4717'
+  base: (process.env.KYZZNEKOO_BASE_URL || 'https://app.kyzznekoo.my.id').replace(/\/+$/, ''),
+  kyzznekooApiKey: requireEnv('KYZZNEKOO_API_KEY')
 };
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCg1K6T7IZ4ldhX6ehn9uC_KfRrFSSv9ec",
-  authDomain: "jualakunbs.firebaseapp.com",
-  databaseURL: "https://jualakunbs-default-rtdb.firebaseio.com",
-  projectId: "jualakunbs",
-  storageBucket: "jualakunbs.firebasestorage.app",
-  messagingSenderId: "341323679179",
-  appId: "1:341323679179:web:0167d4d9e3661c553d624e"
+  apiKey: requireEnv('FIREBASE_API_KEY'),
+  authDomain: requireEnv('FIREBASE_AUTH_DOMAIN'),
+  databaseURL: requireEnv('FIREBASE_DATABASE_URL'),
+  projectId: requireEnv('FIREBASE_PROJECT_ID'),
+  storageBucket: requireEnv('FIREBASE_STORAGE_BUCKET'),
+  messagingSenderId: requireEnv('FIREBASE_MESSAGING_SENDER_ID'),
+  appId: requireEnv('FIREBASE_APP_ID')
 };
 
 const firebaseApp = initializeApp(firebaseConfig);
+
+// Opsional: server login ke Firebase memakai akun khusus (FIREBASE_AUTH_EMAIL / FIREBASE_AUTH_PASSWORD)
+// sehingga Rules database bisa dikunci menjadi ".read/.write": "auth != null" (publik tidak bisa akses).
+let dbReady = Promise.resolve();
+if (process.env.FIREBASE_AUTH_EMAIL && process.env.FIREBASE_AUTH_PASSWORD) {
+  try {
+    const { getAuth, signInWithEmailAndPassword } = require('firebase/auth');
+    const fbAuth = getAuth(firebaseApp);
+    dbReady = signInWithEmailAndPassword(fbAuth, process.env.FIREBASE_AUTH_EMAIL, process.env.FIREBASE_AUTH_PASSWORD)
+      .then(() => console.log('[FIREBASE] Login akun server berhasil'))
+      .catch((e) => console.error('[FIREBASE] Login akun server GAGAL:', e.message));
+  } catch (e) { console.error('[FIREBASE] Modul firebase/auth tidak tersedia:', e.message); }
+}
 const db = getDatabase(firebaseApp);
+const get = async (...args) => { await dbReady; return rawGet(...args); };
+const set = async (...args) => { await dbReady; return rawSet(...args); };
+
+// ====== KEAMANAN: TOKEN LOGIN, HASH PASSWORD, ENKRIPSI DATA, LIMITER ======
+const b64u = (buf) => Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function signToken(username) {
+  const payload = b64u(JSON.stringify({ u: String(username).toLowerCase(), exp: Date.now() + TOKEN_TTL_MS }));
+  const sig = b64u(crypto.createHmac('sha256', AUTH_SECRET).update(payload).digest());
+  return payload + '.' + sig;
+}
+
+function verifyToken(token) {
+  try {
+    if (typeof token !== 'string' || token.length > 600) return null;
+    const parts = token.split('.');
+    if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+    const expected = b64u(crypto.createHmac('sha256', AUTH_SECRET).update(parts[0]).digest());
+    const a = Buffer.from(parts[1]);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    const data = JSON.parse(Buffer.from(parts[0].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    if (!data || typeof data.u !== 'string' || !data.exp || data.exp < Date.now()) return null;
+    return data.u;
+  } catch (e) { return null; }
+}
+
+function scryptAsync(pw, salt) {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(String(pw), salt, 64, { N: 16384, r: 8, p: 1 }, (err, key) => err ? reject(err) : resolve(key));
+  });
+}
+async function hashPassword(pw) {
+  const salt = crypto.randomBytes(16);
+  const key = await scryptAsync(pw, salt);
+  return 'scrypt$' + salt.toString('hex') + '$' + key.toString('hex');
+}
+async function verifyPasswordHash(pw, stored) {
+  try {
+    const parts = String(stored).split('$');
+    if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
+    const expected = Buffer.from(parts[2], 'hex');
+    const key = await scryptAsync(pw, Buffer.from(parts[1], 'hex'));
+    return key.length === expected.length && crypto.timingSafeEqual(key, expected);
+  } catch (e) { return false; }
+}
+function safeEqualStr(a, b) {
+  const x = crypto.createHash('sha256').update(String(a)).digest();
+  const y = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(x, y);
+}
+// Cek password user. Data lama (teks biasa) otomatis di-upgrade menjadi hash saat berhasil login.
+async function checkUserPassword(userObj, pw, username) {
+  if (!userObj || pw === undefined || pw === null) return false;
+  if (userObj.passwordHash) return verifyPasswordHash(pw, userObj.passwordHash);
+  if (userObj.password !== undefined && userObj.password !== null && safeEqualStr(userObj.password, pw)) {
+    try {
+      if (username) {
+        userObj.passwordHash = await hashPassword(pw);
+        delete userObj.password;
+        await saveUserToDb(username, userObj);
+      }
+    } catch (e) { }
+    return true;
+  }
+  return false;
+}
+
+const DATA_KEY = crypto.createHash('sha256').update(String(DATA_KEY_RAW)).digest();
+function encryptText(plain) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', DATA_KEY, iv);
+  const enc = Buffer.concat([c.update(String(plain), 'utf8'), c.final()]);
+  return 'enc1$' + iv.toString('hex') + '$' + c.getAuthTag().toString('hex') + '$' + enc.toString('hex');
+}
+function decryptText(blob) {
+  try {
+    const p = String(blob).split('$');
+    if (p.length !== 4 || p[0] !== 'enc1') return '';
+    const d = crypto.createDecipheriv('aes-256-gcm', DATA_KEY, Buffer.from(p[1], 'hex'));
+    d.setAuthTag(Buffer.from(p[2], 'hex'));
+    return Buffer.concat([d.update(Buffer.from(p[3], 'hex')), d.final()]).toString('utf8');
+  } catch (e) { return ''; }
+}
+
+// Pembatas percobaan (anti tebak password / spam daftar)
+const rateBuckets = new Map();
+function rateBlocked(bucket, key, max, windowMs) {
+  const k = bucket + '|' + key;
+  const e = rateBuckets.get(k);
+  if (!e) return false;
+  if (Date.now() - e.first > windowMs) { rateBuckets.delete(k); return false; }
+  return e.count >= max;
+}
+function rateNote(bucket, key, windowMs) {
+  const k = bucket + '|' + key;
+  const now = Date.now();
+  const e = rateBuckets.get(k);
+  if (!e || now - e.first > windowMs) rateBuckets.set(k, { count: 1, first: now, win: windowMs });
+  else e.count++;
+}
+function rateClear(bucket, key) { rateBuckets.delete(bucket + '|' + key); }
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, e] of rateBuckets) if (now - e.first > (e.win || 3600000)) rateBuckets.delete(k);
+}, 10 * 60 * 1000).unref();
+function clientIp(req) {
+  if (process.env.TRUST_PROXY === '1') {
+    const xf = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    if (xf) return xf;
+  }
+  return (req.socket && req.socket.remoteAddress) || 'unknown';
+}
+const LOGIN_WINDOW = 15 * 60 * 1000;
+const REGISTER_WINDOW = 60 * 60 * 1000;
+const ADMIN_ENV_PW = (process.env.ADMIN_PASSWORD || '').length >= 6 ? process.env.ADMIN_PASSWORD : '';
 
 // ====== KONFIGURASI DANA ADMIN ======
-const DANA_ADMIN_NUMBER = '085377788830';
-const DANA_ADMIN_NAME = 'L,S';
+const DANA_ADMIN_NUMBER = requireEnv('DANA_ADMIN_NUMBER');
+const DANA_ADMIN_NAME = process.env.DANA_ADMIN_NAME || '';
 
 // ====== KONFIGURASI PEMBAYARAN QR OTOMATIS (INVOICE API) ======
-// API key sebaiknya disimpan di environment variable QR_PAY_API_KEY (nilai di bawah hanya cadangan)
-const QR_PAY_API_KEY = process.env.QR_PAY_API_KEY || 'sk_live_847f571682ccb5e89642d69d6b3a2dd9d8150cf1f72804c4';
+// API key dibaca dari .env (QR_PAY_API_KEY)
+const QR_PAY_API_KEY = process.env.QR_PAY_API_KEY || '';
+if (!QR_PAY_API_KEY) console.warn('[ENV] QR_PAY_API_KEY kosong - pembayaran QR otomatis tidak akan berfungsi.');
 // Base URL API invoice (akhiran /v1 otomatis dibuang karena path /v1/invoices sudah ditambahkan di kode)
 const QR_PAY_BASE_URL = (process.env.QR_PAY_BASE_URL || 'https://api.sayabayar.com/v1').replace(/\/+$/, '').replace(/\/v1$/, '');
 const QR_PAY_TIMEOUT = 20 * 1000;
@@ -192,6 +377,7 @@ async function removeTransactionFromDb(id) { await set(ref(db, `transactions/${i
 // ====== HELPER PEMBAYARAN QR OTOMATIS ======
 function qrPayRequest(method, apiPath, bodyObj) {
   return new Promise((resolve, reject) => {
+    if (!QR_PAY_API_KEY) return reject(new Error('QR_PAY_API_KEY belum diisi di .env'));
     if (!QR_PAY_BASE_URL || QR_PAY_BASE_URL.includes('ISI-BASE-URL')) {
       return reject(new Error('QR_PAY_BASE_URL belum diisi di index.js / environment variable'));
     }
@@ -860,13 +1046,51 @@ async function apkGetJob(buildId) {
 async function initAdmin() {
   const adminData = await getUserFromDb('adminbaguss');
   if (!adminData) {
+    let pw = ADMIN_ENV_PW;
+    let generated = false;
+    if (!pw) { pw = crypto.randomBytes(9).toString('base64url'); generated = true; }
     await saveUserToDb('adminbaguss', {
-      password: 'baguss', isAdmin: true, activatedEmails: [], bonusQuota: 0,
+      passwordHash: await hashPassword(pw), isAdmin: true, activatedEmails: [], bonusQuota: 0,
       baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0
     });
+    if (generated) console.log('[ADMIN] Akun admin dibuat. Password awal (catat, hanya tampil sekali): ' + pw);
   }
 }
-initAdmin();
+
+// Amankan data lama: password teks biasa -> hash, password akun VIP -> terenkripsi
+async function migrateLegacySecrets() {
+  try {
+    await dbReady;
+    const vip = await getVipAccountsFromDb();
+    for (const [id, acc] of Object.entries(vip || {})) {
+      if (acc && acc.password !== undefined && !acc.passwordEnc) {
+        const { password: legacyPw, ...rest } = acc;
+        await saveVipAccountToDb(id, { ...rest, passwordEnc: encryptText(legacyPw) });
+      }
+    }
+    const users = await getAllUsersFromDb();
+    let migrated = 0;
+    for (const uname of Object.keys(users || {})) {
+      const u0 = users[uname];
+      if (!u0 || u0.password === undefined) continue;
+      const u = await getUserFromDb(uname);
+      if (!u || u.password === undefined) continue;
+      if (!u.passwordHash) {
+        let plain = String(u.password);
+        if (uname === 'adminbaguss' && plain === 'baguss') {
+          if (ADMIN_ENV_PW) plain = ADMIN_ENV_PW;
+          else console.warn('[ADMIN] Password admin masih bawaan lama. Segera ganti lewat menu Profil atau isi ADMIN_PASSWORD di .env.');
+        }
+        u.passwordHash = await hashPassword(plain);
+      }
+      delete u.password;
+      await saveUserToDb(uname, u);
+      migrated++;
+    }
+    if (migrated > 0) console.log('[KEAMANAN] ' + migrated + ' password lama berhasil diamankan (di-hash).');
+  } catch (e) { console.error('[MIGRASI]', e.message); }
+}
+initAdmin().catch((e) => console.error('[ADMIN INIT]', e.message)).then(migrateLegacySecrets);
 
 async function initDefaultVipShop() {
   const shop = await getVipShopFromDb();
@@ -2263,9 +2487,52 @@ const htmlTemplate = `<!DOCTYPE html>
 </div>
 
 <script>
-const DANA_ADMIN_NUMBER = '${DANA_ADMIN_NUMBER}';
-const DANA_ADMIN_NAME = '${DANA_ADMIN_NAME}';
+(function () {
+  var _fetch = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    var url = '';
+    try {
+      url = typeof input === 'string' ? input : ((input && input.url) || '');
+      if (url.indexOf('/api/') === 0) {
+        var token = localStorage.getItem('authToken');
+        if (token) {
+          init = init || {};
+          var h = new Headers(init.headers || {});
+          if (!h.has('Authorization')) h.set('Authorization', 'Bearer ' + token);
+          init.headers = h;
+        }
+      }
+    } catch (e) {}
+    var p = _fetch(input, init);
+    if (url.indexOf('/api/') === 0) {
+      p.then(function (r) {
+        if (r.status === 401 && localStorage.getItem('authToken')) {
+          r.clone().json().then(function (j) {
+            if (j && j.needLogin) {
+              localStorage.removeItem('authToken');
+              localStorage.removeItem('savedUsername');
+              if (typeof showToast === 'function') showToast('Sesi berakhir, silakan login ulang.', 'error', 3000);
+              setTimeout(function () { location.reload(); }, 1500);
+            }
+          }).catch(function () {});
+        }
+      }).catch(function () {});
+    }
+    return p;
+  };
+})();
+let DANA_ADMIN_NUMBER = '';
+let DANA_ADMIN_NAME = '';
 const BASE_QUOTA = 2;
+
+async function loadPaymentInfo() {
+  if (DANA_ADMIN_NUMBER) return;
+  try {
+    const r = await fetch('/api/payment-info');
+    const d = await r.json();
+    if (d && d.success) { DANA_ADMIN_NUMBER = d.danaNumber || ''; DANA_ADMIN_NAME = d.danaName || ''; }
+  } catch (e) {}
+}
 
 let currentAuthMode = 'login';
 let loggedInUsername = '';
@@ -2570,7 +2837,7 @@ async function markOffline() {
 }
 
 window.addEventListener('beforeunload', () => {
-  if (loggedInUsername) navigator.sendBeacon('/api/online/offline', JSON.stringify({ username: loggedInUsername }));
+  if (loggedInUsername) navigator.sendBeacon('/api/online/offline', JSON.stringify({ username: loggedInUsername, token: localStorage.getItem('authToken') }));
 });
 
 function toggleMenu() {
@@ -2594,8 +2861,10 @@ function switchView(viewName) {
   else if (viewName === 'vipshop') {
     document.getElementById('section-vipshop').classList.remove('hide');
     loadVipShopItems(); loadUserTransactions();
-    document.getElementById('dana-number-display').innerText = DANA_ADMIN_NUMBER;
-    document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
+    loadPaymentInfo().then(function () {
+      document.getElementById('dana-number-display').innerText = DANA_ADMIN_NUMBER;
+      document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
+    });
   }
   else if (viewName === 'profile') { document.getElementById('section-profile').classList.remove('hide'); loadVerifiedEmails(); }
   else if (viewName === 'announcement') { document.getElementById('section-announcement').classList.remove('hide'); loadUserAnnouncements(); }
@@ -3509,6 +3778,7 @@ function applySession(data) {
   fetchFeaturedVideo(true);
   updateNetflixQuotaDisplay();
   startOnlineTracking();
+  loadPaymentInfo();
   // Register notifikasi ke server jika sudah aktif
   if (notificationsEnabled) registerNotificationToServer();
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
@@ -4103,6 +4373,7 @@ async function triggerUpdateUsername() {
     if (response.ok && result.success) {
       showToast('Username diubah!', 'success');
       loggedInUsername = result.newUsername;
+      if (result.token) localStorage.setItem('authToken', result.token);
       localStorage.setItem('savedUsername', loggedInUsername);
       document.getElementById('logged-username').innerText = loggedInUsername;
       document.getElementById('profile-uname').innerText = loggedInUsername;
@@ -4890,7 +5161,7 @@ document.addEventListener('keydown', (e) => {
 // ==========================================
 // SERVER
 // ==========================================
-const PORT = 3001;
+const PORT = Number(process.env.PORT) || 3001;
 
 function jsonResponse(res, code, data) {
   const body = JSON.stringify(data);
@@ -4903,17 +5174,83 @@ function jsonResponse(res, code, data) {
 }
 
 function readBody(req) {
+  if (typeof req._rawBody === 'string') return Promise.resolve(req._rawBody);
+  const limit = req._maxBody || 50 * 1024 * 1024;
   return new Promise((resolve, reject) => {
-    let body = '';
+    const chunks = [];
     let size = 0;
+    let done = false;
     req.on('data', chunk => {
+      if (done) return;
       size += chunk.length;
-      if (size > 50 * 1024 * 1024) { reject(new Error('Payload too large')); req.destroy(); }
-      body += chunk;
+      if (size > limit) { done = true; reject(new Error('Payload too large')); req.destroy(); return; }
+      chunks.push(chunk);
     });
-    req.on('end', () => resolve(body));
-    req.on('error', reject);
+    req.on('end', () => { if (!done) { done = true; resolve(Buffer.concat(chunks).toString('utf8')); } });
+    req.on('error', (e) => { if (!done) { done = true; reject(e); } });
   });
+}
+
+// ====== GERBANG AUTENTIKASI ======
+// Semua endpoint /api (kecuali login/daftar/lupa password & data publik) wajib membawa token bertanda tangan.
+// Identitas (username / adminUsername / currentUsername) wajib sama dengan pemilik token,
+// sehingga tidak ada yang bisa menyamar sebagai user lain atau admin.
+const PUBLIC_GET = new Set(['/', '/api/status', '/api/video', '/api/announcements', '/api/vip-shop', '/api/redeems/active', '/api/online/count']);
+const PUBLIC_POST = new Set(['/api/auth', '/api/auth/forgot', '/api/auth/reset', '/api/auth/session']);
+
+async function authGate(req, res, parsedUrl) {
+  const p = parsedUrl.pathname;
+  const m = req.method;
+  if (m === 'GET' && PUBLIC_GET.has(p)) return true;
+  if (m === 'POST' && PUBLIC_POST.has(p)) { req._maxBody = 100 * 1024; return true; }
+
+  const hasBody = m === 'POST' || m === 'PUT' || m === 'PATCH' || m === 'DELETE';
+  const authH = String(req.headers['authorization'] || '');
+  let user = authH.startsWith('Bearer ') ? verifyToken(authH.slice(7).trim()) : null;
+  let rawBody;
+
+  // navigator.sendBeacon tidak bisa mengirim header, jadi token dibaca dari body khusus endpoint ini
+  if (!user && p === '/api/online/offline' && hasBody) {
+    req._maxBody = 10 * 1024;
+    rawBody = await readBody(req);
+    req._rawBody = rawBody;
+    try { user = verifyToken(JSON.parse(rawBody).token); } catch (e) { }
+  }
+
+  if (!user) {
+    jsonResponse(res, 401, { success: false, needLogin: true, message: 'Sesi tidak valid atau sudah berakhir. Silakan login ulang.' });
+    return false;
+  }
+
+  if (hasBody && rawBody === undefined) {
+    rawBody = await readBody(req);
+    req._rawBody = rawBody;
+  }
+
+  let parsed = null;
+  if (rawBody) { try { parsed = JSON.parse(rawBody); } catch (e) { parsed = null; } }
+
+  const claims = [parsedUrl.searchParams.get('username')];
+  if (parsed && typeof parsed === 'object') {
+    for (const k of ['username', 'adminUsername', 'currentUsername']) {
+      if (parsed[k] !== undefined) claims.push(parsed[k]);
+    }
+  }
+  for (const c of claims) {
+    if (c === null || c === undefined) continue;
+    if (typeof c !== 'string' || c.toLowerCase() !== user) {
+      jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      return false;
+    }
+  }
+
+  if (parsed && typeof parsed === 'object' && parsed.uploadId !== undefined && !/^[A-Za-z0-9_-]{1,80}$/.test(String(parsed.uploadId))) {
+    jsonResponse(res, 400, { success: false, message: 'ID upload tidak valid' });
+    return false;
+  }
+
+  req.authUser = user;
+  return true;
 }
 
 // ====== LUPA PASSWORD (KODE VIA EMAIL) ======
@@ -4946,10 +5283,17 @@ async function sendResetEmail(to, username, code) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
-  let currentServerStatus = await getServerStatusFromDb();
+  let parsedUrl;
+  try { parsedUrl = new URL(req.url, 'http://localhost'); } catch (e) { res.writeHead(400, { 'Content-Type': 'text/plain' }); return res.end('Bad request'); }
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  let currentServerStatus = 'online';
+  try { currentServerStatus = await getServerStatusFromDb(); } catch (e) { console.error('[STATUS]', e.message); }
 
   try {
+    if (!(await authGate(req, res, parsedUrl))) return;
+
     if (parsedUrl.pathname === '/' && req.method === 'GET') {
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
@@ -4960,6 +5304,9 @@ const server = http.createServer(async (req, res) => {
 
     } else if (parsedUrl.pathname === '/api/status') {
       jsonResponse(res, 200, { status: currentServerStatus });
+
+    } else if (parsedUrl.pathname === '/api/payment-info' && req.method === 'GET') {
+      jsonResponse(res, 200, { success: true, danaNumber: DANA_ADMIN_NUMBER, danaName: DANA_ADMIN_NAME });
 
     } else if (parsedUrl.pathname === '/api/video') {
       const videoUrl = await getVideoFromDb();
@@ -5043,7 +5390,7 @@ const server = http.createServer(async (req, res) => {
         if (now - (d.lastSeen || 0) <= ONLINE_TIMEOUT) active.push({ username: u, isAdmin: d.isAdmin, isVip: d.isVip, lastSeen: d.lastSeen });
         else await removeOnlineUserFromDb(u);
       }
-      jsonResponse(res, 200, { success: true, count: active.length, users: active });
+      jsonResponse(res, 200, { success: true, count: active.length });
 
     } else if (parsedUrl.pathname === '/api/orders/my' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
@@ -5580,8 +5927,9 @@ const server = http.createServer(async (req, res) => {
       const cleanUser = username.toLowerCase();
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-      if (userObj.password !== oldPassword) return jsonResponse(res, 401, { success: false, message: 'Password lama salah!' });
-      userObj.password = newPassword;
+      if (!(await checkUserPassword(userObj, oldPassword, cleanUser))) return jsonResponse(res, 401, { success: false, message: 'Password lama salah!' });
+      userObj.passwordHash = await hashPassword(newPassword);
+      delete userObj.password;
       await saveUserToDb(cleanUser, userObj);
       jsonResponse(res, 200, { success: true, message: 'Password diubah!' });
 
@@ -5695,9 +6043,9 @@ const server = http.createServer(async (req, res) => {
       if (existingUser) return jsonResponse(res, 400, { success: false, message: 'Username sudah terdaftar!' });
       const now = Date.now();
       const vipUntil = now + (vipDays * 24 * 60 * 60 * 1000);
-      await saveUserToDb(cleanVipUser, { password: vipPassword, email: 'vip@am-premium.local', isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: now, vipUntil, isVipAccount: true, createdBy: adminUsername.toLowerCase(), createdAt: now });
+      await saveUserToDb(cleanVipUser, { passwordHash: await hashPassword(vipPassword), email: 'vip@am-premium.local', isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: now, vipUntil, isVipAccount: true, createdBy: adminUsername.toLowerCase(), createdAt: now });
       const vipAccId = 'vip_' + now + '_' + Math.random().toString(36).substring(2, 8);
-      await saveVipAccountToDb(vipAccId, { username: cleanVipUser, password: vipPassword, vipUntil, createdBy: adminUsername.toLowerCase(), createdAt: now });
+      await saveVipAccountToDb(vipAccId, { username: cleanVipUser, passwordEnc: encryptText(vipPassword), vipUntil, createdBy: adminUsername.toLowerCase(), createdAt: now });
       jsonResponse(res, 200, { success: true, message: 'Akun VIP "' + cleanVipUser + '" dibuat untuk ' + vipDays + ' hari!', username: cleanVipUser, vipUntil });
 
     } else if (parsedUrl.pathname === '/api/admin/get-vip-accounts' && req.method === 'GET') {
@@ -5709,7 +6057,8 @@ const server = http.createServer(async (req, res) => {
       const now = Date.now();
       for (const [id, acc] of Object.entries(vipAccounts)) {
         const userData = await getUserFromDb(acc.username);
-        enriched[id] = { ...acc, isActive: userData && userData.vipUntil > now, currentVipUntil: userData ? (userData.vipUntil || 0) : 0, exists: !!userData };
+        const { password: legacyPw, passwordEnc, ...accRest } = acc;
+        enriched[id] = { ...accRest, password: passwordEnc ? decryptText(passwordEnc) : (legacyPw || ''), isActive: userData && userData.vipUntil > now, currentVipUntil: userData ? (userData.vipUntil || 0) : 0, exists: !!userData };
       }
       jsonResponse(res, 200, { success: true, vipAccounts: enriched });
 
@@ -5810,14 +6159,15 @@ const server = http.createServer(async (req, res) => {
       const { currentUsername, newUsername } = JSON.parse(body);
       if (!currentUsername || !newUsername) return jsonResponse(res, 400, { success: false, message: 'Username lama dan baru diperlukan.' });
       const cleanOld = currentUsername.toLowerCase();
-      const cleanNew = newUsername.trim().toLowerCase();
+      const cleanNew = String(newUsername).trim().toLowerCase();
+      if (cleanNew.length < 3 || cleanNew.length > 40 || /[.#$\[\]\/\s]/.test(cleanNew)) return jsonResponse(res, 400, { success: false, message: 'Username minimal 3 karakter dan tidak boleh mengandung spasi atau . # $ [ ] /' });
       const existingUser = await getUserFromDb(cleanNew);
       if (existingUser) return jsonResponse(res, 400, { success: false, message: 'Username sudah digunakan.' });
       const userData = await getUserFromDb(cleanOld);
       if (!userData) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan.' });
       await saveUserToDb(cleanNew, userData);
       await set(ref(db, `users/${cleanOld}`), null);
-      jsonResponse(res, 200, { success: true, newUsername: cleanNew });
+      jsonResponse(res, 200, { success: true, newUsername: cleanNew, token: signToken(cleanNew) });
 
     } else if (parsedUrl.pathname === '/api/admin/set-status' && req.method === 'POST') {
       const body = await readBody(req);
@@ -5939,7 +6289,8 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const { username, token } = JSON.parse(body);
       if (!username || !token) return jsonResponse(res, 400, { success: false });
-      const cleanUser = username.toLowerCase();
+      const cleanUser = String(username).toLowerCase();
+      if (verifyToken(token) !== cleanUser) return jsonResponse(res, 401, { success: false });
       await checkAndExpireBonusQuota(cleanUser);
       const existingUser = await getUserFromDb(cleanUser);
       if (!existingUser) return jsonResponse(res, 404, { success: false });
@@ -5965,11 +6316,20 @@ const server = http.createServer(async (req, res) => {
         const cleanEmail = String(email || '').trim().toLowerCase();
         if (!EMAIL_REGEX.test(cleanEmail)) return jsonResponse(res, 400, { success: false, message: 'Email valid wajib diisi (untuk reset password)!' });
         const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
-        await saveUserToDb(cleanUser, { password, email: cleanEmail, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
-        const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
+        const regIp = clientIp(req);
+        if (rateBlocked('register', regIp, 10, REGISTER_WINDOW)) return jsonResponse(res, 429, { success: false, message: 'Terlalu banyak pendaftaran dari jaringan ini. Coba lagi nanti.' });
+        rateNote('register', regIp, REGISTER_WINDOW);
+        await saveUserToDb(cleanUser, { passwordHash: await hashPassword(password), email: cleanEmail, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
+        const fakeAuthToken = signToken(cleanUser);
         return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: fakeAuthToken });
       } else {
-        if (existingUser && existingUser.password === password) {
+        const loginIp = clientIp(req);
+        const loginKeyUser = loginIp + '|' + cleanUser;
+        if (rateBlocked('login', loginKeyUser, 8, LOGIN_WINDOW) || rateBlocked('loginip', loginIp, 40, LOGIN_WINDOW)) {
+          return jsonResponse(res, 429, { success: false, message: 'Terlalu banyak percobaan login. Coba lagi dalam 15 menit.' });
+        }
+        if (existingUser && await checkUserPassword(existingUser, password, cleanUser)) {
+          rateClear('login', loginKeyUser);
           await checkAndExpireBonusQuota(cleanUser);
           existingUser = await getUserFromDb(cleanUser);
           const now = Date.now();
@@ -5978,9 +6338,11 @@ const server = http.createServer(async (req, res) => {
           if (now - existingUser.lastResetTime >= twentyFourHours) { existingUser.activatedEmails = []; existingUser.lastResetTime = now; await saveUserToDb(cleanUser, existingUser); }
           const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
           const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
-          const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
+          const fakeAuthToken = signToken(cleanUser);
           return jsonResponse(res, 200, { success: true, message: 'Login berhasil!', username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus, token: fakeAuthToken });
         }
+        rateNote('login', loginKeyUser, LOGIN_WINDOW);
+        rateNote('loginip', loginIp, LOGIN_WINDOW);
         return jsonResponse(res, 401, { success: false, message: 'Username atau password salah!' });
       }
 
@@ -6031,7 +6393,8 @@ const server = http.createServer(async (req, res) => {
       }
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-      userObj.password = String(newPassword);
+      userObj.passwordHash = await hashPassword(String(newPassword));
+      delete userObj.password;
       await saveUserToDb(cleanUser, userObj);
       await set(ref(db, 'passwordResets/' + cleanUser), null);
       jsonResponse(res, 200, { success: true, message: 'Password berhasil diubah. Silakan login.' });
@@ -6087,7 +6450,11 @@ const server = http.createServer(async (req, res) => {
     }
   } catch (err) {
     console.error('Server error:', err);
-    if (!res.headersSent) jsonResponse(res, 500, { success: false, message: err.message || 'Internal server error' });
+    if (!res.headersSent) {
+      if (err && err.message === 'Payload too large') jsonResponse(res, 413, { success: false, message: 'Data terlalu besar' });
+      else if (err instanceof SyntaxError) jsonResponse(res, 400, { success: false, message: 'Format data tidak valid' });
+      else jsonResponse(res, 500, { success: false, message: 'Terjadi kesalahan pada server' });
+    }
   }
 });
 
@@ -6095,7 +6462,7 @@ server.listen(PORT, () => {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
   console.log('║  🚀 AM Premium Banggus v7.3                                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
-  console.log('║  💳 DANA Admin: ' + DANA_ADMIN_NUMBER + '                     ║');
+  console.log('║  💳 DANA Admin: terkonfigurasi (dari .env)                   ║');
   console.log('║  ──────────────────────────────────────────────────────────  ║');
   console.log('║  ✨ FITUR AKTIF:                                             ║');
   console.log('║  🎨 Alight Motion Premium                                    ║');
