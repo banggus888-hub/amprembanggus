@@ -1521,10 +1521,23 @@ const htmlTemplate = `<!DOCTYPE html>
         <div><label class="field-label">Username</label><input type="text" id="auth-username" placeholder="username_kamu" class="inp mono"></div>
         <div><label class="field-label">Password</label><input type="password" id="auth-password" placeholder="••••••••" class="inp"></div>
         <div id="email-field-container" class="hide">
+          <label class="field-label">Email (untuk reset password)</label><input type="email" id="auth-email" placeholder="email@gmail.com" class="inp" style="margin-bottom:8px;">
           <p style="font-size:10.5px; color:var(--warn); margin:0;">1 perangkat hanya bisa mendaftar 1 akun</p>
         </div>
       </div>
       <button onclick="handleAuthAction()" id="auth-submit-btn" class="btn"><span id="auth-btn-text">Masuk</span></button>
+      <div id="forgot-link-wrap" style="text-align:center;"><a href="#" onclick="toggleForgotPanel(true); return false;" style="font-size:12px; color:var(--accent);">Lupa password?</a></div>
+      <div id="forgot-panel" class="hide" style="display:flex; flex-direction:column; gap:10px;">
+        <div style="font-size:12px; color:var(--text-1);">Masukkan username. Kode 6 digit akan dikirim ke email yang kamu daftarkan.</div>
+        <input type="text" id="forgot-username" placeholder="username_kamu" class="inp mono">
+        <button onclick="sendResetCode()" id="forgot-send-btn" class="btn">Kirim Kode</button>
+        <div id="forgot-step2" class="hide" style="display:flex; flex-direction:column; gap:10px;">
+          <input type="text" id="forgot-code" placeholder="Kode 6 digit" inputmode="numeric" maxlength="6" class="inp mono">
+          <input type="password" id="forgot-newpass" placeholder="Password baru" class="inp">
+          <button onclick="submitResetPassword()" id="forgot-submit-btn" class="btn">Ubah Password</button>
+        </div>
+        <button onclick="toggleForgotPanel(false)" class="btn btn-ghost btn-sm">Kembali ke login</button>
+      </div>
     </div>
 
     <div id="terminal-view" class="hide" style="display:flex; flex-direction:column; gap:10px;">
@@ -3376,10 +3389,49 @@ function switchAuthTab(mode) {
   if (mode === 'login') {
     ind.style.transform = 'translateX(0%)'; loginBtn.style.color = 'white'; regBtn.style.color = 'var(--text-1)';
     emailField.classList.add('hide'); btnText.innerText = 'Masuk';
+    const fl = document.getElementById('forgot-link-wrap'); if (fl) fl.classList.remove('hide');
   } else {
     ind.style.transform = 'translateX(100%)'; regBtn.style.color = 'white'; loginBtn.style.color = 'var(--text-1)';
     emailField.classList.remove('hide'); btnText.innerText = 'Daftar';
+    const fl2 = document.getElementById('forgot-link-wrap'); if (fl2) fl2.classList.add('hide');
+    toggleForgotPanel(false);
   }
+}
+
+function toggleForgotPanel(show) {
+  var p = document.getElementById('forgot-panel');
+  var f = document.getElementById('auth-form-container');
+  var s = document.getElementById('auth-submit-btn');
+  var l = document.getElementById('forgot-link-wrap');
+  if (!p) return;
+  if (show) { p.classList.remove('hide'); f.classList.add('hide'); s.classList.add('hide'); l.classList.add('hide'); }
+  else { p.classList.add('hide'); f.classList.remove('hide'); s.classList.remove('hide'); if (currentAuthMode === 'login') l.classList.remove('hide'); document.getElementById('forgot-step2').classList.add('hide'); }
+}
+async function sendResetCode() {
+  var username = document.getElementById('forgot-username').value.trim();
+  if (!username) return showToast('Isi username dulu!', 'error');
+  var btn = document.getElementById('forgot-send-btn'); btn.disabled = true;
+  try {
+    var res = await fetch('/api/auth/forgot', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: username }) });
+    var data = await res.json();
+    showToast(data.message, data.success ? 'success' : 'error', 5000);
+    if (data.success) document.getElementById('forgot-step2').classList.remove('hide');
+  } catch (e) { showToast('Kesalahan koneksi', 'error'); }
+  finally { btn.disabled = false; }
+}
+async function submitResetPassword() {
+  var username = document.getElementById('forgot-username').value.trim();
+  var code = document.getElementById('forgot-code').value.trim();
+  var newPassword = document.getElementById('forgot-newpass').value;
+  if (!username || !code || !newPassword) return showToast('Semua field wajib!', 'error');
+  var btn = document.getElementById('forgot-submit-btn'); btn.disabled = true;
+  try {
+    var res = await fetch('/api/auth/reset', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: username, code: code, newPassword: newPassword }) });
+    var data = await res.json();
+    showToast(data.message, data.success ? 'success' : 'error', 5000);
+    if (data.success) { document.getElementById('forgot-code').value = ''; document.getElementById('forgot-newpass').value = ''; toggleForgotPanel(false); }
+  } catch (e) { showToast('Kesalahan koneksi', 'error'); }
+  finally { btn.disabled = false; }
 }
 
 async function handleAuthAction() {
@@ -3403,7 +3455,7 @@ async function handleAuthAction() {
   btn.disabled = true;
   document.getElementById('auth-btn-text').innerText = '';
   try {
-    const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, deviceToken }) });
+    const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, deviceToken, email: (document.getElementById('auth-email') || {}).value || '' }) });
     const data = await res.json();
     if (data.success) {
       if (currentAuthMode === 'register' && data.deviceToken) localStorage.setItem('am_device_token', data.deviceToken);
@@ -4864,6 +4916,35 @@ function readBody(req) {
   });
 }
 
+// ====== LUPA PASSWORD (KODE VIA EMAIL) ======
+// Set di environment: MAIL_USER=emailkamu@gmail.com  MAIL_PASS=<App Password 16 digit Gmail>
+const MAIL_USER = process.env.MAIL_USER || '';
+const MAIL_PASS = process.env.MAIL_PASS || '';
+const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || 'AM Premium';
+let mailer = null;
+try {
+  if (MAIL_USER && MAIL_PASS) {
+    mailer = require('nodemailer').createTransport({ service: 'gmail', auth: { user: MAIL_USER, pass: MAIL_PASS } });
+  } else {
+    console.warn('[RESET] MAIL_USER / MAIL_PASS belum diisi, fitur lupa password nonaktif.');
+  }
+} catch (e) { console.warn('[RESET] nodemailer belum terpasang. Jalankan: npm i nodemailer'); }
+
+const RESET_CODE_TTL = 10 * 60 * 1000;   // kode berlaku 10 menit
+const RESET_COOLDOWN = 60 * 1000;        // minta kode lagi minimal 60 detik
+const RESET_MAX_ATTEMPTS = 5;            // maksimal salah input kode
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function hashResetCode(code) { return crypto.createHash('sha256').update(String(code)).digest('hex'); }
+async function sendResetEmail(to, username, code) {
+  if (!mailer) throw new Error('Layanan email belum dikonfigurasi');
+  await mailer.sendMail({
+    from: '"' + MAIL_FROM_NAME + '" <' + MAIL_USER + '>',
+    to,
+    subject: 'Kode reset password: ' + code,
+    text: 'Halo ' + username + ',\n\nKode reset password kamu: ' + code + '\nBerlaku 10 menit. Jangan bagikan kode ini ke siapa pun.\n\nAbaikan email ini jika kamu tidak memintanya.'
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
   let currentServerStatus = await getServerStatusFromDb();
@@ -5872,7 +5953,7 @@ const server = http.createServer(async (req, res) => {
 
     } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
       const body = await readBody(req);
-      const { mode, username, password, deviceToken } = JSON.parse(body);
+      const { mode, username, password, deviceToken, email } = JSON.parse(body);
       if (!username || !password) return jsonResponse(res, 400, { success: false, message: 'Username dan password wajib!' });
       const cleanUser = String(username).trim().toLowerCase();
       if (!cleanUser || /[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false, message: 'Username tidak boleh mengandung spasi atau karakter . # $ [ ] /' });
@@ -5881,8 +5962,10 @@ const server = http.createServer(async (req, res) => {
         if (cleanUser === 'adminbaguss' || existingUser) return jsonResponse(res, 400, { success: false, message: 'Username tidak tersedia!' });
         if (cleanUser.length < 3) return jsonResponse(res, 400, { success: false, message: 'Username minimal 3 karakter!' });
         if (String(password).length < 4) return jsonResponse(res, 400, { success: false, message: 'Password minimal 4 karakter!' });
+        const cleanEmail = String(email || '').trim().toLowerCase();
+        if (!EMAIL_REGEX.test(cleanEmail)) return jsonResponse(res, 400, { success: false, message: 'Email valid wajib diisi (untuk reset password)!' });
         const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
-        await saveUserToDb(cleanUser, { password, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
+        await saveUserToDb(cleanUser, { password, email: cleanEmail, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
         const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
         return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: fakeAuthToken });
       } else {
@@ -5900,6 +5983,58 @@ const server = http.createServer(async (req, res) => {
         }
         return jsonResponse(res, 401, { success: false, message: 'Username atau password salah!' });
       }
+
+    } else if (parsedUrl.pathname === '/api/auth/forgot' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username } = JSON.parse(body);
+      const generic = { success: true, message: 'Jika akun ada dan punya email terdaftar, kode sudah dikirim.' };
+      const cleanUser = String(username || '').trim().toLowerCase();
+      if (!cleanUser || /[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 200, generic);
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj || !userObj.email || !EMAIL_REGEX.test(userObj.email) || /@am-premium\.local$/.test(userObj.email)) return jsonResponse(res, 200, generic);
+      const snap = await get(child(ref(db), 'passwordResets/' + cleanUser));
+      const old = snap.exists() ? snap.val() : null;
+      const now = Date.now();
+      if (old && old.sentAt && now - old.sentAt < RESET_COOLDOWN) {
+        return jsonResponse(res, 429, { success: false, message: 'Tunggu ' + Math.ceil((RESET_COOLDOWN - (now - old.sentAt)) / 1000) + ' detik sebelum minta kode lagi.' });
+      }
+      const code = String(crypto.randomInt(100000, 1000000));
+      try {
+        await sendResetEmail(userObj.email, cleanUser, code);
+      } catch (mailErr) {
+        console.error('[RESET] gagal kirim email:', mailErr.message);
+        return jsonResponse(res, 500, { success: false, message: 'Gagal mengirim email. Hubungi admin.' });
+      }
+      await set(ref(db, 'passwordResets/' + cleanUser), { codeHash: hashResetCode(code), expiresAt: now + RESET_CODE_TTL, attempts: 0, sentAt: now });
+      jsonResponse(res, 200, generic);
+
+    } else if (parsedUrl.pathname === '/api/auth/reset' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, code, newPassword } = JSON.parse(body);
+      const cleanUser = String(username || '').trim().toLowerCase();
+      if (!cleanUser || !code || !newPassword) return jsonResponse(res, 400, { success: false, message: 'Semua field wajib!' });
+      if (/[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false, message: 'Username tidak valid' });
+      if (String(newPassword).length < 4) return jsonResponse(res, 400, { success: false, message: 'Password minimal 4 karakter!' });
+      const snap = await get(child(ref(db), 'passwordResets/' + cleanUser));
+      const rec = snap.exists() ? snap.val() : null;
+      if (!rec || rec.expiresAt < Date.now()) return jsonResponse(res, 400, { success: false, message: 'Kode tidak valid atau sudah kedaluwarsa. Minta kode baru.' });
+      if ((rec.attempts || 0) >= RESET_MAX_ATTEMPTS) {
+        await set(ref(db, 'passwordResets/' + cleanUser), null);
+        return jsonResponse(res, 429, { success: false, message: 'Terlalu banyak percobaan. Minta kode baru.' });
+      }
+      const given = Buffer.from(hashResetCode(String(code).trim()), 'hex');
+      const saved = Buffer.from(rec.codeHash, 'hex');
+      if (given.length !== saved.length || !crypto.timingSafeEqual(given, saved)) {
+        rec.attempts = (rec.attempts || 0) + 1;
+        await set(ref(db, 'passwordResets/' + cleanUser), rec);
+        return jsonResponse(res, 400, { success: false, message: 'Kode salah.' });
+      }
+      const userObj = await getUserFromDb(cleanUser);
+      if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
+      userObj.password = String(newPassword);
+      await saveUserToDb(cleanUser, userObj);
+      await set(ref(db, 'passwordResets/' + cleanUser), null);
+      jsonResponse(res, 200, { success: true, message: 'Password berhasil diubah. Silakan login.' });
 
     } else if (parsedUrl.pathname === '/api/magiclink' && req.method === 'POST') {
       const body = await readBody(req);
