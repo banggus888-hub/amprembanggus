@@ -12,7 +12,7 @@ const { getDatabase, ref, get, set, child, remove } = require('firebase/database
 // ====== KONFIGURASI ======
 const config = {
   base: 'https://app.kyzznekoo.my.id',
-  kyzznekooApiKey: process.env.KYZZNEKOO_API_KEY || 'sk_xof_c55534e72b71ed35f19e214cdd8d4717'
+  kyzznekooApiKey: 'sk_xof_c55534e72b71ed35f19e214cdd8d4717'
 };
 
 const firebaseConfig = {
@@ -112,20 +112,8 @@ async function getUserFromDb(username) {
   const snapshot = await get(child(ref(db), `users/${username}`));
   return snapshot.exists() ? snapshot.val() : null;
 }
-// Cache singkat (2 detik) khusus untuk pengecekan sesi, selalu dibersihkan saat data user berubah
-const authUserCache = new Map();
-async function saveUserToDb(username, userData) { await set(ref(db, `users/${username}`), userData); authUserCache.delete(username); }
-async function deleteUserFromDb(username) { await set(ref(db, `users/${username}`), null); authUserCache.delete(username); }
-// Ubah satu field user saja (tidak menimpa seluruh data user)
-async function setUserField(username, field, value) { await set(ref(db, `users/${username}/${field}`), value); authUserCache.delete(username); }
-async function getUserForAuth(username) {
-  const c = authUserCache.get(username);
-  if (c && Date.now() - c.t < 2000) return c.v;
-  const v = await getUserFromDb(username);
-  if (authUserCache.size > 2000) authUserCache.clear();
-  authUserCache.set(username, { t: Date.now(), v });
-  return v;
-}
+async function saveUserToDb(username, userData) { await set(ref(db, `users/${username}`), userData); }
+async function deleteUserFromDb(username) { await set(ref(db, `users/${username}`), null); }
 async function getRedeemFromDb(code) {
   const snapshot = await get(child(ref(db), `redeems/${code}`));
   return snapshot.exists() ? snapshot.val() : null;
@@ -869,270 +857,288 @@ async function apkGetJob(buildId) {
   return job;
 }
 
-// ==========================================
-// KEAMANAN: SESI, HASH PASSWORD, RATE LIMIT, PENGUNCIAN ADMIN
-// ==========================================
-// Environment variable (semua opsional):
-//   SESSION_SECRET       rahasia penanda-tangan sesi (min 32 karakter). Jika kosong dibuat otomatis & disimpan di file .session_secret
-//   ADMIN_PASSWORD       password admin (min 10 karakter). Dipakai saat admin dibuat / masih memakai password bawaan lama
-//   ADMIN_PASSWORD_RESET set 1 (bersama ADMIN_PASSWORD) untuk memaksa reset password admin satu kali
-//   ADMIN_ALLOWED_IPS    daftar IP yang boleh login/akses panel admin, pisahkan koma (kosong = semua IP)
-//   TRUST_PROXY          set 1 jika server di belakang reverse proxy publik (IP klien dibaca dari header proxy)
-const SESSION_COOKIE = 'am_sid';
-const SESSION_TTL_USER = 30 * 24 * 60 * 60 * 1000;
-const SESSION_TTL_ADMIN = 12 * 60 * 60 * 1000;
-const PASSWORD_MIN = 8;
-const PASSWORD_MAX = 128;
-const ADMIN_USERNAME = 'adminbaguss';
-const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
-const ID_FIELDS = ['username', 'adminUsername', 'currentUsername'];
-const PUBLIC_API_PATHS = new Set(['/api/status', '/api/video', '/api/announcements', '/api/vip-shop', '/api/online/count', '/api/auth', '/api/auth/session', '/api/auth/forgot', '/api/auth/reset', '/api/auth/logout']);
-const SOFT_AUTH_PATHS = new Set(['/api/online/count', '/api/auth/session', '/api/auth/logout']);
-const ADMIN_ALLOWED_IPS = (process.env.ADMIN_ALLOWED_IPS || '').split(',').map(x => x.trim()).filter(Boolean);
-const COMMON_PASSWORDS = ['12345678', '123456789', '1234567890', '12341234', 'password', 'password1', 'qwertyui', 'qwerty123', '11111111', '00000000', 'baguss123', 'adminbaguss', 'iloveyou', 'abcd1234'];
-
-process.on('unhandledRejection', (reason) => { console.error('[UNHANDLED REJECTION]', reason && reason.message ? reason.message : reason); });
+// ====== KEAMANAN AKUN & ADMIN ======
+// - Password disimpan ter-hash (scrypt). Password lama (plaintext) otomatis di-upgrade saat login berhasil.
+// - Login menghasilkan token sesi bertanda tangan (HMAC). Setiap request yang membawa identitas user
+//   (username / adminUsername / currentUsername) WAJIB membawa token valid milik username tersebut.
+//   Jadi mengetahui username admin saja TIDAK cukup untuk masuk atau memakai fitur admin.
+// - Akun admin: sesi pendek (8 jam), terikat ke browser, batas percobaan login lebih ketat,
+//   reset password lewat web dinonaktifkan, username admin tidak bisa diganti.
+// Environment opsional: SESSION_SECRET, ADMIN_PASSWORD, ADMIN_FORCE_RESET=1, TRUST_PROXY=1
+const MAIN_ADMIN_USERNAME = 'adminbaguss';
+const ADMIN_TOKEN_TTL = 8 * 60 * 60 * 1000;
+const USER_TOKEN_TTL = 30 * 24 * 60 * 60 * 1000;
+const AUTH_CACHE_TTL = 15 * 1000;
+const TRUST_PROXY = process.env.TRUST_PROXY === '1';
+const LOGIN_RULES = {
+  user: { max: 8, windowMs: 10 * 60 * 1000, lockMs: 10 * 60 * 1000 },
+  admin: { max: 5, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 }
+};
+const IP_LOGIN_RULE = { max: 25, windowMs: 10 * 60 * 1000, lockMs: 10 * 60 * 1000 };
+const AUTH_IDENTITY_FIELDS = ['username', 'adminUsername', 'currentUsername'];
+const AUTH_GATE_PUBLIC = new Set([
+  '/', '/api/status', '/api/video', '/api/announcements', '/api/vip-shop', '/api/online/count', '/api/online/offline',
+  '/api/auth', '/api/auth/session', '/api/auth/forgot', '/api/auth/reset', '/api/auth/logout'
+]);
+const SESSION_SECRET_FILE = path.join(__dirname, '.session_secret');
 
 function loadSessionSecret() {
-  const fromEnv = process.env.SESSION_SECRET;
-  if (fromEnv && fromEnv.length >= 32) return fromEnv;
-  const file = path.join(__dirname, '.session_secret');
+  if (process.env.SESSION_SECRET && process.env.SESSION_SECRET.length >= 16) return process.env.SESSION_SECRET;
   try {
-    const saved = fs.readFileSync(file, 'utf8').trim();
-    if (saved.length >= 64) return saved;
+    if (fs.existsSync(SESSION_SECRET_FILE)) {
+      const saved = fs.readFileSync(SESSION_SECRET_FILE, 'utf8').trim();
+      if (saved.length >= 32) return saved;
+    }
   } catch (e) {}
   const fresh = crypto.randomBytes(48).toString('hex');
-  try { fs.writeFileSync(file, fresh, { mode: 0o600 }); }
-  catch (e) { console.warn('[SECURITY] Tidak bisa menyimpan .session_secret, semua sesi login akan reset jika server restart. Set env SESSION_SECRET agar permanen.'); }
+  try { fs.writeFileSync(SESSION_SECRET_FILE, fresh, { mode: 0o600 }); }
+  catch (e) { console.warn('[SECURITY] Tidak bisa menyimpan .session_secret, sesi login akan reset tiap server restart. Isi env SESSION_SECRET agar permanen.'); }
   return fresh;
 }
 const SESSION_SECRET = loadSessionSecret();
 
-function b64url(input) { return Buffer.from(input).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
-function b64urlDecode(str) { let t = String(str).replace(/-/g, '+').replace(/_/g, '/'); while (t.length % 4) t += '='; return Buffer.from(t, 'base64'); }
-
-function signSession(username, tokenVersion, ttlMs) {
-  const payload = b64url(JSON.stringify({ u: username, tv: tokenVersion || 0, exp: Date.now() + ttlMs, n: crypto.randomBytes(8).toString('hex') }));
-  const sig = b64url(crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest());
-  return payload + '.' + sig;
-}
-function readSession(token) {
-  if (typeof token !== 'string' || token.length > 600) return null;
-  const parts = token.split('.');
-  if (parts.length !== 2) return null;
-  const expected = crypto.createHmac('sha256', SESSION_SECRET).update(parts[0]).digest();
-  let given;
-  try { given = b64urlDecode(parts[1]); } catch (e) { return null; }
-  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
-  let data;
-  try { data = JSON.parse(b64urlDecode(parts[0]).toString('utf8')); } catch (e) { return null; }
-  if (!data || typeof data.u !== 'string' || typeof data.exp !== 'number' || data.exp < Date.now()) return null;
-  return data;
+function b64u(buf) { return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function b64uDecode(str) {
+  let s = String(str).replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  return Buffer.from(s, 'base64');
 }
 
-function parseCookies(req) {
-  const out = Object.create(null);
-  const raw = req.headers.cookie;
-  if (!raw) return out;
-  raw.split(';').forEach(part => {
-    const i = part.indexOf('=');
-    if (i < 0) return;
-    const k = part.slice(0, i).trim();
-    const v = part.slice(i + 1).trim();
-    if (k && !(k in out)) out[k] = v;
-  });
-  return out;
-}
-function isHttps(req) {
-  return !!(req.socket && req.socket.encrypted) || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase() === 'https';
-}
-function setSessionCookie(req, res, token, maxAgeMs) {
-  let c = SESSION_COOKIE + '=' + token + '; Path=/; HttpOnly; SameSite=Strict; Max-Age=' + Math.floor(maxAgeMs / 1000);
-  if (isHttps(req)) c += '; Secure';
-  res.setHeader('Set-Cookie', c);
-}
-function clearSessionCookie(req, res) {
-  let c = SESSION_COOKIE + '=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
-  if (isHttps(req)) c += '; Secure';
-  res.setHeader('Set-Cookie', c);
-}
-function setSecurityHeaders(req, res) {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'same-origin');
-  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=()');
-  res.setHeader('Content-Security-Policy', "frame-ancestors 'none'; base-uri 'self'; object-src 'none'");
-  if (isHttps(req)) res.setHeader('Strict-Transport-Security', 'max-age=15552000');
-}
-
-function isPrivateIp(ip) {
-  return /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(ip) || ip === '::1' || /^(fc|fd|fe80)/i.test(ip);
-}
-function getClientIp(req) {
-  let ip = String((req.socket && req.socket.remoteAddress) || '').replace(/^::ffff:/, '');
-  if (isPrivateIp(ip) || process.env.TRUST_PROXY === '1') {
-    const h = req.headers;
-    const cand = h['cf-connecting-ip'] || h['x-real-ip'] || (h['x-forwarded-for'] ? String(h['x-forwarded-for']).split(',').pop() : '');
-    if (cand) ip = String(cand).trim().replace(/^::ffff:/, '');
-  }
-  return (ip || 'unknown').slice(0, 64);
-}
-function adminIpAllowed(req) { return ADMIN_ALLOWED_IPS.length === 0 || ADMIN_ALLOWED_IPS.indexOf(getClientIp(req)) !== -1; }
-
-// ---- pelacak percobaan gagal / pembatas laju
-const failTrack = new Map();
-function lockedMs(key) {
-  const r = failTrack.get(key);
-  if (!r) return 0;
-  const left = r.lockUntil - Date.now();
-  return left > 0 ? left : 0;
-}
-function addFail(key, limit, windowMs, lockMs) {
-  const now = Date.now();
-  let r = failTrack.get(key);
-  if (!r || (now - r.start > windowMs && !(r.lockUntil > now))) {
-    if (failTrack.size > 100000) { let i = 0; for (const k of failTrack.keys()) { failTrack.delete(k); if (++i > 10000) break; } }
-    r = { n: 0, start: now, lockUntil: 0, windowMs };
-    failTrack.set(key, r);
-  }
-  if (r.lockUntil > now) return;
-  r.n++;
-  if (r.n >= limit) { r.lockUntil = now + lockMs; r.n = 0; r.start = now; }
-}
-function clearFail(key) { failTrack.delete(key); }
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, r] of failTrack) { if (!(r.lockUntil > now) && now - r.start > r.windowMs) failTrack.delete(k); }
-}, 10 * 60 * 1000).unref();
-function tooManyResponse(res, waitMs) {
-  const secs = Math.max(1, Math.ceil(waitMs / 1000));
-  res.setHeader('Retry-After', String(secs));
-  return jsonResponse(res, 429, { success: false, message: 'Terlalu banyak percobaan gagal. Coba lagi dalam ' + Math.max(1, Math.ceil(secs / 60)) + ' menit.' });
-}
-
-// ---- password (scrypt, tanpa menyimpan password asli)
-function scryptAsync(password, salt) {
-  return new Promise((resolve, reject) => {
-    crypto.scrypt(String(password), salt, 64, SCRYPT_PARAMS, (err, key) => (err ? reject(err) : resolve(key)));
-  });
-}
-async function hashPassword(password) {
-  const salt = crypto.randomBytes(16);
-  const key = await scryptAsync(password, salt);
-  return 'scrypt$' + salt.toString('hex') + '$' + key.toString('hex');
-}
+// ---- Hash password (scrypt) ----
+const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
 const DUMMY_SALT = crypto.randomBytes(16);
-function sha256Buf(v) { return crypto.createHash('sha256').update(String(v)).digest(); }
-// return { ok, legacy } -- legacy = masih tersimpan polos (akan di-upgrade ke hash setelah login sukses)
-async function verifyPassword(userObj, password) {
-  if (typeof password !== 'string' || password.length === 0 || password.length > 1024) return { ok: false, legacy: false };
-  if (!userObj) { try { await scryptAsync(password, DUMMY_SALT); } catch (e) {} return { ok: false, legacy: false }; }
-  if (typeof userObj.passwordHash === 'string' && userObj.passwordHash.indexOf('scrypt$') === 0) {
-    const parts = userObj.passwordHash.split('$');
-    if (parts.length !== 3) return { ok: false, legacy: false };
-    const salt = Buffer.from(parts[1], 'hex');
-    const saved = Buffer.from(parts[2], 'hex');
-    if (salt.length < 8 || saved.length === 0) return { ok: false, legacy: false };
-    const key = await scryptAsync(password, salt);
-    return { ok: key.length === saved.length && crypto.timingSafeEqual(key, saved), legacy: false };
+function scryptAsync(password, salt, keylen, opts) {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(password, salt, keylen, Object.assign({ maxmem: 64 * 1024 * 1024 }, opts), (err, key) => err ? reject(err) : resolve(key));
+  });
+}
+async function hashPassword(plain) {
+  const salt = crypto.randomBytes(16);
+  const dk = await scryptAsync(String(plain), salt, 64, SCRYPT_PARAMS);
+  return 'scrypt$' + SCRYPT_PARAMS.N + '$' + SCRYPT_PARAMS.r + '$' + SCRYPT_PARAMS.p + '$' + salt.toString('base64') + '$' + dk.toString('base64');
+}
+// Mengembalikan { ok, legacy }. legacy=true artinya password tersimpan masih plaintext (perlu di-upgrade ke hash).
+async function verifyPassword(stored, given) {
+  given = String(given === undefined || given === null ? '' : given);
+  if (typeof stored === 'string' && stored.indexOf('scrypt$') === 0) {
+    const parts = stored.split('$');
+    if (parts.length !== 6) return { ok: false, legacy: false };
+    const N = parseInt(parts[1], 10), r = parseInt(parts[2], 10), p = parseInt(parts[3], 10);
+    if (!(N >= 1024 && N <= 65536) || !(r >= 1 && r <= 16) || !(p >= 1 && p <= 4)) return { ok: false, legacy: false };
+    const salt = Buffer.from(parts[4], 'base64');
+    const expected = Buffer.from(parts[5], 'base64');
+    const derived = await scryptAsync(given, salt, expected.length, { N, r, p });
+    return { ok: derived.length === expected.length && crypto.timingSafeEqual(derived, expected), legacy: false };
   }
-  if (userObj.password !== undefined && userObj.password !== null) {
-    try { await scryptAsync(password, DUMMY_SALT); } catch (e) {}
-    return { ok: crypto.timingSafeEqual(sha256Buf(userObj.password), sha256Buf(password)), legacy: true };
+  if (typeof stored === 'string' && stored.length > 0) {
+    const a = crypto.createHash('sha256').update(stored).digest();
+    const b = crypto.createHash('sha256').update(given).digest();
+    return { ok: crypto.timingSafeEqual(a, b), legacy: true };
   }
+  await scryptAsync(given, DUMMY_SALT, 64, SCRYPT_PARAMS); // samakan waktu proses untuk user yang tidak ada
   return { ok: false, legacy: false };
 }
-function validateNewPassword(pw, username) {
-  if (typeof pw !== 'string') return 'Password tidak valid!';
-  if (pw.length < PASSWORD_MIN) return 'Password minimal ' + PASSWORD_MIN + ' karakter!';
-  if (pw.length > PASSWORD_MAX) return 'Password maksimal ' + PASSWORD_MAX + ' karakter!';
-  const low = pw.toLowerCase();
-  if (username && low === String(username).toLowerCase()) return 'Password tidak boleh sama dengan username!';
-  if (COMMON_PASSWORDS.indexOf(low) !== -1 || /^(.)\1+$/.test(pw)) return 'Password terlalu mudah ditebak, gunakan yang lebih unik!';
-  return null;
+
+// ---- Token sesi (stateless, bertanda tangan HMAC) ----
+const revokedTokenIds = new Map();
+const authUserCache = new Map();
+function uaFingerprint(req) {
+  const ua = String((req && req.headers && req.headers['user-agent']) || '').replace(/[0-9._]+/g, '');
+  return crypto.createHash('sha256').update(ua).digest('hex').slice(0, 16);
 }
-function randomPassword(len) {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  let out = '';
-  for (let i = 0; i < len; i++) out += chars[crypto.randomInt(chars.length)];
-  return out;
+function signTokenPart(part) { return b64u(crypto.createHmac('sha256', SESSION_SECRET).update(part).digest()); }
+function issueAuthToken(username, isAdmin, req) {
+  const now = Date.now();
+  const payload = { u: String(username), a: isAdmin ? 1 : 0, iat: now, exp: now + (isAdmin ? ADMIN_TOKEN_TTL : USER_TOKEN_TTL), n: crypto.randomBytes(8).toString('hex') };
+  if (isAdmin) payload.d = uaFingerprint(req);
+  const part = b64u(Buffer.from(JSON.stringify(payload)));
+  return { token: part + '.' + signTokenPart(part), expiresAt: payload.exp };
 }
-function safeUploadId(id) {
-  const t = String(id || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80);
-  if (!t) { const e = new Error('uploadId tidak valid'); e.statusCode = 400; throw e; }
-  return t;
+function verifyAuthToken(token) {
+  if (typeof token !== 'string' || token.length < 10 || token.length > 1024) return null;
+  const dot = token.indexOf('.');
+  if (dot < 1) return null;
+  const part = token.slice(0, dot);
+  const sig = Buffer.from(token.slice(dot + 1));
+  const expected = Buffer.from(signTokenPart(part));
+  if (sig.length !== expected.length || !crypto.timingSafeEqual(sig, expected)) return null;
+  let payload = null;
+  try { payload = JSON.parse(b64uDecode(part).toString('utf8')); } catch (e) { return null; }
+  if (!payload || typeof payload.u !== 'string' || typeof payload.exp !== 'number' || typeof payload.iat !== 'number') return null;
+  if (payload.exp < Date.now()) return null;
+  return payload;
+}
+function extractAuthToken(req) {
+  const h = req.headers['x-auth-token'];
+  if (typeof h === 'string' && h) return h.trim();
+  const a = req.headers['authorization'];
+  if (typeof a === 'string' && a.slice(0, 7).toLowerCase() === 'bearer ') return a.slice(7).trim();
+  return '';
+}
+async function getAuthUserState(username) {
+  const now = Date.now();
+  const cached = authUserCache.get(username);
+  if (cached && now - cached.at < AUTH_CACHE_TTL) return cached;
+  const u = await getUserFromDb(username);
+  const isObj = !!(u && typeof u === 'object');
+  const st = { at: now, exists: isObj, isAdmin: isObj && !!u.isAdmin, validFrom: isObj ? (Number(u.sessionsValidFrom) || 0) : 0 };
+  authUserCache.set(username, st);
+  return st;
+}
+function invalidateAuthCache(username) { authUserCache.delete(String(username || '').toLowerCase()); }
+async function validateAuthToken(req, token) {
+  const payload = verifyAuthToken(token);
+  if (!payload) return { ok: false };
+  if (payload.n && revokedTokenIds.has(payload.n)) return { ok: false };
+  const st = await getAuthUserState(payload.u);
+  if (!st.exists) return { ok: false };
+  if (payload.iat < st.validFrom) return { ok: false };
+  if (st.isAdmin) {
+    if (payload.a !== 1) return { ok: false };
+    if (payload.d !== uaFingerprint(req)) return { ok: false };
+  }
+  return { ok: true, payload, state: st };
+}
+async function revokeAllSessions(username) {
+  const uname = String(username || '').toLowerCase();
+  try {
+    const u = await getUserFromDb(uname);
+    if (u && typeof u === 'object') { u.sessionsValidFrom = Date.now(); await saveUserToDb(uname, u); }
+  } catch (e) { console.error('[SECURITY] revokeAllSessions gagal:', e.message); }
+  invalidateAuthCache(uname);
 }
 
-// ---- autentikasi permintaan: sesi diambil dari cookie HttpOnly bertanda tangan, BUKAN dari username kiriman client
-async function authenticateRequest(req) {
-  const cookies = parseCookies(req);
-  const data = readSession(cookies[SESSION_COOKIE]);
-  if (!data) return null;
-  const username = String(data.u).toLowerCase();
-  if (!username || /[.#$\[\]\/\s]/.test(username)) return null;
-  const user = await getUserForAuth(username);
-  if (!user) return null;
-  if ((user.tokenVersion || 0) !== (data.tv || 0)) return null;
-  if (user.isAdmin && data.exp - Date.now() > SESSION_TTL_ADMIN + 60000) return null;
-  return { username, user };
+// ---- Batas percobaan login ----
+const loginAttempts = new Map();
+function getClientIpInfo(req) {
+  const sock = (req.socket && req.socket.remoteAddress) || 'unknown';
+  const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  if (TRUST_PROXY && xff) return { ip: xff, reliable: true };
+  if (xff) return { ip: sock, reliable: false };
+  return { ip: sock, reliable: true };
 }
-function bodyIdentityMismatch(body, authUser) {
-  let obj;
-  try { obj = JSON.parse(body); } catch (e) { return false; }
-  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
-  for (const k of ID_FIELDS) {
-    if (Object.prototype.hasOwnProperty.call(obj, k) && obj[k] !== undefined && obj[k] !== null) {
-      if (String(obj[k]).toLowerCase() !== authUser) return true;
+function lockRemaining(key, now) {
+  const s = loginAttempts.get(key);
+  return s && s.lockedUntil && s.lockedUntil > now ? s.lockedUntil - now : 0;
+}
+function addFailure(key, rule, now) {
+  let s = loginAttempts.get(key);
+  if (s && s.lockedUntil && s.lockedUntil > now) return;
+  if (!s || now - s.first > rule.windowMs) s = { count: 0, first: now, lockedUntil: 0 };
+  s.count++;
+  if (s.count >= rule.max) { s.lockedUntil = now + rule.lockMs; s.count = 0; s.first = now; }
+  loginAttempts.set(key, s);
+}
+function getLoginLockRemaining(username, ipInfo) {
+  const now = Date.now();
+  let ms = lockRemaining('u|' + username, now);
+  if (ipInfo && ipInfo.reliable) ms = Math.max(ms, lockRemaining('ip|' + ipInfo.ip, now));
+  return ms;
+}
+function recordLoginFailure(username, ipInfo, userExists, isAdmin) {
+  const now = Date.now();
+  if (userExists) addFailure('u|' + username, isAdmin ? LOGIN_RULES.admin : LOGIN_RULES.user, now);
+  if (ipInfo && ipInfo.reliable) addFailure('ip|' + ipInfo.ip, IP_LOGIN_RULE, now);
+}
+function clearLoginFailures(username) { loginAttempts.delete('u|' + username); }
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, s] of loginAttempts) { if ((!s.lockedUntil || s.lockedUntil < now) && now - s.first > 15 * 60 * 1000) loginAttempts.delete(k); }
+  for (const [n, exp] of revokedTokenIds) { if (exp < now) revokedTokenIds.delete(n); }
+  for (const [u, c] of authUserCache) { if (now - c.at > 5 * 60 * 1000) authUserCache.delete(u); }
+}, 10 * 60 * 1000).unref();
+
+function applySecurityHeaders(req, res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  if (String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https') res.setHeader('Strict-Transport-Security', 'max-age=15552000');
+}
+
+// Gerbang keamanan: dijalankan sebelum semua endpoint /api/*. Mengembalikan true jika request boleh lanjut.
+async function authGate(req, res, parsedUrl) {
+  const p = parsedUrl.pathname;
+  if (p.indexOf('/api/') !== 0 || AUTH_GATE_PUBLIC.has(p)) return true;
+  let bodyObj = null;
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+    const raw = await readBody(req);
+    if (raw) { try { bodyObj = JSON.parse(raw); } catch (e) { bodyObj = null; } }
+  }
+  const claims = [];
+  const qUser = parsedUrl.searchParams.get('username');
+  if (qUser !== null) claims.push(qUser);
+  if (bodyObj && typeof bodyObj === 'object' && !Array.isArray(bodyObj)) {
+    for (const k of AUTH_IDENTITY_FIELDS) {
+      if (bodyObj[k] !== undefined && bodyObj[k] !== null) claims.push(bodyObj[k]);
     }
   }
-  return false;
-}
-
-function announceAdminPassword(pw, reason) {
-  console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  🔐 KEAMANAN ADMIN                                           ║');
-  console.log('║  ' + reason);
-  console.log('║  Username : ' + ADMIN_USERNAME);
-  console.log('║  Password : ' + pw);
-  console.log('║  Simpan sekarang! Password ini hanya ditampilkan SEKALI.      ║');
-  console.log('║  Untuk password sendiri: set env ADMIN_PASSWORD + ADMIN_PASSWORD_RESET=1 ║');
-  console.log('╚══════════════════════════════════════════════════════════════╝\n');
+  const cleanClaims = [];
+  for (const c of claims) {
+    if (typeof c !== 'string') { jsonResponse(res, 400, { success: false, message: 'Format username tidak valid.' }); return false; }
+    const v = c.trim().toLowerCase();
+    if (!v) continue;
+    if (v.length > 64 || /[.#$\[\]\/\s]/.test(v)) { jsonResponse(res, 400, { success: false, message: 'Username tidak valid.' }); return false; }
+    cleanClaims.push(v);
+  }
+  if (!cleanClaims.length) return true;
+  const check = await validateAuthToken(req, extractAuthToken(req));
+  if (!check.ok) {
+    jsonResponse(res, 401, { success: false, sessionExpired: true, message: 'Sesi login tidak valid atau sudah berakhir. Silakan login ulang.' });
+    return false;
+  }
+  for (const c of cleanClaims) {
+    if (c !== check.payload.u) {
+      console.warn('[SECURITY] Identitas tidak cocok dengan sesi. Sesi=' + check.payload.u + ' klaim=' + c + ' ip=' + getClientIpInfo(req).ip + ' path=' + p);
+      jsonResponse(res, 403, { success: false, message: 'Akses ditolak: identitas tidak sesuai dengan akun yang sedang login.' });
+      return false;
+    }
+  }
+  return true;
 }
 
 async function initAdmin() {
   try {
     const envPass = process.env.ADMIN_PASSWORD || '';
-    const envOk = envPass.length >= 10;
-    if (envPass && !envOk) console.warn('[SECURITY] ADMIN_PASSWORD diabaikan karena kurang dari 10 karakter.');
-    const resetFlag = process.env.ADMIN_PASSWORD_RESET === '1';
-    const adminData = await getUserFromDb(ADMIN_USERNAME);
+    const forceReset = process.env.ADMIN_FORCE_RESET === '1';
+    const adminData = await getUserFromDb(MAIN_ADMIN_USERNAME);
     if (!adminData) {
-      const pw = envOk ? envPass : randomPassword(20);
-      await saveUserToDb(ADMIN_USERNAME, {
-        passwordHash: await hashPassword(pw), isAdmin: true, activatedEmails: [], bonusQuota: 0,
-        baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, tokenVersion: 0
+      const initialPass = envPass || crypto.randomBytes(10).toString('hex');
+      await saveUserToDb(MAIN_ADMIN_USERNAME, {
+        password: await hashPassword(initialPass), isAdmin: true, activatedEmails: [], bonusQuota: 0,
+        baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0
       });
-      if (!envOk) announceAdminPassword(pw, 'Akun admin baru dibuat dengan password acak.');
+      if (!envPass) {
+        console.log('\n[SECURITY] Akun admin dibuat. Username : ' + MAIN_ADMIN_USERNAME);
+        console.log('[SECURITY] Password awal : ' + initialPass + '   <-- catat sekarang, tidak akan ditampilkan lagi\n');
+      }
       return;
     }
-    const usesDefault = (await verifyPassword(adminData, 'baguss')).ok;
-    let wantsEnvReset = false;
-    if (resetFlag && envOk) wantsEnvReset = !(await verifyPassword(adminData, envPass)).ok;
-    if (usesDefault || wantsEnvReset) {
-      const pw = envOk ? envPass : randomPassword(20);
-      await setUserField(ADMIN_USERNAME, 'passwordHash', await hashPassword(pw));
-      await setUserField(ADMIN_USERNAME, 'password', null);
-      await setUserField(ADMIN_USERNAME, 'tokenVersion', (adminData.tokenVersion || 0) + 1);
-      if (envOk) console.log('[SECURITY] Password admin diset dari environment ADMIN_PASSWORD.');
-      else announceAdminPassword(pw, 'Password bawaan lama terdeteksi, sudah diganti otomatis.');
-    } else if (!adminData.passwordHash && adminData.password !== undefined && adminData.password !== null) {
-      await setUserField(ADMIN_USERNAME, 'passwordHash', await hashPassword(String(adminData.password)));
-      await setUserField(ADMIN_USERNAME, 'password', null);
+    const stored = adminData.password;
+    const isLegacyPlain = typeof stored === 'string' && stored.indexOf('scrypt$') !== 0;
+    const usesDefault = (await verifyPassword(stored, 'baguss')).ok;
+    let changed = false;
+    if (forceReset && envPass) {
+      adminData.password = await hashPassword(envPass);
+      adminData.sessionsValidFrom = Date.now();
+      changed = true;
+      console.log('[SECURITY] Password admin di-reset dari ADMIN_PASSWORD. Hapus ADMIN_FORCE_RESET setelah berhasil login.');
+    } else if (usesDefault) {
+      const newPass = envPass || crypto.randomBytes(10).toString('hex');
+      adminData.password = await hashPassword(newPass);
+      adminData.sessionsValidFrom = Date.now();
+      changed = true;
+      console.log('\n[SECURITY] Password admin default (lemah) terdeteksi dan sudah diganti otomatis.');
+      if (!envPass) {
+        console.log('[SECURITY] Username : ' + MAIN_ADMIN_USERNAME);
+        console.log('[SECURITY] Password baru : ' + newPass + '   <-- catat sekarang, tidak akan ditampilkan lagi\n');
+      }
+    } else if (isLegacyPlain) {
+      adminData.password = await hashPassword(stored);
+      changed = true;
     }
-    if (adminData.isAdmin !== true) await setUserField(ADMIN_USERNAME, 'isAdmin', true);
-  } catch (e) {
-    console.error('[SECURITY] initAdmin gagal:', e.message);
-  }
+    if (changed) { await saveUserToDb(MAIN_ADMIN_USERNAME, adminData); invalidateAuthCache(MAIN_ADMIN_USERNAME); }
+  } catch (e) { console.error('[SECURITY] initAdmin gagal:', e.message); }
 }
 initAdmin();
 
@@ -2531,28 +2537,47 @@ const htmlTemplate = `<!DOCTYPE html>
 </div>
 
 <script>
+(function () {
+  var nativeFetch = window.fetch.bind(window);
+  var sessionHandled = false;
+  window.fetch = function (input, init) {
+    var url = '';
+    try { url = typeof input === 'string' ? input : ((input && input.url) || ''); } catch (e) {}
+    var isApi = url.indexOf('/api/') === 0 || url.indexOf(location.origin + '/api/') === 0;
+    if (isApi) {
+      try {
+        var tk = localStorage.getItem('authToken');
+        if (tk) {
+          init = init || {};
+          var hd = new Headers(init.headers || ((typeof input !== 'string' && input && input.headers) ? input.headers : undefined));
+          hd.set('X-Auth-Token', tk);
+          init.headers = hd;
+        }
+      } catch (e) {}
+    }
+    return nativeFetch(input, init).then(function (resp) {
+      if (isApi && resp && resp.status === 401) {
+        resp.clone().json().then(function (d) {
+          if (d && d.sessionExpired) {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('savedUsername');
+            if (url.indexOf('/api/auth/session') === -1 && !sessionHandled) {
+              sessionHandled = true;
+              if (typeof showToast === 'function') showToast('Sesi login berakhir. Silakan login ulang.', 'error');
+              setTimeout(function () { location.reload(); }, 1200);
+            }
+          }
+        }).catch(function () {});
+      }
+      return resp;
+    });
+  };
+})();
 const DANA_ADMIN_NUMBER = '${DANA_ADMIN_NUMBER}';
 const DANA_ADMIN_NAME = '${DANA_ADMIN_NAME}';
 const BASE_QUOTA = 2;
 
 let currentAuthMode = 'login';
-// Jika sesi berakhir/tidak valid di server, kembalikan ke halaman login
-(function () {
-  var _origFetch = window.fetch;
-  window.fetch = function () {
-    return _origFetch.apply(this, arguments).then(function (r) {
-      try {
-        if (r && r.status === 401 && r.headers.get('X-Auth-Expired') === '1' && typeof loggedInUsername !== 'undefined' && loggedInUsername && !window.__amSessionReload) {
-          window.__amSessionReload = true;
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('savedUsername');
-          location.reload();
-        }
-      } catch (e) {}
-      return r;
-    });
-  };
-})();
 let loggedInUsername = '';
 let isAdminUser = false;
 let isVipUser = false;
@@ -4365,12 +4390,13 @@ async function handleChangePassword() {
   const newPassword = document.getElementById('new-password-input').value;
   const confirmPassword = document.getElementById('confirm-password-input').value;
   if (!oldPassword || !newPassword || !confirmPassword) return showToast('Semua field wajib!', 'error');
-  if (newPassword.length < 8) return showToast('Password minimal 8 karakter!', 'error');
+  if (newPassword.length < 4) return showToast('Min 4 karakter!', 'error');
   if (newPassword !== confirmPassword) return showToast('Konfirmasi tidak cocok!', 'error');
   try {
     const res = await fetch('/api/user/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, oldPassword, newPassword }) });
     const data = await res.json();
     if (data.success) {
+      if (data.token) localStorage.setItem('authToken', data.token);
       showToast('Password diubah!', 'success');
       document.getElementById('old-password-input').value = '';
       document.getElementById('new-password-input').value = '';
@@ -4389,6 +4415,7 @@ async function triggerUpdateUsername() {
       showToast('Username diubah!', 'success');
       loggedInUsername = result.newUsername;
       localStorage.setItem('savedUsername', loggedInUsername);
+      if (result.token) localStorage.setItem('authToken', result.token);
       document.getElementById('logged-username').innerText = loggedInUsername;
       document.getElementById('profile-uname').innerText = loggedInUsername;
       document.getElementById('drawer-username').innerText = loggedInUsername;
@@ -4632,7 +4659,7 @@ async function handleCreateVipAccount() {
   const vipPassword = document.getElementById('vip-create-password').value.trim();
   const vipDays = parseInt(document.getElementById('vip-create-days').value);
   if (!vipUsername || !vipPassword || isNaN(vipDays)) return showToast('Lengkapi!', 'error');
-  if (vipPassword.length < 6) return showToast('Pass min 6!', 'error');
+  if (vipPassword.length < 4) return showToast('Pass min 4!', 'error');
   if (vipDays < 1) return showToast('Min 1 hari!', 'error');
   try {
     const res = await fetch('/api/admin/create-vip-account', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminUsername: loggedInUsername, vipUsername, vipPassword, vipDays }) });
@@ -5147,7 +5174,6 @@ function escapeHtml(text) {
 
 async function handleLogout() {
   await markOffline();
-  try { await fetch('/api/auth/logout', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' }); } catch (e) {}
   stopOnlineTracking();
   stopNotifPolling();
   if (quotaCountdownInterval) clearInterval(quotaCountdownInterval);
@@ -5155,6 +5181,7 @@ async function handleLogout() {
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   if (statusPollInterval) clearInterval(statusPollInterval);
   if (videoPollInterval) clearInterval(videoPollInterval);
+  try { await fetch('/api/auth/logout', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' }); } catch (e) {}
   localStorage.removeItem('authToken');
   localStorage.removeItem('savedUsername');
   sessionStorage.clear();
@@ -5189,24 +5216,16 @@ function jsonResponse(res, code, data) {
 }
 
 function readBody(req) {
+  if (typeof req._cachedBody === 'string') return Promise.resolve(req._cachedBody);
   return new Promise((resolve, reject) => {
     let body = '';
     let size = 0;
-    const limit = req.maxBody || 50 * 1024 * 1024;
     req.on('data', chunk => {
       size += chunk.length;
-      if (size > limit) { const e = new Error('Payload too large'); e.statusCode = 413; reject(e); req.destroy(); return; }
+      if (size > 50 * 1024 * 1024) { reject(new Error('Payload too large')); req.destroy(); }
       body += chunk;
     });
-    req.on('end', () => {
-      // Identitas di body (username/adminUsername/currentUsername) HARUS sama dengan pemilik sesi login
-      if (req.bindIdentity && req.authUser && bodyIdentityMismatch(body, req.authUser)) {
-        const e = new Error('Akses ditolak: identitas tidak cocok dengan sesi login.');
-        e.statusCode = 403;
-        return reject(e);
-      }
-      resolve(body);
-    });
+    req.on('end', () => { req._cachedBody = body; resolve(body); });
     req.on('error', reject);
   });
 }
@@ -5242,49 +5261,14 @@ async function sendResetEmail(to, username, code) {
 
 const server = http.createServer(async (req, res) => {
   let parsedUrl;
-  try { parsedUrl = new URL(req.url, 'http://localhost'); }
+  try { parsedUrl = new URL(req.url, 'http://' + (req.headers.host || 'localhost')); }
   catch (e) { res.writeHead(400, { 'Content-Type': 'text/plain' }); return res.end('Bad request'); }
-  setSecurityHeaders(req, res);
   let currentServerStatus = 'online';
   try { currentServerStatus = await getServerStatusFromDb(); } catch (e) { console.error('[STATUS]', e.message); }
 
   try {
-    // ====== GERBANG KEAMANAN (berlaku untuk semua /api/*) ======
-    const gatePath = parsedUrl.pathname;
-    req.authUser = null; req.authUserObj = null; req.bindIdentity = false;
-    if (gatePath.indexOf('/api/') === 0) {
-      const isPublic = PUBLIC_API_PATHS.has(gatePath) && (gatePath !== '/api/vip-shop' || req.method === 'GET');
-      if (gatePath.indexOf('/api/auth') === 0) req.maxBody = 32 * 1024;
-      let sess = null;
-      if (!isPublic || SOFT_AUTH_PATHS.has(gatePath)) {
-        sess = await authenticateRequest(req);
-        if (sess) { req.authUser = sess.username; req.authUserObj = sess.user; }
-      }
-      if (!isPublic) {
-        if (!sess) {
-          if (gatePath === '/api/online/offline') return jsonResponse(res, 200, { success: true });
-          if (req.headers.cookie && req.headers.cookie.indexOf(SESSION_COOKIE + '=') !== -1) clearSessionCookie(req, res);
-          res.setHeader('X-Auth-Expired', '1');
-          return jsonResponse(res, 401, { success: false, code: 'AUTH_REQUIRED', message: 'Sesi login tidak valid atau sudah berakhir. Silakan login ulang.' });
-        }
-        req.bindIdentity = true;
-        for (const k of ID_FIELDS) {
-          const v = parsedUrl.searchParams.get(k);
-          if (v !== null && String(v).toLowerCase() !== sess.username) {
-            console.warn('[SECURITY] Identitas query tidak cocok sesi:', sess.username, '->', String(v).slice(0, 40), gatePath, getClientIp(req));
-            return jsonResponse(res, 403, { success: false, message: 'Akses ditolak: identitas tidak cocok dengan sesi login.' });
-          }
-        }
-        if (gatePath.indexOf('/api/admin/') === 0) {
-          if (sess.user.isAdmin !== true || !adminIpAllowed(req)) {
-            console.warn('[SECURITY] Akses admin ditolak:', sess.username, gatePath, getClientIp(req));
-            return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-          }
-          if (req.method !== 'GET') console.log('[ADMIN]', sess.username, req.method, gatePath, getClientIp(req));
-        }
-      }
-    }
-
+    applySecurityHeaders(req, res);
+    if (!(await authGate(req, res, parsedUrl))) return;
     if (parsedUrl.pathname === '/' && req.method === 'GET') {
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
@@ -5378,7 +5362,7 @@ const server = http.createServer(async (req, res) => {
         if (now - (d.lastSeen || 0) <= ONLINE_TIMEOUT) active.push({ username: u, isAdmin: d.isAdmin, isVip: d.isVip, lastSeen: d.lastSeen });
         else await removeOnlineUserFromDb(u);
       }
-      jsonResponse(res, 200, { success: true, count: active.length, users: req.authUser ? active : [] });
+      jsonResponse(res, 200, { success: true, count: active.length, users: active });
 
     } else if (parsedUrl.pathname === '/api/orders/my' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
@@ -5911,24 +5895,24 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const { username, oldPassword, newPassword } = JSON.parse(body);
       if (!username || !oldPassword || !newPassword) return jsonResponse(res, 400, { success: false, message: 'Semua field wajib!' });
-      if (typeof oldPassword !== 'string' || typeof newPassword !== 'string') return jsonResponse(res, 400, { success: false, message: 'Data tidak valid!' });
-      const cleanUser = String(username).toLowerCase();
-      const cpKey = 'cp:' + cleanUser;
-      if (lockedMs(cpKey) > 0) return tooManyResponse(res, lockedMs(cpKey));
-      const pwErr = validateNewPassword(newPassword, cleanUser);
-      if (pwErr) return jsonResponse(res, 400, { success: false, message: pwErr });
+      if (newPassword.length < 4) return jsonResponse(res, 400, { success: false, message: 'Min 4 karakter!' });
+      const cleanUser = username.toLowerCase();
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-      const chk = await verifyPassword(userObj, oldPassword);
-      if (!chk.ok) { addFail(cpKey, 5, 15 * 60 * 1000, 15 * 60 * 1000); return jsonResponse(res, 401, { success: false, message: 'Password lama salah!' }); }
-      clearFail(cpKey);
-      const newTv = (userObj.tokenVersion || 0) + 1;
-      await setUserField(cleanUser, 'passwordHash', await hashPassword(newPassword));
-      await setUserField(cleanUser, 'password', null);
-      await setUserField(cleanUser, 'tokenVersion', newTv);
-      const cpTtl = userObj.isAdmin ? SESSION_TTL_ADMIN : SESSION_TTL_USER;
-      setSessionCookie(req, res, signSession(cleanUser, newTv, cpTtl), cpTtl);
-      jsonResponse(res, 200, { success: true, message: 'Password diubah!' });
+      const cpIp = getClientIpInfo(req);
+      const cpLocked = getLoginLockRemaining(cleanUser, cpIp);
+      if (cpLocked > 0) return jsonResponse(res, 429, { success: false, message: 'Terlalu banyak percobaan gagal. Coba lagi dalam ' + Math.max(1, Math.ceil(cpLocked / 60000)) + ' menit.' });
+      const oldCheck = await verifyPassword(userObj.password, oldPassword);
+      if (!oldCheck.ok) {
+        recordLoginFailure(cleanUser, cpIp, true, !!userObj.isAdmin);
+        return jsonResponse(res, 401, { success: false, message: 'Password lama salah!' });
+      }
+      userObj.password = await hashPassword(String(newPassword));
+      userObj.sessionsValidFrom = Date.now();
+      await saveUserToDb(cleanUser, userObj);
+      invalidateAuthCache(cleanUser);
+      const cpSess = issueAuthToken(cleanUser, !!userObj.isAdmin, req);
+      jsonResponse(res, 200, { success: true, message: 'Password diubah!', token: cpSess.token });
 
     } else if (parsedUrl.pathname === '/api/chat/messages' && req.method === 'GET') {
       // Pesan chat TIDAK dihapus otomatis (permanen sampai admin menghapus manual).
@@ -6033,16 +6017,14 @@ const server = http.createServer(async (req, res) => {
       const { adminUsername, vipUsername, vipPassword, vipDays } = JSON.parse(body);
       const adminObj = await getUserFromDb(adminUsername.toLowerCase());
       if (!adminObj || !adminObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      const cleanVipUser = String(vipUsername || '').toLowerCase().trim();
-      if (!/^[^.#$\[\]\/\s]{3,32}$/.test(cleanVipUser) || /^admin/.test(cleanVipUser)) return jsonResponse(res, 400, { success: false, message: 'Username VIP 3-32 karakter, tanpa spasi atau . # $ [ ] /, dan tidak boleh diawali admin.' });
-      if (typeof vipPassword !== 'string' || vipPassword.length < 6 || vipPassword.length > PASSWORD_MAX) return jsonResponse(res, 400, { success: false, message: 'Password VIP minimal 6 karakter!' });
+      const cleanVipUser = vipUsername.toLowerCase().trim();
       if (!cleanVipUser || !vipPassword || !vipDays) return jsonResponse(res, 400, { success: false, message: 'Lengkapi!' });
       if (vipDays < 1 || vipDays > 3650) return jsonResponse(res, 400, { success: false, message: '1-3650 hari!' });
       const existingUser = await getUserFromDb(cleanVipUser);
       if (existingUser) return jsonResponse(res, 400, { success: false, message: 'Username sudah terdaftar!' });
       const now = Date.now();
       const vipUntil = now + (vipDays * 24 * 60 * 60 * 1000);
-      await saveUserToDb(cleanVipUser, { passwordHash: await hashPassword(vipPassword), tokenVersion: 0, email: 'vip@am-premium.local', isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: now, vipUntil, isVipAccount: true, createdBy: adminUsername.toLowerCase(), createdAt: now });
+      await saveUserToDb(cleanVipUser, { password: vipPassword, email: 'vip@am-premium.local', isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: now, vipUntil, isVipAccount: true, createdBy: adminUsername.toLowerCase(), createdAt: now });
       const vipAccId = 'vip_' + now + '_' + Math.random().toString(36).substring(2, 8);
       await saveVipAccountToDb(vipAccId, { username: cleanVipUser, password: vipPassword, vipUntil, createdBy: adminUsername.toLowerCase(), createdAt: now });
       jsonResponse(res, 200, { success: true, message: 'Akun VIP "' + cleanVipUser + '" dibuat untuk ' + vipDays + ' hari!', username: cleanVipUser, vipUntil });
@@ -6084,6 +6066,7 @@ const server = http.createServer(async (req, res) => {
       const targetUser = await getUserFromDb(cleanTarget);
       if (!targetUser) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan!' });
       await deleteUserFromDb(cleanTarget);
+      invalidateAuthCache(cleanTarget);
       const vipAccounts = await getVipAccountsFromDb();
       for (const [id, acc] of Object.entries(vipAccounts)) {
         if (acc.username === cleanTarget) await removeVipAccountFromDb(id);
@@ -6095,7 +6078,7 @@ const server = http.createServer(async (req, res) => {
       const { username, uploadId, filename, totalChunks, fileSize, fileType } = JSON.parse(body);
       const userObj = await getUserFromDb(username.toLowerCase());
       if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak' });
-      const uploadSessionDir = path.join(UPLOAD_DIR, safeUploadId(uploadId));
+      const uploadSessionDir = path.join(UPLOAD_DIR, uploadId);
       if (!fs.existsSync(uploadSessionDir)) fs.mkdirSync(uploadSessionDir, { recursive: true });
       fs.writeFileSync(path.join(uploadSessionDir, 'meta.json'), JSON.stringify({ filename, totalChunks, fileSize, fileType, createdAt: Date.now() }));
       jsonResponse(res, 200, { success: true, uploadId });
@@ -6105,7 +6088,7 @@ const server = http.createServer(async (req, res) => {
       const { username, uploadId, chunkIndex, chunkData } = JSON.parse(body);
       const userObj = await getUserFromDb(username.toLowerCase());
       if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak' });
-      const uploadSessionDir = path.join(UPLOAD_DIR, safeUploadId(uploadId));
+      const uploadSessionDir = path.join(UPLOAD_DIR, uploadId);
       if (!fs.existsSync(uploadSessionDir)) return jsonResponse(res, 404, { success: false, message: 'Sesi tidak ditemukan' });
       const base64 = chunkData.split(',')[1];
       const buffer = Buffer.from(base64, 'base64');
@@ -6117,7 +6100,7 @@ const server = http.createServer(async (req, res) => {
       const { username, uploadId } = JSON.parse(body);
       const userObj = await getUserFromDb(username.toLowerCase());
       if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak' });
-      const uploadSessionDir = path.join(UPLOAD_DIR, safeUploadId(uploadId));
+      const uploadSessionDir = path.join(UPLOAD_DIR, uploadId);
       if (!fs.existsSync(uploadSessionDir)) return jsonResponse(res, 404, { success: false, message: 'Sesi tidak ditemukan' });
       const meta = JSON.parse(fs.readFileSync(path.join(uploadSessionDir, 'meta.json'), 'utf8'));
       const chunks = fs.readdirSync(uploadSessionDir).filter(f => f.startsWith('chunk_')).sort();
@@ -6158,8 +6141,8 @@ const server = http.createServer(async (req, res) => {
       if (!currentUsername || !newUsername) return jsonResponse(res, 400, { success: false, message: 'Username lama dan baru diperlukan.' });
       const cleanOld = String(currentUsername).toLowerCase();
       const cleanNew = String(newUsername).trim().toLowerCase();
-      if (!/^[^.#$\[\]\/\s]{3,32}$/.test(cleanNew)) return jsonResponse(res, 400, { success: false, message: 'Username 3-32 karakter dan tidak boleh mengandung spasi atau karakter . # $ [ ] /' });
-      if (/^admin/.test(cleanNew)) return jsonResponse(res, 400, { success: false, message: 'Username tidak tersedia.' });
+      if (cleanNew.length < 3 || cleanNew.length > 32 || /[.#$\[\]\/\s]/.test(cleanNew)) return jsonResponse(res, 400, { success: false, message: 'Username baru minimal 3 karakter dan tidak boleh mengandung spasi atau karakter . # $ [ ] /' });
+      if (cleanNew === MAIN_ADMIN_USERNAME) return jsonResponse(res, 400, { success: false, message: 'Username sudah digunakan.' });
       const existingUser = await getUserFromDb(cleanNew);
       if (existingUser) return jsonResponse(res, 400, { success: false, message: 'Username sudah digunakan.' });
       const userData = await getUserFromDb(cleanOld);
@@ -6167,9 +6150,10 @@ const server = http.createServer(async (req, res) => {
       if (userData.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Username akun admin tidak dapat diubah.' });
       await saveUserToDb(cleanNew, userData);
       await set(ref(db, `users/${cleanOld}`), null);
-      authUserCache.clear();
-      setSessionCookie(req, res, signSession(cleanNew, userData.tokenVersion || 0, SESSION_TTL_USER), SESSION_TTL_USER);
-      jsonResponse(res, 200, { success: true, newUsername: cleanNew });
+      invalidateAuthCache(cleanOld);
+      invalidateAuthCache(cleanNew);
+      const renSess = issueAuthToken(cleanNew, false, req);
+      jsonResponse(res, 200, { success: true, newUsername: cleanNew, token: renSess.token });
 
     } else if (parsedUrl.pathname === '/api/admin/set-status' && req.method === 'POST') {
       const body = await readBody(req);
@@ -6288,12 +6272,13 @@ const server = http.createServer(async (req, res) => {
       jsonResponse(res, 200, { success: true, message: 'Berhasil! +' + rewardQuota + ' kuota bonus.', usedQuota: userObj.activatedEmails ? userObj.activatedEmails.length : 0, bonusQuota: userObj.bonusQuota, totalQuota: (userObj.baseQuota || BASE_QUOTA) + userObj.bonusQuota, isVip: userObj.vipUntil && userObj.vipUntil > Date.now(), isAdmin: userObj.isAdmin });
 
     } else if (parsedUrl.pathname === '/api/auth/session' && req.method === 'POST') {
-      try { await readBody(req); } catch (e) {}
-      if (!req.authUser) {
-        if (req.headers.cookie && req.headers.cookie.indexOf(SESSION_COOKIE + '=') !== -1) clearSessionCookie(req, res);
-        return jsonResponse(res, 401, { success: false, message: 'Sesi tidak valid atau sudah berakhir.' });
-      }
-      const cleanUser = req.authUser;
+      const body = await readBody(req);
+      const { username, token } = JSON.parse(body);
+      if (!username || !token) return jsonResponse(res, 400, { success: false });
+      const cleanUser = String(username).trim().toLowerCase();
+      if (/[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false });
+      const sessCheck = await validateAuthToken(req, String(token));
+      if (!sessCheck.ok || sessCheck.payload.u !== cleanUser) return jsonResponse(res, 401, { success: false, sessionExpired: true, message: 'Sesi login tidak valid atau sudah berakhir. Silakan login ulang.' });
       await checkAndExpireBonusQuota(cleanUser);
       const existingUser = await getUserFromDb(cleanUser);
       if (!existingUser) return jsonResponse(res, 404, { success: false });
@@ -6303,54 +6288,40 @@ const server = http.createServer(async (req, res) => {
       if (now - existingUser.lastResetTime >= twentyFourHours) { existingUser.activatedEmails = []; existingUser.lastResetTime = now; await saveUserToDb(cleanUser, existingUser); }
       const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
       const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
-      jsonResponse(res, 200, { success: true, username: cleanUser, isAdmin: existingUser.isAdmin === true, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus });
-
-    } else if (parsedUrl.pathname === '/api/auth/logout' && req.method === 'POST') {
-      try { await readBody(req); } catch (e) {}
-      if (req.authUser && req.authUserObj && req.authUserObj.isAdmin === true) {
-        await setUserField(req.authUser, 'tokenVersion', (req.authUserObj.tokenVersion || 0) + 1);
-      }
-      clearSessionCookie(req, res);
-      jsonResponse(res, 200, { success: true });
+      jsonResponse(res, 200, { success: true, username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus });
 
     } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
       const body = await readBody(req);
       const { mode, username, password, deviceToken, email } = JSON.parse(body);
       if (!username || !password) return jsonResponse(res, 400, { success: false, message: 'Username dan password wajib!' });
-      if (typeof username !== 'string' || typeof password !== 'string') return jsonResponse(res, 400, { success: false, message: 'Data tidak valid!' });
-      const cleanUser = username.trim().toLowerCase();
-      if (!cleanUser || cleanUser.length > 32 || /[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false, message: 'Username tidak boleh mengandung spasi atau karakter . # $ [ ] /' });
-      const clientIp = getClientIp(req);
+      const cleanUser = String(username).trim().toLowerCase();
+      if (!cleanUser || /[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false, message: 'Username tidak boleh mengandung spasi atau karakter . # $ [ ] /' });
+      let existingUser = await getUserFromDb(cleanUser);
       if (mode === 'register') {
-        const regKey = 'reg:' + clientIp;
-        if (lockedMs(regKey) > 0) return tooManyResponse(res, lockedMs(regKey));
-        const existingUser = await getUserFromDb(cleanUser);
-        if (cleanUser === ADMIN_USERNAME || /^admin/.test(cleanUser) || existingUser) return jsonResponse(res, 400, { success: false, message: 'Username tidak tersedia!' });
+        if (cleanUser === 'adminbaguss' || existingUser) return jsonResponse(res, 400, { success: false, message: 'Username tidak tersedia!' });
         if (cleanUser.length < 3) return jsonResponse(res, 400, { success: false, message: 'Username minimal 3 karakter!' });
-        const regPwErr = validateNewPassword(password, cleanUser);
-        if (regPwErr) return jsonResponse(res, 400, { success: false, message: regPwErr });
+        if (String(password).length < 4) return jsonResponse(res, 400, { success: false, message: 'Password minimal 4 karakter!' });
         const cleanEmail = String(email || '').trim().toLowerCase();
-        if (!EMAIL_REGEX.test(cleanEmail) || cleanEmail.length > 120) return jsonResponse(res, 400, { success: false, message: 'Email valid wajib diisi (untuk reset password)!' });
-        addFail(regKey, 30, 60 * 60 * 1000, 60 * 60 * 1000);
-        const newDeviceToken = (typeof deviceToken === 'string' && deviceToken.length > 0 && deviceToken.length <= 100) ? deviceToken : ('dev_' + crypto.randomBytes(12).toString('hex'));
-        await saveUserToDb(cleanUser, { passwordHash: await hashPassword(password), tokenVersion: 0, email: cleanEmail, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
-        setSessionCookie(req, res, signSession(cleanUser, 0, SESSION_TTL_USER), SESSION_TTL_USER);
-        return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: 'session' });
+        if (!EMAIL_REGEX.test(cleanEmail)) return jsonResponse(res, 400, { success: false, message: 'Email valid wajib diisi (untuk reset password)!' });
+        const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
+        await saveUserToDb(cleanUser, { password: await hashPassword(password), email: cleanEmail, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
+        const authSess = issueAuthToken(cleanUser, false, req);
+        return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: authSess.token });
       } else {
-        const ipUserKey = 'lg:' + clientIp + '|' + cleanUser;
-        const userKey = 'lu:' + cleanUser;
-        const ipKey = 'li:' + clientIp;
-        const waitMs = Math.max(lockedMs(ipUserKey), lockedMs(userKey), lockedMs(ipKey));
-        if (waitMs > 0) return tooManyResponse(res, waitMs);
-        let existingUser = await getUserFromDb(cleanUser);
-        const isAdminAcc = !!(existingUser && existingUser.isAdmin);
-        const ipBlocked = isAdminAcc && !adminIpAllowed(req);
-        const chk = await verifyPassword(existingUser, password);
-        if (existingUser && chk.ok && !ipBlocked) {
-          clearFail(ipUserKey);
-          if (chk.legacy) {
-            await setUserField(cleanUser, 'passwordHash', await hashPassword(password));
-            await setUserField(cleanUser, 'password', null);
+        const ipInfo = getClientIpInfo(req);
+        const targetExists = !!(existingUser && typeof existingUser === 'object');
+        const targetIsAdmin = targetExists && !!existingUser.isAdmin;
+        const lockedMs = getLoginLockRemaining(cleanUser, ipInfo);
+        if (lockedMs > 0) {
+          console.warn('[SECURITY] Login diblokir sementara (terlalu banyak gagal) user=' + cleanUser + ' ip=' + ipInfo.ip);
+          return jsonResponse(res, 429, { success: false, message: 'Terlalu banyak percobaan login gagal. Coba lagi dalam ' + Math.max(1, Math.ceil(lockedMs / 60000)) + ' menit.' });
+        }
+        const pwCheck = await verifyPassword(targetExists ? existingUser.password : null, password);
+        if (targetExists && pwCheck.ok) {
+          clearLoginFailures(cleanUser);
+          if (pwCheck.legacy) {
+            try { existingUser.password = await hashPassword(password); await saveUserToDb(cleanUser, existingUser); }
+            catch (hashErr) { console.error('[SECURITY] Upgrade hash password gagal:', hashErr.message); }
           }
           await checkAndExpireBonusQuota(cleanUser);
           existingUser = await getUserFromDb(cleanUser);
@@ -6360,17 +6331,22 @@ const server = http.createServer(async (req, res) => {
           if (now - existingUser.lastResetTime >= twentyFourHours) { existingUser.activatedEmails = []; existingUser.lastResetTime = now; await saveUserToDb(cleanUser, existingUser); }
           const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
           const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
-          const loginTtl = existingUser.isAdmin ? SESSION_TTL_ADMIN : SESSION_TTL_USER;
-          setSessionCookie(req, res, signSession(cleanUser, existingUser.tokenVersion || 0, loginTtl), loginTtl);
-          if (existingUser.isAdmin) console.log('[SECURITY] Login admin berhasil:', cleanUser, 'dari', clientIp);
-          return jsonResponse(res, 200, { success: true, message: 'Login berhasil!', username: cleanUser, isAdmin: existingUser.isAdmin === true, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus, token: 'session' });
+          const authSess = issueAuthToken(cleanUser, !!existingUser.isAdmin, req);
+          if (existingUser.isAdmin) console.log('[SECURITY] Login admin berhasil user=' + cleanUser + ' ip=' + ipInfo.ip);
+          return jsonResponse(res, 200, { success: true, message: 'Login berhasil!', username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus, token: authSess.token, tokenExpiresAt: authSess.expiresAt });
         }
-        addFail(ipUserKey, isAdminAcc ? 3 : 5, 15 * 60 * 1000, isAdminAcc ? 30 * 60 * 1000 : 15 * 60 * 1000);
-        addFail(userKey, isAdminAcc ? 10 : 20, 15 * 60 * 1000, isAdminAcc ? 30 * 60 * 1000 : 15 * 60 * 1000);
-        addFail(ipKey, 60, 15 * 60 * 1000, 15 * 60 * 1000);
-        if (isAdminAcc) console.warn('[SECURITY] Login admin GAGAL:', cleanUser, 'dari', clientIp);
+        recordLoginFailure(cleanUser, ipInfo, targetExists, targetIsAdmin);
+        if (targetIsAdmin) console.warn('[SECURITY] Gagal login ke akun admin user=' + cleanUser + ' ip=' + ipInfo.ip);
         return jsonResponse(res, 401, { success: false, message: 'Username atau password salah!' });
       }
+
+    } else if (parsedUrl.pathname === '/api/auth/logout' && req.method === 'POST') {
+      const outCheck = await validateAuthToken(req, extractAuthToken(req));
+      if (outCheck.ok) {
+        if (outCheck.state.isAdmin) await revokeAllSessions(outCheck.payload.u);
+        else if (outCheck.payload.n) revokedTokenIds.set(outCheck.payload.n, outCheck.payload.exp);
+      }
+      return jsonResponse(res, 200, { success: true });
 
     } else if (parsedUrl.pathname === '/api/auth/forgot' && req.method === 'POST') {
       const body = await readBody(req);
@@ -6378,9 +6354,6 @@ const server = http.createServer(async (req, res) => {
       const generic = { success: true, message: 'Jika akun ada dan punya email terdaftar, kode sudah dikirim.' };
       const cleanUser = String(username || '').trim().toLowerCase();
       if (!cleanUser || /[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 200, generic);
-      const fpKey = 'fp:' + getClientIp(req);
-      if (lockedMs(fpKey) > 0) return jsonResponse(res, 200, generic);
-      addFail(fpKey, 15, 60 * 60 * 1000, 60 * 60 * 1000);
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj || userObj.isAdmin || !userObj.email || !EMAIL_REGEX.test(userObj.email) || /@am-premium\.local$/.test(userObj.email)) return jsonResponse(res, 200, generic);
       const snap = await get(child(ref(db), 'passwordResets/' + cleanUser));
@@ -6405,9 +6378,8 @@ const server = http.createServer(async (req, res) => {
       const cleanUser = String(username || '').trim().toLowerCase();
       if (!cleanUser || !code || !newPassword) return jsonResponse(res, 400, { success: false, message: 'Semua field wajib!' });
       if (/[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false, message: 'Username tidak valid' });
-      const rsPwErr = validateNewPassword(String(newPassword), cleanUser);
-      if (rsPwErr) return jsonResponse(res, 400, { success: false, message: rsPwErr });
-      if (lockedMs('rs:' + cleanUser) > 0) return jsonResponse(res, 429, { success: false, message: 'Terlalu banyak percobaan. Coba lagi nanti.' });
+      { const adminProbe = await getUserFromDb(cleanUser); if (adminProbe && adminProbe.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Reset password akun admin tidak tersedia lewat web.' }); }
+      if (String(newPassword).length < 4) return jsonResponse(res, 400, { success: false, message: 'Password minimal 4 karakter!' });
       const snap = await get(child(ref(db), 'passwordResets/' + cleanUser));
       const rec = snap.exists() ? snap.val() : null;
       if (!rec || rec.expiresAt < Date.now()) return jsonResponse(res, 400, { success: false, message: 'Kode tidak valid atau sudah kedaluwarsa. Minta kode baru.' });
@@ -6420,15 +6392,14 @@ const server = http.createServer(async (req, res) => {
       if (given.length !== saved.length || !crypto.timingSafeEqual(given, saved)) {
         rec.attempts = (rec.attempts || 0) + 1;
         await set(ref(db, 'passwordResets/' + cleanUser), rec);
-        addFail('rs:' + cleanUser, 10, 60 * 60 * 1000, 60 * 60 * 1000);
         return jsonResponse(res, 400, { success: false, message: 'Kode salah.' });
       }
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-      if (userObj.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Akun ini tidak dapat direset lewat email.' });
-      await setUserField(cleanUser, 'passwordHash', await hashPassword(String(newPassword)));
-      await setUserField(cleanUser, 'password', null);
-      await setUserField(cleanUser, 'tokenVersion', (userObj.tokenVersion || 0) + 1);
+      userObj.password = await hashPassword(String(newPassword));
+      userObj.sessionsValidFrom = Date.now();
+      await saveUserToDb(cleanUser, userObj);
+      invalidateAuthCache(cleanUser);
       await set(ref(db, 'passwordResets/' + cleanUser), null);
       jsonResponse(res, 200, { success: true, message: 'Password berhasil diubah. Silakan login.' });
 
@@ -6483,7 +6454,7 @@ const server = http.createServer(async (req, res) => {
     }
   } catch (err) {
     console.error('Server error:', err);
-    if (!res.headersSent) jsonResponse(res, err.statusCode || 500, { success: false, message: err.statusCode ? err.message : 'Terjadi kesalahan pada server.' });
+    if (!res.headersSent) jsonResponse(res, 500, { success: false, message: err.message || 'Internal server error' });
   }
 });
 
