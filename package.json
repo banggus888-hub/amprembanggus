@@ -1,14 +1,7 @@
 {
   "name": "amprem-vercel-app",
   "version": "1.0.0",
-  "type": "commonjs",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
+  "type": "cjs",
   "dependencies": {
     "@xof/fetch": "^1.2.2",
     "firebase": "^10.12.0"
