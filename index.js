@@ -857,13 +857,361 @@ async function apkGetJob(buildId) {
   return job;
 }
 
+// ==========================================
+// ====== KEAMANAN AKUN ADMIN (KETAT) ======
+// ==========================================
+// Ringkasan:
+//  - Sesi admin ASLI (token acak 256-bit, disimpan hash-nya, cookie HttpOnly + SameSite=Strict)
+//  - Semua request admin (/api/admin/* atau yang memakai username admin) WAJIB membawa sesi admin yang valid
+//  - Password admin di-hash (scrypt) + perbandingan aman (timing-safe)
+//  - Anti brute-force: kunci login per IP + kunci global
+//  - Sesi terikat ke browser (User-Agent), ada batas idle & batas umur sesi, maksimal 5 perangkat
+//  - Keluarkan semua perangkat admin (otomatis sekali saat update ini + tombol di Panel Admin)
+//  - Opsional: ADMIN_PASSWORD, ADMIN_ALLOWED_IPS, TRUST_PROXY lewat environment variable
+const ADMIN_MAIN_USERNAME = 'adminbaguss';
+const ADMIN_SESSION_COOKIE = 'am_admin_sid';
+const ADMIN_SESSION_IDLE_MS = 12 * 60 * 60 * 1000;        // 12 jam tidak aktif -> otomatis keluar
+const ADMIN_SESSION_MAX_MS = 3 * 24 * 60 * 60 * 1000;     // maksimal 3 hari -> wajib login ulang
+const ADMIN_MAX_SESSIONS = 5;                             // maksimal perangkat admin yang login bersamaan
+const ADMIN_LOGIN_MAX_FAILS = 5;                          // gagal 5x per IP -> dikunci
+const ADMIN_LOGIN_LOCK_MS = 15 * 60 * 1000;               // lama kunci 15 menit
+const ADMIN_LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const ADMIN_GLOBAL_MAX_FAILS = 30;                        // gagal 30x dari semua IP -> login admin dikunci sementara
+const ADMIN_FORCE_LOGOUT_ID = 'force-logout-2026-10-29';  // ganti nilai ini jika ingin memaksa keluar semua perangkat lagi saat server start
+const ADMIN_ALLOWED_IPS = (process.env.ADMIN_ALLOWED_IPS || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+const TRUST_PROXY = process.env.TRUST_PROXY === '1';
+const adminSessionCache = new Map();
+const adminLoginAttempts = new Map();
+const adminFlagCache = new Map();
+let adminGlobalFails = { count: 0, first: 0, lockUntil: 0 };
+
+setInterval(function () {
+  const now = Date.now();
+  adminLoginAttempts.forEach(function (rec, key) { if ((rec.lockUntil || 0) < now && now - rec.first > ADMIN_LOGIN_WINDOW_MS) adminLoginAttempts.delete(key); });
+  adminFlagCache.forEach(function (v, key) { if (now - v.at > 60000) adminFlagCache.delete(key); });
+  adminSessionCache.forEach(function (v, key) { if (now - v.cachedAt > 60000) adminSessionCache.delete(key); });
+}, 10 * 60 * 1000).unref();
+
+function sha256Hex(s) { return crypto.createHash('sha256').update(String(s)).digest('hex'); }
+
+function safeEqual(a, b) {
+  const ha = crypto.createHash('sha256').update(String(a)).digest();
+  const hb = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+
+function scryptAsync(password, salt) {
+  return new Promise(function (resolve, reject) {
+    crypto.scrypt(String(password), salt, 64, { N: 16384, r: 8, p: 1 }, function (err, key) { if (err) reject(err); else resolve(key); });
+  });
+}
+
+async function hashPasswordSecure(password) {
+  const salt = crypto.randomBytes(16);
+  const dk = await scryptAsync(password, salt);
+  return 'scrypt$' + salt.toString('hex') + '$' + dk.toString('hex');
+}
+
+function isHashedPassword(v) {
+  return typeof v === 'string' && /^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/.test(v);
+}
+
+async function verifyPasswordSecure(stored, input) {
+  if (typeof stored !== 'string' || typeof input !== 'string') return false;
+  if (isHashedPassword(stored)) {
+    const parts = stored.split('$');
+    const salt = Buffer.from(parts[1], 'hex');
+    const expected = Buffer.from(parts[2], 'hex');
+    const dk = await scryptAsync(input, salt);
+    return dk.length === expected.length && crypto.timingSafeEqual(dk, expected);
+  }
+  return safeEqual(stored, input);
+}
+
+function isStrongAdminPassword(p) {
+  return typeof p === 'string' && p.length >= 10 && p === p.trim() && /[A-Za-z]/.test(p) && /[0-9]/.test(p);
+}
+
+function generateStrongPassword() {
+  let p;
+  do { p = crypto.randomBytes(12).toString('base64url'); } while (!isStrongAdminPassword(p));
+  return p;
+}
+
+function getClientIp(req) {
+  let ip = (req.socket && req.socket.remoteAddress) || 'unknown';
+  if (TRUST_PROXY) {
+    const xf = req.headers['x-forwarded-for'];
+    if (xf) ip = String(xf).split(',')[0].trim() || ip;
+  }
+  return String(ip).replace(/^::ffff:/, '');
+}
+
+function parseCookies(req) {
+  const out = {};
+  const h = req.headers.cookie;
+  if (!h) return out;
+  String(h).split(';').forEach(function (part) {
+    const i = part.indexOf('=');
+    if (i > 0) {
+      const k = part.slice(0, i).trim();
+      try { out[k] = decodeURIComponent(part.slice(i + 1).trim()); } catch (e) {}
+    }
+  });
+  return out;
+}
+
+function isHttpsRequest(req) {
+  return !!(req.socket && req.socket.encrypted) || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+}
+
+function buildAdminCookie(req, token, maxAgeMs) {
+  let c = ADMIN_SESSION_COOKIE + '=' + encodeURIComponent(token) + '; Path=/; HttpOnly; SameSite=Strict; Max-Age=' + Math.max(0, Math.floor(maxAgeMs / 1000));
+  if (isHttpsRequest(req)) c += '; Secure';
+  return c;
+}
+
+function clearAdminCookie(req) { return buildAdminCookie(req, '', 0); }
+
+function sameOriginOk(req) {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try {
+    const originHost = new URL(origin).host.toLowerCase();
+    const hosts = [req.headers.host, req.headers['x-forwarded-host']].filter(Boolean).map(function (h) { return String(h).split(',')[0].trim().toLowerCase(); });
+    return hosts.indexOf(originHost) !== -1;
+  } catch (e) { return false; }
+}
+
+function describeUserAgent(ua) {
+  ua = String(ua || '');
+  let os = 'Perangkat tidak dikenal';
+  if (/android/i.test(ua)) os = 'Android';
+  else if (/iphone|ipad|ipod/i.test(ua)) os = 'iOS';
+  else if (/windows/i.test(ua)) os = 'Windows';
+  else if (/mac os|macintosh/i.test(ua)) os = 'macOS';
+  else if (/linux/i.test(ua)) os = 'Linux';
+  let br = 'Browser';
+  if (/edg\//i.test(ua)) br = 'Edge';
+  else if (/opr\/|opera/i.test(ua)) br = 'Opera';
+  else if (/chrome|crios/i.test(ua)) br = 'Chrome';
+  else if (/firefox|fxios/i.test(ua)) br = 'Firefox';
+  else if (/safari/i.test(ua)) br = 'Safari';
+  return br + ' di ' + os;
+}
+
+function logAdminAudit(event, req, extra) {
+  const entry = Object.assign({ event: event, at: Date.now(), ip: req ? getClientIp(req) : '-', ua: req ? String(req.headers['user-agent'] || '').slice(0, 120) : '-' }, extra || {});
+  console.log('[ADMIN-SECURITY]', event, JSON.stringify(entry));
+  set(ref(db, 'adminAudit/' + entry.at + '_' + crypto.randomBytes(3).toString('hex')), entry).catch(function () {});
+}
+
+async function isAdminUsername(name) {
+  const k = String(name || '').trim().toLowerCase();
+  if (!k) return false;
+  if (k === ADMIN_MAIN_USERNAME) return true;
+  if (/[.#$\[\]\/\s]/.test(k)) return false;
+  const now = Date.now();
+  const cached = adminFlagCache.get(k);
+  if (cached && now - cached.at < 5000) return cached.isAdmin;
+  const u = await getUserFromDb(k);
+  const isAdmin = !!(u && u.isAdmin);
+  adminFlagCache.set(k, { isAdmin: isAdmin, at: now });
+  return isAdmin;
+}
+
+async function getAdminSessionsFromDb() {
+  const snapshot = await get(child(ref(db), 'adminSessions'));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+
+async function removeAdminSession(sid) {
+  adminSessionCache.delete(sid);
+  await set(ref(db, 'adminSessions/' + sid), null);
+}
+
+async function revokeAllAdminSessions() {
+  adminSessionCache.clear();
+  await set(ref(db, 'adminSessions'), null);
+}
+
+async function createAdminSession(req, username) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const sid = sha256Hex(token);
+  const now = Date.now();
+  const ua = String(req.headers['user-agent'] || '');
+  const data = { username: username, createdAt: now, lastSeen: now, expiresAt: now + ADMIN_SESSION_MAX_MS, ip: getClientIp(req), ua: ua.slice(0, 200), uaHash: sha256Hex(ua) };
+  const all = await getAdminSessionsFromDb();
+  const mine = Object.entries(all).filter(function (e) { return e[1] && e[1].username === username; }).sort(function (a, b) { return (a[1].createdAt || 0) - (b[1].createdAt || 0); });
+  while (mine.length >= ADMIN_MAX_SESSIONS) { const old = mine.shift(); await removeAdminSession(old[0]); }
+  await set(ref(db, 'adminSessions/' + sid), data);
+  adminSessionCache.set(sid, { data: data, cachedAt: now });
+  return { token: token, sid: sid, data: data };
+}
+
+async function validateAdminSession(req) {
+  const token = parseCookies(req)[ADMIN_SESSION_COOKIE];
+  if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
+  const sid = sha256Hex(token);
+  const now = Date.now();
+  const entry = adminSessionCache.get(sid);
+  let data;
+  if (entry && now - entry.cachedAt < 10000) {
+    data = entry.data;
+  } else {
+    const snap = await get(child(ref(db), 'adminSessions/' + sid));
+    data = snap.exists() ? snap.val() : null;
+    if (data) adminSessionCache.set(sid, { data: data, cachedAt: now }); else adminSessionCache.delete(sid);
+  }
+  if (!data) return null;
+  if (now > (data.expiresAt || 0) || now - (data.lastSeen || 0) > ADMIN_SESSION_IDLE_MS) { await removeAdminSession(sid); return null; }
+  if (data.uaHash !== sha256Hex(req.headers['user-agent'] || '')) {
+    await removeAdminSession(sid);
+    logAdminAudit('session_dicabut_user_agent_berbeda', req, { username: data.username });
+    return null;
+  }
+  if (!(await isAdminUsername(data.username))) { await removeAdminSession(sid); return null; }
+  if (now - (data.lastSeen || 0) > 60000) {
+    data.lastSeen = now;
+    adminSessionCache.set(sid, { data: data, cachedAt: now });
+    set(ref(db, 'adminSessions/' + sid + '/lastSeen'), now).catch(function () {});
+  }
+  return { sid: sid, username: data.username, data: data };
+}
+
+function adminLoginKey(req, username) { return getClientIp(req) + '|' + String(username).toLowerCase(); }
+
+function adminLoginCheck(req, username) {
+  const now = Date.now();
+  if (adminGlobalFails.lockUntil > now) return { ok: false, wait: adminGlobalFails.lockUntil - now };
+  const rec = adminLoginAttempts.get(adminLoginKey(req, username));
+  if (rec && rec.lockUntil > now) return { ok: false, wait: rec.lockUntil - now };
+  return { ok: true, wait: 0 };
+}
+
+function adminLoginFail(req, username) {
+  const now = Date.now();
+  const key = adminLoginKey(req, username);
+  let rec = adminLoginAttempts.get(key);
+  if (!rec || now - rec.first > ADMIN_LOGIN_WINDOW_MS) rec = { count: 0, first: now, lockUntil: 0 };
+  rec.count++;
+  if (rec.count >= ADMIN_LOGIN_MAX_FAILS) {
+    rec.lockUntil = now + ADMIN_LOGIN_LOCK_MS; rec.count = 0; rec.first = now;
+    logAdminAudit('login_admin_dikunci_ip', req, { username: String(username) });
+  }
+  adminLoginAttempts.set(key, rec);
+  if (now - adminGlobalFails.first > ADMIN_LOGIN_WINDOW_MS) adminGlobalFails = { count: 0, first: now, lockUntil: adminGlobalFails.lockUntil };
+  adminGlobalFails.count++;
+  if (adminGlobalFails.count >= ADMIN_GLOBAL_MAX_FAILS) {
+    adminGlobalFails = { count: 0, first: now, lockUntil: now + ADMIN_LOGIN_LOCK_MS };
+    logAdminAudit('login_admin_dikunci_global', req, { username: String(username) });
+  }
+}
+
+function adminLoginSuccess(req, username) { adminLoginAttempts.delete(adminLoginKey(req, username)); }
+
+// Penjaga utama: semua request yang menyangkut akun admin wajib punya sesi admin yang valid
+async function adminGuard(req, res, parsedUrl) {
+  const p = parsedUrl.pathname;
+  if (p.indexOf('/api/') !== 0) return true;
+  if (p === '/api/auth' || p === '/api/auth/session' || p === '/api/auth/logout') return true;
+  const claimed = new Set();
+  const q = parsedUrl.searchParams.get('username');
+  if (q) claimed.add(String(q).trim().toLowerCase());
+  if (typeof req.__rawBody === 'string' && req.__rawBody) {
+    try {
+      const b = JSON.parse(req.__rawBody);
+      if (b && typeof b === 'object') {
+        ['username', 'adminUsername', 'currentUsername'].forEach(function (k) {
+          if (typeof b[k] === 'string' && b[k]) claimed.add(b[k].trim().toLowerCase());
+        });
+      }
+    } catch (e) {}
+  }
+  let needAdmin = p.indexOf('/api/admin/') === 0;
+  const adminClaims = [];
+  for (const n of claimed) { if (await isAdminUsername(n)) adminClaims.push(n); }
+  if (adminClaims.length) needAdmin = true;
+  if (!needAdmin) return true;
+  if (ADMIN_ALLOWED_IPS.length && ADMIN_ALLOWED_IPS.indexOf(getClientIp(req)) === -1) {
+    jsonResponse(res, 403, { success: false, message: 'Akses admin ditolak dari alamat IP ini.' });
+    return false;
+  }
+  const sess = await validateAdminSession(req);
+  if (!sess) {
+    jsonResponse(res, 401, { success: false, message: 'Sesi admin tidak valid atau sudah berakhir. Silakan login ulang.', adminSessionInvalid: true }, { 'Set-Cookie': clearAdminCookie(req) });
+    return false;
+  }
+  if (adminClaims.some(function (n) { return n !== sess.username; })) {
+    logAdminAudit('percobaan_pakai_akun_admin_lain', req, { sessionUser: sess.username, claimed: adminClaims.join(',') });
+    jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+    return false;
+  }
+  if (req.method !== 'GET' && req.method !== 'HEAD' && !sameOriginOk(req)) {
+    jsonResponse(res, 403, { success: false, message: 'Permintaan ditolak (origin tidak cocok).' });
+    return false;
+  }
+  req.adminSession = sess;
+  return true;
+}
+
+async function ensureAdminForceLogoutOnce() {
+  const snap = await get(child(ref(db), 'settings/adminSecurity/forceLogoutId'));
+  const cur = snap.exists() ? snap.val() : null;
+  if (cur !== ADMIN_FORCE_LOGOUT_ID) {
+    await revokeAllAdminSessions();
+    await set(ref(db, 'settings/adminSecurity/forceLogoutId'), ADMIN_FORCE_LOGOUT_ID);
+    logAdminAudit('semua_perangkat_admin_dikeluarkan', null, { reason: 'update keamanan admin' });
+  }
+}
+
+function printGeneratedAdminPassword(pass, reason) {
+  console.log('\n==============================================================');
+  console.log(' [KEAMANAN ADMIN] Password admin ' + reason);
+  console.log(' Username : ' + ADMIN_MAIN_USERNAME);
+  console.log(' Password : ' + pass);
+  console.log(' SIMPAN password ini sekarang, hanya ditampilkan SEKALI.');
+  console.log(' Lupa? Jalankan ulang server dengan env ADMIN_PASSWORD=passwordbaru');
+  console.log('==============================================================\n');
+}
+
 async function initAdmin() {
-  const adminData = await getUserFromDb('adminbaguss');
-  if (!adminData) {
-    await saveUserToDb('adminbaguss', {
-      password: 'baguss', isAdmin: true, activatedEmails: [], bonusQuota: 0,
-      baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0
-    });
+  try {
+    const envPass = process.env.ADMIN_PASSWORD ? String(process.env.ADMIN_PASSWORD) : '';
+    if (envPass && !isStrongAdminPassword(envPass)) {
+      console.log('[ADMIN-SECURITY] ADMIN_PASSWORD diabaikan: minimal 10 karakter, harus ada huruf dan angka, tanpa spasi di ujung.');
+    }
+    const useEnv = envPass && isStrongAdminPassword(envPass) ? envPass : '';
+    const adminData = await getUserFromDb(ADMIN_MAIN_USERNAME);
+    let passwordChanged = false;
+    if (!adminData) {
+      const initial = useEnv || generateStrongPassword();
+      await saveUserToDb(ADMIN_MAIN_USERNAME, {
+        password: await hashPasswordSecure(initial), isAdmin: true, activatedEmails: [], bonusQuota: 0,
+        baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0
+      });
+      if (!useEnv) printGeneratedAdminPassword(initial, 'dibuat otomatis');
+      passwordChanged = true;
+    } else {
+      let changed = false;
+      const isWeakDefault = await verifyPasswordSecure(adminData.password, 'baguss');
+      if (useEnv) {
+        if (!(await verifyPasswordSecure(adminData.password, useEnv)) || !isHashedPassword(adminData.password)) {
+          adminData.password = await hashPasswordSecure(useEnv); changed = true; passwordChanged = true;
+        }
+      } else if (isWeakDefault) {
+        const np = generateStrongPassword();
+        adminData.password = await hashPasswordSecure(np); changed = true; passwordChanged = true;
+        printGeneratedAdminPassword(np, 'default lama (lemah) diganti otomatis');
+      } else if (!isHashedPassword(adminData.password) && typeof adminData.password === 'string') {
+        adminData.password = await hashPasswordSecure(adminData.password); changed = true;
+      }
+      if (changed) await saveUserToDb(ADMIN_MAIN_USERNAME, adminData);
+    }
+    if (passwordChanged) await revokeAllAdminSessions();
+    await ensureAdminForceLogoutOnce();
+  } catch (e) {
+    console.error('[ADMIN-SECURITY] initAdmin gagal:', e.message);
   }
 }
 initAdmin();
@@ -2049,6 +2397,17 @@ const htmlTemplate = `<!DOCTYPE html>
         <div style="font-size:11.5px; font-weight:800; color:var(--warn);">👑 Master Control Panel</div>
       </div>
       <div>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:7px;">
+          <div class="section-head" style="color:var(--warn); margin:0;">🔐 Keamanan Admin</div>
+          <button onclick="loadAdminSessions()" class="btn btn-ghost btn-xs">Refresh</button>
+        </div>
+        <div id="admin-sessions-list" style="display:flex; flex-direction:column; gap:6px; max-height:180px; overflow-y:auto; font-size:11px;"></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:7px;">
+          <button onclick="adminLogoutAllDevices(true)" class="btn btn-ghost btn-sm" style="width:100%;">Keluarkan Perangkat Lain</button>
+          <button onclick="adminLogoutAllDevices(false)" class="btn btn-err btn-sm" style="width:100%;">Keluarkan Semua Perangkat</button>
+        </div>
+      </div>
+      <div>
         <div class="section-head" style="color:var(--warn);">Status Server</div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:7px;">
           <button onclick="changeServerState('online')" class="btn btn-ok btn-sm" style="width:100%;">● Online</button>
@@ -2250,6 +2609,24 @@ const htmlTemplate = `<!DOCTYPE html>
 </div>
 
 <script>
+(function () {
+  var _origFetch = window.fetch.bind(window);
+  window.fetch = async function () {
+    var r = await _origFetch.apply(null, arguments);
+    if (r.status === 401) {
+      try {
+        var j = await r.clone().json();
+        if (j && j.adminSessionInvalid) {
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('savedUsername');
+          sessionStorage.clear();
+          location.reload();
+        }
+      } catch (e) {}
+    }
+    return r;
+  };
+})();
 const DANA_ADMIN_NUMBER = '${DANA_ADMIN_NUMBER}';
 const DANA_ADMIN_NAME = '${DANA_ADMIN_NAME}';
 const BASE_QUOTA = 2;
@@ -2591,7 +2968,7 @@ function switchView(viewName) {
   else if (viewName === 'admin') {
     if (!isAdminUser) return showToast('Akses ditolak!', 'error');
     document.getElementById('section-admin').classList.remove('hide');
-    loadAdminRedeems(); loadAdminAnnouncements(); loadAdminVipList(); loadAllUsers(); loadVipAccounts(); loadAdminFeatureRequests(); loadAdminVipShop(); loadAdminTransactions(); loadAdminOrders();
+    loadAdminRedeems(); loadAdminAnnouncements(); loadAdminVipList(); loadAllUsers(); loadVipAccounts(); loadAdminFeatureRequests(); loadAdminVipShop(); loadAdminTransactions(); loadAdminOrders(); loadAdminSessions();
   }
 }
 
@@ -4808,6 +5185,51 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+async function loadAdminSessions() {
+  if (!isAdminUser) return;
+  const container = document.getElementById('admin-sessions-list');
+  if (!container) return;
+  try {
+    const res = await fetch('/api/admin/security/sessions?username=' + encodeURIComponent(loggedInUsername));
+    const data = await res.json();
+    if (!data.success) { container.innerHTML = '<div style="color:var(--text-2);">Gagal memuat perangkat</div>'; return; }
+    if (!data.sessions.length) { container.innerHTML = '<div style="color:var(--text-2);">Tidak ada perangkat aktif</div>'; return; }
+    container.innerHTML = data.sessions.map(function (s) {
+      return '<div class="hist-item" style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><div style="min-width:0;"><div style="font-size:11.5px; font-weight:700;">' + escapeHtml(s.device) + '</div><div class="mono" style="font-size:9px; color:var(--text-2);">' + escapeHtml(s.ip) + ' • aktif ' + new Date(s.lastSeen).toLocaleString('id-ID') + '</div></div>' + (s.current ? '<span class="badge badge-ok">Perangkat ini</span>' : '<button class="btn btn-err btn-xs" data-sid="' + escapeHtml(s.id) + '">Keluarkan</button>') + '</div>';
+    }).join('');
+    container.querySelectorAll('button[data-sid]').forEach(function (b) {
+      b.addEventListener('click', function () { adminRevokeSession(b.getAttribute('data-sid')); });
+    });
+  } catch (e) { container.innerHTML = '<div style="color:var(--text-2);">Gagal memuat perangkat</div>'; }
+}
+
+async function adminRevokeSession(id) {
+  if (!isAdminUser) return;
+  try {
+    const res = await fetch('/api/admin/security/revoke-session', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, id: id }) });
+    const data = await res.json();
+    showToast(data.message || 'Selesai', data.success ? 'success' : 'error');
+    loadAdminSessions();
+  } catch (e) { showToast('Gagal', 'error'); }
+}
+
+async function adminLogoutAllDevices(keepCurrent) {
+  if (!isAdminUser) return;
+  if (!confirm(keepCurrent ? 'Keluarkan semua perangkat admin lain?' : 'Keluarkan SEMUA perangkat admin, termasuk perangkat ini?')) return;
+  try {
+    const res = await fetch('/api/admin/security/logout-all', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, keepCurrent: !!keepCurrent }) });
+    const data = await res.json();
+    if (!data.success) return showToast(data.message || 'Gagal', 'error');
+    showToast(data.message, 'success');
+    if (!keepCurrent) {
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('savedUsername');
+      sessionStorage.clear();
+      setTimeout(function () { location.reload(); }, 800);
+    } else { loadAdminSessions(); }
+  } catch (e) { showToast('Gagal', 'error'); }
+}
+
 async function handleLogout() {
   await markOffline();
   stopOnlineTracking();
@@ -4817,6 +5239,7 @@ async function handleLogout() {
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   if (statusPollInterval) clearInterval(statusPollInterval);
   if (videoPollInterval) clearInterval(videoPollInterval);
+  try { await fetch('/api/auth/logout', { method:'POST' }); } catch (e) {}
   localStorage.removeItem('authToken');
   localStorage.removeItem('savedUsername');
   sessionStorage.clear();
@@ -4840,17 +5263,25 @@ document.addEventListener('keydown', (e) => {
 // ==========================================
 const PORT = 3001;
 
-function jsonResponse(res, code, data) {
+function jsonResponse(res, code, data, extraHeaders) {
   const body = JSON.stringify(data);
-  res.writeHead(code, {
+  res.writeHead(code, Object.assign({
     'Content-Type': 'application/json',
     'Content-Length': Buffer.byteLength(body),
-    'Cache-Control': 'no-store'
-  });
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'SAMEORIGIN',
+    'Referrer-Policy': 'strict-origin-when-cross-origin'
+  }, extraHeaders || {}));
   res.end(body);
 }
 
 function readBody(req) {
+  if (typeof req.__rawBody === 'string') return Promise.resolve(req.__rawBody);
+  return readBodyStream(req);
+}
+
+function readBodyStream(req) {
   return new Promise((resolve, reject) => {
     let body = '';
     let size = 0;
@@ -4869,10 +5300,19 @@ const server = http.createServer(async (req, res) => {
   let currentServerStatus = await getServerStatusFromDb();
 
   try {
+    if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH' || req.method === 'DELETE') {
+      try { req.__rawBody = await readBodyStream(req); }
+      catch (e) { return jsonResponse(res, 413, { success: false, message: 'Data terlalu besar.' }); }
+    }
+    if (!(await adminGuard(req, res, parsedUrl))) return;
+
     if (parsedUrl.pathname === '/' && req.method === 'GET') {
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'public, max-age=300',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'SAMEORIGIN',
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
         'Content-Length': Buffer.byteLength(htmlTemplate)
       });
       res.end(htmlTemplate);
@@ -5499,9 +5939,22 @@ const server = http.createServer(async (req, res) => {
       const cleanUser = username.toLowerCase();
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-      if (userObj.password !== oldPassword) return jsonResponse(res, 401, { success: false, message: 'Password lama salah!' });
-      userObj.password = newPassword;
+      const isAdminAcc = !!userObj.isAdmin;
+      if (isAdminAcc) {
+        const lim = adminLoginCheck(req, cleanUser);
+        if (!lim.ok) return jsonResponse(res, 429, { success: false, message: 'Terlalu banyak percobaan. Coba lagi dalam ' + Math.max(1, Math.ceil(lim.wait / 60000)) + ' menit.' });
+      }
+      const oldOk = isAdminAcc ? await verifyPasswordSecure(userObj.password, String(oldPassword)) : userObj.password === oldPassword;
+      if (!oldOk) { if (isAdminAcc) adminLoginFail(req, cleanUser); return jsonResponse(res, 401, { success: false, message: 'Password lama salah!' }); }
+      if (isAdminAcc && !isStrongAdminPassword(String(newPassword))) return jsonResponse(res, 400, { success: false, message: 'Password admin minimal 10 karakter, wajib ada huruf dan angka!' });
+      userObj.password = isAdminAcc ? await hashPasswordSecure(String(newPassword)) : newPassword;
       await saveUserToDb(cleanUser, userObj);
+      if (isAdminAcc) {
+        const all = await getAdminSessionsFromDb();
+        for (const [k, v] of Object.entries(all)) { if (v && v.username === cleanUser) await removeAdminSession(k); }
+        logAdminAudit('password_admin_diubah_semua_perangkat_keluar', req, { username: cleanUser });
+        return jsonResponse(res, 200, { success: true, message: 'Password diubah! Semua perangkat admin dikeluarkan, silakan login ulang.' }, { 'Set-Cookie': clearAdminCookie(req) });
+      }
       jsonResponse(res, 200, { success: true, message: 'Password diubah!' });
 
     } else if (parsedUrl.pathname === '/api/chat/messages' && req.method === 'GET') {
@@ -5734,6 +6187,7 @@ const server = http.createServer(async (req, res) => {
       if (existingUser) return jsonResponse(res, 400, { success: false, message: 'Username sudah digunakan.' });
       const userData = await getUserFromDb(cleanOld);
       if (!userData) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan.' });
+      if (userData.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Username akun admin tidak dapat diubah.' });
       await saveUserToDb(cleanNew, userData);
       await set(ref(db, `users/${cleanOld}`), null);
       jsonResponse(res, 200, { success: true, newUsername: cleanNew });
@@ -5859,6 +6313,13 @@ const server = http.createServer(async (req, res) => {
       const { username, token } = JSON.parse(body);
       if (!username || !token) return jsonResponse(res, 400, { success: false });
       const cleanUser = username.toLowerCase();
+      const preUser = await getUserFromDb(cleanUser);
+      if (preUser && preUser.isAdmin) {
+        const adminSess = await validateAdminSession(req);
+        if (!adminSess || adminSess.username !== cleanUser) {
+          return jsonResponse(res, 401, { success: false, message: 'Sesi admin berakhir. Silakan login ulang.', adminSessionInvalid: true }, { 'Set-Cookie': clearAdminCookie(req) });
+        }
+      }
       await checkAndExpireBonusQuota(cleanUser);
       const existingUser = await getUserFromDb(cleanUser);
       if (!existingUser) return jsonResponse(res, 404, { success: false });
@@ -5886,7 +6347,17 @@ const server = http.createServer(async (req, res) => {
         const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
         return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: fakeAuthToken });
       } else {
-        if (existingUser && existingUser.password === password) {
+        const isAdminLogin = !!(existingUser && existingUser.isAdmin);
+        if (isAdminLogin) {
+          if (ADMIN_ALLOWED_IPS.length && ADMIN_ALLOWED_IPS.indexOf(getClientIp(req)) === -1) {
+            return jsonResponse(res, 403, { success: false, message: 'Login admin ditolak dari alamat IP ini.' });
+          }
+          const lim = adminLoginCheck(req, cleanUser);
+          if (!lim.ok) return jsonResponse(res, 429, { success: false, message: 'Terlalu banyak percobaan login. Coba lagi dalam ' + Math.max(1, Math.ceil(lim.wait / 60000)) + ' menit.' });
+        }
+        let passwordOk = false;
+        if (existingUser) passwordOk = isAdminLogin ? await verifyPasswordSecure(existingUser.password, String(password)) : existingUser.password === password;
+        if (existingUser && passwordOk) {
           await checkAndExpireBonusQuota(cleanUser);
           existingUser = await getUserFromDb(cleanUser);
           const now = Date.now();
@@ -5896,8 +6367,19 @@ const server = http.createServer(async (req, res) => {
           const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
           const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
           const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
-          return jsonResponse(res, 200, { success: true, message: 'Login berhasil!', username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus, token: fakeAuthToken });
+          let tokenOut = fakeAuthToken;
+          let loginHeaders;
+          if (isAdminLogin) {
+            adminLoginSuccess(req, cleanUser);
+            if (!isHashedPassword(existingUser.password)) { existingUser.password = await hashPasswordSecure(String(password)); await saveUserToDb(cleanUser, existingUser); }
+            const adminSess = await createAdminSession(req, cleanUser);
+            loginHeaders = { 'Set-Cookie': buildAdminCookie(req, adminSess.token, ADMIN_SESSION_MAX_MS) };
+            tokenOut = 'admin-cookie-session';
+            logAdminAudit('login_admin_berhasil', req, { username: cleanUser });
+          }
+          return jsonResponse(res, 200, { success: true, message: 'Login berhasil!', username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus, token: tokenOut }, loginHeaders);
         }
+        if (isAdminLogin) adminLoginFail(req, cleanUser);
         return jsonResponse(res, 401, { success: false, message: 'Username atau password salah!' });
       }
 
@@ -5946,6 +6428,55 @@ const server = http.createServer(async (req, res) => {
       const result = await am.verif(email, verifyUrl);
       jsonResponse(res, 200, result);
 
+    } else if (parsedUrl.pathname === '/api/auth/logout' && req.method === 'POST') {
+      let outSess = null;
+      try { outSess = await validateAdminSession(req); } catch (e) { outSess = null; }
+      if (outSess) { await removeAdminSession(outSess.sid); logAdminAudit('logout_admin', req, { username: outSess.username }); }
+      jsonResponse(res, 200, { success: true }, { 'Set-Cookie': clearAdminCookie(req) });
+
+    } else if (parsedUrl.pathname === '/api/admin/security/sessions' && req.method === 'GET') {
+      if (!req.adminSession) return jsonResponse(res, 401, { success: false, adminSessionInvalid: true });
+      const allSess = await getAdminSessionsFromDb();
+      const mineName = req.adminSession.username;
+      const sessions = Object.entries(allSess)
+        .filter(function (e) { return e[1] && e[1].username === mineName; })
+        .map(function (e) { return { id: e[0].slice(0, 16), device: describeUserAgent(e[1].ua), ip: e[1].ip || '-', createdAt: e[1].createdAt || 0, lastSeen: e[1].lastSeen || 0, current: e[0] === req.adminSession.sid }; })
+        .sort(function (a, b) { return b.lastSeen - a.lastSeen; });
+      jsonResponse(res, 200, { success: true, sessions });
+
+    } else if (parsedUrl.pathname === '/api/admin/security/logout-all' && req.method === 'POST') {
+      if (!req.adminSession) return jsonResponse(res, 401, { success: false, adminSessionInvalid: true });
+      const bodyLA = JSON.parse((await readBody(req)) || '{}');
+      const keepCurrent = !!bodyLA.keepCurrent;
+      const mineLA = req.adminSession.username;
+      const allLA = await getAdminSessionsFromDb();
+      let revokedCount = 0;
+      for (const [k, v] of Object.entries(allLA)) {
+        if (!v || v.username !== mineLA) continue;
+        if (keepCurrent && k === req.adminSession.sid) continue;
+        await removeAdminSession(k);
+        revokedCount++;
+      }
+      logAdminAudit(keepCurrent ? 'perangkat_admin_lain_dikeluarkan' : 'semua_perangkat_admin_dikeluarkan', req, { username: mineLA, jumlah: revokedCount });
+      jsonResponse(res, 200, { success: true, revoked: revokedCount, keptCurrent: keepCurrent, message: keepCurrent ? (revokedCount + ' perangkat lain dikeluarkan.') : 'Semua perangkat dikeluarkan.' }, keepCurrent ? undefined : { 'Set-Cookie': clearAdminCookie(req) });
+
+    } else if (parsedUrl.pathname === '/api/admin/security/revoke-session' && req.method === 'POST') {
+      if (!req.adminSession) return jsonResponse(res, 401, { success: false, adminSessionInvalid: true });
+      const bodyRS = JSON.parse((await readBody(req)) || '{}');
+      const sidPrefix = String(bodyRS.id || '');
+      if (!/^[a-f0-9]{16}$/.test(sidPrefix)) return jsonResponse(res, 400, { success: false, message: 'ID sesi tidak valid.' });
+      const allRS = await getAdminSessionsFromDb();
+      let hitCurrent = false;
+      let hit = 0;
+      for (const [k, v] of Object.entries(allRS)) {
+        if (!v || v.username !== req.adminSession.username || k.indexOf(sidPrefix) !== 0) continue;
+        if (k === req.adminSession.sid) hitCurrent = true;
+        await removeAdminSession(k);
+        hit++;
+      }
+      logAdminAudit('perangkat_admin_dikeluarkan', req, { username: req.adminSession.username });
+      jsonResponse(res, 200, { success: hit > 0, message: hit > 0 ? 'Perangkat dikeluarkan.' : 'Sesi tidak ditemukan.' }, hitCurrent ? { 'Set-Cookie': clearAdminCookie(req) } : undefined);
+
     } else {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Endpoint tidak ditemukan.');
@@ -5972,5 +6503,6 @@ server.listen(PORT, () => {
   console.log('║  💬 Chat Global & Orderan                                    ║');
   console.log('║  🔔 Browser Notification (BARU!)                             ║');
   console.log('║  ⚙️  Panel Admin Lengkap                                     ║');
+  console.log('║  🔐 Keamanan Admin Ketat (sesi asli, anti brute-force)       ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
