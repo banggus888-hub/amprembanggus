@@ -28,24 +28,18 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getDatabase(firebaseApp);
 
+// ====== KONFIGURASI WEB TUTUP (LOCKDOWN TOTAL) ======
+// true  = web ditutup untuk SEMUA orang (user & admin), semua API diblokir.
+// Untuk membuka web lagi: set env SITE_CLOSED=false atau ubah nilai default di bawah menjadi false.
+const SITE_CLOSED = String(process.env.SITE_CLOSED || 'true').toLowerCase() !== 'false';
+const SITE_CLOSED_TITLE = 'WEB SEDANG TUTUP';
+const SITE_CLOSED_MESSAGE = 'Mohon maaf, web saat ini sedang tutup. Semua user dan admin tidak dapat login, daftar, atau menggunakan fitur apa pun untuk sementara waktu. Pantau TikTok admin untuk melihat update terbaru web ini.';
+const SITE_CLOSED_TIKTOK = 'https://www.tiktok.com/@banggus.am.free';
+const SITE_CLOSED_TIKTOK_LABEL = '@banggus.am.free';
+
 // ====== KONFIGURASI DANA ADMIN ======
 const DANA_ADMIN_NUMBER = '085377788830';
 const DANA_ADMIN_NAME = 'L,S';
-
-// ====== KONFIGURASI MODE TUTUP (WEB SEDANG TUTUP) ======
-// Saat admin mengubah status server menjadi OFFLINE, semua user biasa dihalangi layar "Website Sedang Tutup".
-// Admin tetap bisa login supaya bisa membuka web lagi.
-// Isi link TikTok admin lewat environment variable ADMIN_TIKTOK_URL, atau langsung ganti nilai cadangan di bawah.
-const ADMIN_TIKTOK_URL = (process.env.ADMIN_TIKTOK_URL || 'tiktok.com/@banggus.am.free').trim();   // contoh: https://www.tiktok.com/@username_admin
-const MAINTENANCE_MESSAGE = 'Website sedang tutup. Pantau TikTok admin untuk melihat update website.';
-const MAINTENANCE_OPEN_PATHS = new Set(['/api/status', '/api/auth', '/api/auth/session', '/api/auth/logout']);
-function getMaintenanceInfo() {
-  const url = /^https:\/\//i.test(ADMIN_TIKTOK_URL) ? ADMIN_TIKTOK_URL : '';
-  return { maintenance: true, message: MAINTENANCE_MESSAGE, tiktok: url };
-}
-function maintenanceResponse(res) {
-  return jsonResponse(res, 503, Object.assign({ success: false, error: MAINTENANCE_MESSAGE }, getMaintenanceInfo()));
-}
 
 // ====== KONFIGURASI PEMBAYARAN QR OTOMATIS (INVOICE API) ======
 // API key sebaiknya disimpan di environment variable QR_PAY_API_KEY (nilai di bawah hanya cadangan)
@@ -872,265 +866,14 @@ async function apkGetJob(buildId) {
   return job;
 }
 
-// ====== KEAMANAN AKUN & ADMIN ======
-// - Password disimpan ter-hash (scrypt). Password lama (plaintext) otomatis di-upgrade saat login berhasil.
-// - Login menghasilkan token sesi bertanda tangan (HMAC). Setiap request yang membawa identitas user
-//   (username / adminUsername / currentUsername) WAJIB membawa token valid milik username tersebut.
-//   Jadi mengetahui username admin saja TIDAK cukup untuk masuk atau memakai fitur admin.
-// - Akun admin: sesi pendek (8 jam), terikat ke browser, batas percobaan login lebih ketat,
-//   reset password lewat web dinonaktifkan, username admin tidak bisa diganti.
-// Environment opsional: SESSION_SECRET, ADMIN_PASSWORD, ADMIN_FORCE_RESET=1, TRUST_PROXY=1
-const MAIN_ADMIN_USERNAME = 'adminbaguss';
-const ADMIN_TOKEN_TTL = 8 * 60 * 60 * 1000;
-const USER_TOKEN_TTL = 30 * 24 * 60 * 60 * 1000;
-const AUTH_CACHE_TTL = 15 * 1000;
-const TRUST_PROXY = process.env.TRUST_PROXY === '1';
-const LOGIN_RULES = {
-  user: { max: 8, windowMs: 10 * 60 * 1000, lockMs: 10 * 60 * 1000 },
-  admin: { max: 5, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 }
-};
-const IP_LOGIN_RULE = { max: 25, windowMs: 10 * 60 * 1000, lockMs: 10 * 60 * 1000 };
-const AUTH_IDENTITY_FIELDS = ['username', 'adminUsername', 'currentUsername'];
-const AUTH_GATE_PUBLIC = new Set([
-  '/', '/api/status', '/api/video', '/api/announcements', '/api/vip-shop', '/api/online/count', '/api/online/offline',
-  '/api/auth', '/api/auth/session', '/api/auth/forgot', '/api/auth/reset', '/api/auth/logout'
-]);
-const SESSION_SECRET_FILE = path.join(__dirname, '.session_secret');
-
-function loadSessionSecret() {
-  if (process.env.SESSION_SECRET && process.env.SESSION_SECRET.length >= 16) return process.env.SESSION_SECRET;
-  try {
-    if (fs.existsSync(SESSION_SECRET_FILE)) {
-      const saved = fs.readFileSync(SESSION_SECRET_FILE, 'utf8').trim();
-      if (saved.length >= 32) return saved;
-    }
-  } catch (e) {}
-  const fresh = crypto.randomBytes(48).toString('hex');
-  try { fs.writeFileSync(SESSION_SECRET_FILE, fresh, { mode: 0o600 }); }
-  catch (e) { console.warn('[SECURITY] Tidak bisa menyimpan .session_secret, sesi login akan reset tiap server restart. Isi env SESSION_SECRET agar permanen.'); }
-  return fresh;
-}
-const SESSION_SECRET = loadSessionSecret();
-
-function b64u(buf) { return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
-function b64uDecode(str) {
-  let s = String(str).replace(/-/g, '+').replace(/_/g, '/');
-  while (s.length % 4) s += '=';
-  return Buffer.from(s, 'base64');
-}
-
-// ---- Hash password (scrypt) ----
-const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
-const DUMMY_SALT = crypto.randomBytes(16);
-function scryptAsync(password, salt, keylen, opts) {
-  return new Promise((resolve, reject) => {
-    crypto.scrypt(password, salt, keylen, Object.assign({ maxmem: 64 * 1024 * 1024 }, opts), (err, key) => err ? reject(err) : resolve(key));
-  });
-}
-async function hashPassword(plain) {
-  const salt = crypto.randomBytes(16);
-  const dk = await scryptAsync(String(plain), salt, 64, SCRYPT_PARAMS);
-  return 'scrypt$' + SCRYPT_PARAMS.N + '$' + SCRYPT_PARAMS.r + '$' + SCRYPT_PARAMS.p + '$' + salt.toString('base64') + '$' + dk.toString('base64');
-}
-// Mengembalikan { ok, legacy }. legacy=true artinya password tersimpan masih plaintext (perlu di-upgrade ke hash).
-async function verifyPassword(stored, given) {
-  given = String(given === undefined || given === null ? '' : given);
-  if (typeof stored === 'string' && stored.indexOf('scrypt$') === 0) {
-    const parts = stored.split('$');
-    if (parts.length !== 6) return { ok: false, legacy: false };
-    const N = parseInt(parts[1], 10), r = parseInt(parts[2], 10), p = parseInt(parts[3], 10);
-    if (!(N >= 1024 && N <= 65536) || !(r >= 1 && r <= 16) || !(p >= 1 && p <= 4)) return { ok: false, legacy: false };
-    const salt = Buffer.from(parts[4], 'base64');
-    const expected = Buffer.from(parts[5], 'base64');
-    const derived = await scryptAsync(given, salt, expected.length, { N, r, p });
-    return { ok: derived.length === expected.length && crypto.timingSafeEqual(derived, expected), legacy: false };
-  }
-  if (typeof stored === 'string' && stored.length > 0) {
-    const a = crypto.createHash('sha256').update(stored).digest();
-    const b = crypto.createHash('sha256').update(given).digest();
-    return { ok: crypto.timingSafeEqual(a, b), legacy: true };
-  }
-  await scryptAsync(given, DUMMY_SALT, 64, SCRYPT_PARAMS); // samakan waktu proses untuk user yang tidak ada
-  return { ok: false, legacy: false };
-}
-
-// ---- Token sesi (stateless, bertanda tangan HMAC) ----
-const revokedTokenIds = new Map();
-const authUserCache = new Map();
-function uaFingerprint(req) {
-  const ua = String((req && req.headers && req.headers['user-agent']) || '').replace(/[0-9._]+/g, '');
-  return crypto.createHash('sha256').update(ua).digest('hex').slice(0, 16);
-}
-function signTokenPart(part) { return b64u(crypto.createHmac('sha256', SESSION_SECRET).update(part).digest()); }
-function issueAuthToken(username, isAdmin, req) {
-  const now = Date.now();
-  const payload = { u: String(username), a: isAdmin ? 1 : 0, iat: now, exp: now + (isAdmin ? ADMIN_TOKEN_TTL : USER_TOKEN_TTL), n: crypto.randomBytes(8).toString('hex') };
-  if (isAdmin) payload.d = uaFingerprint(req);
-  const part = b64u(Buffer.from(JSON.stringify(payload)));
-  return { token: part + '.' + signTokenPart(part), expiresAt: payload.exp };
-}
-function verifyAuthToken(token) {
-  if (typeof token !== 'string' || token.length < 10 || token.length > 1024) return null;
-  const dot = token.indexOf('.');
-  if (dot < 1) return null;
-  const part = token.slice(0, dot);
-  const sig = Buffer.from(token.slice(dot + 1));
-  const expected = Buffer.from(signTokenPart(part));
-  if (sig.length !== expected.length || !crypto.timingSafeEqual(sig, expected)) return null;
-  let payload = null;
-  try { payload = JSON.parse(b64uDecode(part).toString('utf8')); } catch (e) { return null; }
-  if (!payload || typeof payload.u !== 'string' || typeof payload.exp !== 'number' || typeof payload.iat !== 'number') return null;
-  if (payload.exp < Date.now()) return null;
-  return payload;
-}
-function extractAuthToken(req) {
-  const h = req.headers['x-auth-token'];
-  if (typeof h === 'string' && h) return h.trim();
-  const a = req.headers['authorization'];
-  if (typeof a === 'string' && a.slice(0, 7).toLowerCase() === 'bearer ') return a.slice(7).trim();
-  return '';
-}
-async function getAuthUserState(username) {
-  const now = Date.now();
-  const cached = authUserCache.get(username);
-  if (cached && now - cached.at < AUTH_CACHE_TTL) return cached;
-  const u = await getUserFromDb(username);
-  const isObj = !!(u && typeof u === 'object');
-  const st = { at: now, exists: isObj, isAdmin: isObj && !!u.isAdmin, validFrom: isObj ? (Number(u.sessionsValidFrom) || 0) : 0 };
-  authUserCache.set(username, st);
-  return st;
-}
-function invalidateAuthCache(username) { authUserCache.delete(String(username || '').toLowerCase()); }
-async function validateAuthToken(req, token) {
-  const payload = verifyAuthToken(token);
-  if (!payload) return { ok: false };
-  if (payload.n && revokedTokenIds.has(payload.n)) return { ok: false };
-  const st = await getAuthUserState(payload.u);
-  if (!st.exists) return { ok: false };
-  if (payload.iat < st.validFrom) return { ok: false };
-  if (st.isAdmin) {
-    if (payload.a !== 1) return { ok: false };
-    if (payload.d !== uaFingerprint(req)) return { ok: false };
-  }
-  return { ok: true, payload, state: st };
-}
-async function revokeAllSessions(username) {
-  const uname = String(username || '').toLowerCase();
-  try {
-    const u = await getUserFromDb(uname);
-    if (u && typeof u === 'object') { u.sessionsValidFrom = Date.now(); await saveUserToDb(uname, u); }
-  } catch (e) { console.error('[SECURITY] revokeAllSessions gagal:', e.message); }
-  invalidateAuthCache(uname);
-}
-
-// ---- Batas percobaan login ----
-const loginAttempts = new Map();
-function getClientIpInfo(req) {
-  const sock = (req.socket && req.socket.remoteAddress) || 'unknown';
-  const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  if (TRUST_PROXY && xff) return { ip: xff, reliable: true };
-  if (xff) return { ip: sock, reliable: false };
-  return { ip: sock, reliable: true };
-}
-function lockRemaining(key, now) {
-  const s = loginAttempts.get(key);
-  return s && s.lockedUntil && s.lockedUntil > now ? s.lockedUntil - now : 0;
-}
-function addFailure(key, rule, now) {
-  let s = loginAttempts.get(key);
-  if (s && s.lockedUntil && s.lockedUntil > now) return;
-  if (!s || now - s.first > rule.windowMs) s = { count: 0, first: now, lockedUntil: 0 };
-  s.count++;
-  if (s.count >= rule.max) { s.lockedUntil = now + rule.lockMs; s.count = 0; s.first = now; }
-  loginAttempts.set(key, s);
-}
-function getLoginLockRemaining(username, ipInfo) {
-  const now = Date.now();
-  let ms = lockRemaining('u|' + username, now);
-  if (ipInfo && ipInfo.reliable) ms = Math.max(ms, lockRemaining('ip|' + ipInfo.ip, now));
-  return ms;
-}
-function recordLoginFailure(username, ipInfo, userExists, isAdmin) {
-  const now = Date.now();
-  if (userExists) addFailure('u|' + username, isAdmin ? LOGIN_RULES.admin : LOGIN_RULES.user, now);
-  if (ipInfo && ipInfo.reliable) addFailure('ip|' + ipInfo.ip, IP_LOGIN_RULE, now);
-}
-function clearLoginFailures(username) { loginAttempts.delete('u|' + username); }
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, s] of loginAttempts) { if ((!s.lockedUntil || s.lockedUntil < now) && now - s.first > 15 * 60 * 1000) loginAttempts.delete(k); }
-  for (const [n, exp] of revokedTokenIds) { if (exp < now) revokedTokenIds.delete(n); }
-  for (const [u, c] of authUserCache) { if (now - c.at > 5 * 60 * 1000) authUserCache.delete(u); }
-}, 10 * 60 * 1000).unref();
-
-function applySecurityHeaders(req, res) {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'no-referrer');
-  if (String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https') res.setHeader('Strict-Transport-Security', 'max-age=15552000');
-}
-
-// Gerbang keamanan: dijalankan sebelum semua endpoint /api/*. Mengembalikan true jika request boleh lanjut.
-async function authGate(req, res, parsedUrl) {
-  const p = parsedUrl.pathname;
-  if (p.indexOf('/api/') !== 0 || AUTH_GATE_PUBLIC.has(p)) return true;
-  let bodyObj = null;
-  if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
-    const raw = await readBody(req);
-    if (raw) { try { bodyObj = JSON.parse(raw); } catch (e) { bodyObj = null; } }
-  }
-  const claims = [];
-  const qUser = parsedUrl.searchParams.get('username');
-  if (qUser !== null) claims.push(qUser);
-  if (bodyObj && typeof bodyObj === 'object' && !Array.isArray(bodyObj)) {
-    for (const k of AUTH_IDENTITY_FIELDS) {
-      if (bodyObj[k] !== undefined && bodyObj[k] !== null) claims.push(bodyObj[k]);
-    }
-  }
-  const cleanClaims = [];
-  for (const c of claims) {
-    if (typeof c !== 'string') { jsonResponse(res, 400, { success: false, message: 'Format username tidak valid.' }); return false; }
-    const v = c.trim().toLowerCase();
-    if (!v) continue;
-    if (v.length > 64 || /[.#$\[\]\/\s]/.test(v)) { jsonResponse(res, 400, { success: false, message: 'Username tidak valid.' }); return false; }
-    cleanClaims.push(v);
-  }
-  if (!cleanClaims.length) return true;
-  const check = await validateAuthToken(req, extractAuthToken(req));
-  if (!check.ok) {
-    jsonResponse(res, 401, { success: false, sessionExpired: true, message: 'Sesi login tidak valid atau sudah berakhir. Silakan login ulang.' });
-    return false;
-  }
-  for (const c of cleanClaims) {
-    if (c !== check.payload.u) {
-      console.warn('[SECURITY] Identitas tidak cocok dengan sesi. Sesi=' + check.payload.u + ' klaim=' + c + ' ip=' + getClientIpInfo(req).ip + ' path=' + p);
-      jsonResponse(res, 403, { success: false, message: 'Akses ditolak: identitas tidak sesuai dengan akun yang sedang login.' });
-      return false;
-    }
-  }
-  return true;
-}
-
 async function initAdmin() {
-  try {
-    const envPass = process.env.ADMIN_PASSWORD || '';
-    const forceReset = process.env.ADMIN_FORCE_RESET === '1';
-    const adminData = await getUserFromDb(MAIN_ADMIN_USERNAME);
-    if (!adminData) {
-      const initialPass = envPass || crypto.randomBytes(10).toString('hex');
-      await saveUserToDb(MAIN_ADMIN_USERNAME, {
-        password: await hashPassword(initialPass), isAdmin: true, activatedEmails: [], bonusQuota: 0,
-        baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0
-      });
-      if (!envPass) {
-        console.log('\n[SECURITY] Akun admin dibuat. Username : ' + MAIN_ADMIN_USERNAME);
-        console.log('[SECURITY] Password awal : ' + initialPass + '   <-- catat sekarang, tidak akan ditampilkan lagi\n');
-      }
-      return;
-    }
-    // Password admin yang sudah ada TIDAK diubah sama sekali (tidak di-reset, tidak di-hash ulang, tidak diganti otomatis).
-  } catch (e) { console.error('[SECURITY] initAdmin gagal:', e.message); }
+  const adminData = await getUserFromDb('adminbaguss');
+  if (!adminData) {
+    await saveUserToDb('adminbaguss', {
+      password: 'baguss', isAdmin: true, activatedEmails: [], bonusQuota: 0,
+      baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0
+    });
+  }
 }
 initAdmin();
 
@@ -1692,30 +1435,11 @@ const htmlTemplate = `<!DOCTYPE html>
   ::-webkit-scrollbar-thumb { background:var(--accent); border:2px solid var(--ink); border-radius:999px; }
   ::-webkit-scrollbar-thumb:hover { background:var(--accent-2); }
   ::selection { background:var(--err); color:#fff; }
-  #maintenance-overlay { position:fixed; inset:0; z-index:9000; display:none; align-items:center; justify-content:center; padding:20px; background:rgba(8,8,12,0.97); overflow-y:auto; }
-  #maintenance-overlay.show { display:flex; }
-  #maintenance-overlay .mt-box { width:100%; max-width:380px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:14px; }
-  #maintenance-overlay .mt-icon { width:72px; height:72px; border-radius:20px; background:var(--err-soft); border:1px solid rgba(248,113,113,0.35); display:flex; align-items:center; justify-content:center; font-size:34px; }
-  #maintenance-overlay .mt-title { font-size:22px; font-weight:800; color:var(--text-0); letter-spacing:0.2px; }
-  #maintenance-overlay .mt-text { font-size:13.5px; line-height:1.6; color:var(--text-1); }
-  #maintenance-overlay .mt-btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:12px 16px; border-radius:12px; font-size:13.5px; font-weight:700; text-decoration:none; cursor:pointer; border:1px solid var(--line-2); background:var(--bg-2); color:var(--text-0); font-family:inherit; }
-  #maintenance-overlay .mt-btn-tiktok { background:#fe2c55; border-color:#fe2c55; color:#fff; }
-  #maintenance-overlay .mt-link { background:none; border:none; color:var(--text-2); font-size:11px; cursor:pointer; text-decoration:underline; font-family:inherit; padding:4px; }
   @media (prefers-reduced-motion: reduce) { .card, .card-elevated { animation:none; } .btn, .nav-link, .shop-item, .opt-row { transition:none; } }
 </style>
 </head>
 <body>
 <div id="toast-container"></div>
-<div id="maintenance-overlay" role="alertdialog" aria-modal="true" aria-labelledby="mt-title">
-  <div class="mt-box">
-    <div class="mt-icon">🔒</div>
-    <div class="mt-title" id="mt-title">Website Sedang Tutup</div>
-    <div class="mt-text" id="mt-text">Website sedang tutup untuk sementara. Pantau TikTok admin untuk melihat update website. Login dan semua fitur dinonaktifkan sampai website dibuka kembali.</div>
-    <a id="mt-tiktok-btn" class="mt-btn mt-btn-tiktok" href="#" target="_blank" rel="noopener noreferrer" style="display:none;">🎵 Buka TikTok Admin</a>
-    <button type="button" class="mt-btn" onclick="recheckMaintenance()">🔄 Cek Lagi</button>
-    <button type="button" class="mt-link" onclick="openAdminLoginFromMaintenance()">Masuk sebagai admin</button>
-  </div>
-</div>
 <div class="app-shell">
   <div class="topbar">
     <div style="display:flex; align-items:center; gap:10px;">
@@ -1806,23 +1530,10 @@ const htmlTemplate = `<!DOCTYPE html>
         <div><label class="field-label">Username</label><input type="text" id="auth-username" placeholder="username_kamu" class="inp mono"></div>
         <div><label class="field-label">Password</label><input type="password" id="auth-password" placeholder="••••••••" class="inp"></div>
         <div id="email-field-container" class="hide">
-          <label class="field-label">Email (untuk reset password)</label><input type="email" id="auth-email" placeholder="email@gmail.com" class="inp" style="margin-bottom:8px;">
           <p style="font-size:10.5px; color:var(--warn); margin:0;">1 perangkat hanya bisa mendaftar 1 akun</p>
         </div>
       </div>
       <button onclick="handleAuthAction()" id="auth-submit-btn" class="btn"><span id="auth-btn-text">Masuk</span></button>
-      <div id="forgot-link-wrap" style="text-align:center;"><a href="#" onclick="toggleForgotPanel(true); return false;" style="font-size:12px; color:var(--accent);">Lupa password?</a></div>
-      <div id="forgot-panel" class="hide" style="display:flex; flex-direction:column; gap:10px;">
-        <div style="font-size:12px; color:var(--text-1);">Masukkan username. Kode 6 digit akan dikirim ke email yang kamu daftarkan.</div>
-        <input type="text" id="forgot-username" placeholder="username_kamu" class="inp mono">
-        <button onclick="sendResetCode()" id="forgot-send-btn" class="btn">Kirim Kode</button>
-        <div id="forgot-step2" class="hide" style="display:flex; flex-direction:column; gap:10px;">
-          <input type="text" id="forgot-code" placeholder="Kode 6 digit" inputmode="numeric" maxlength="6" class="inp mono">
-          <input type="password" id="forgot-newpass" placeholder="Password baru" class="inp">
-          <button onclick="submitResetPassword()" id="forgot-submit-btn" class="btn">Ubah Password</button>
-        </div>
-        <button onclick="toggleForgotPanel(false)" class="btn btn-ghost btn-sm">Kembali ke login</button>
-      </div>
     </div>
 
     <div id="terminal-view" class="hide" style="display:flex; flex-direction:column; gap:10px;">
@@ -2548,47 +2259,6 @@ const htmlTemplate = `<!DOCTYPE html>
 </div>
 
 <script>
-(function () {
-  var nativeFetch = window.fetch.bind(window);
-  var sessionHandled = false;
-  window.fetch = function (input, init) {
-    var url = '';
-    try { url = typeof input === 'string' ? input : ((input && input.url) || ''); } catch (e) {}
-    var isApi = url.indexOf('/api/') === 0 || url.indexOf(location.origin + '/api/') === 0;
-    if (isApi) {
-      try {
-        var tk = localStorage.getItem('authToken');
-        if (tk) {
-          init = init || {};
-          var hd = new Headers(init.headers || ((typeof input !== 'string' && input && input.headers) ? input.headers : undefined));
-          hd.set('X-Auth-Token', tk);
-          init.headers = hd;
-        }
-      } catch (e) {}
-    }
-    return nativeFetch(input, init).then(function (resp) {
-      if (isApi && resp && resp.status === 401) {
-        resp.clone().json().then(function (d) {
-          if (d && d.sessionExpired) {
-            localStorage.removeItem('authToken');
-            localStorage.removeItem('savedUsername');
-            if (url.indexOf('/api/auth/session') === -1 && !sessionHandled) {
-              sessionHandled = true;
-              if (typeof showToast === 'function') showToast('Sesi login berakhir. Silakan login ulang.', 'error');
-              setTimeout(function () { location.reload(); }, 1200);
-            }
-          }
-        }).catch(function () {});
-      }
-      if (isApi && resp && resp.status === 503) {
-        resp.clone().json().then(function (d) {
-          if (d && d.maintenance && typeof showMaintenance === 'function') showMaintenance(d);
-        }).catch(function () {});
-      }
-      return resp;
-    });
-  };
-})();
 const DANA_ADMIN_NUMBER = '${DANA_ADMIN_NUMBER}';
 const DANA_ADMIN_NAME = '${DANA_ADMIN_NAME}';
 const BASE_QUOTA = 2;
@@ -3657,7 +3327,6 @@ async function fetchServerStatus(force = false) {
   try {
     const res = await fetch('/api/status');
     const data = await res.json();
-    if (data.maintenance) setMaintenanceInfo(data);
     updateStatusUI(data.status); serverOnline = (data.status === 'online'); lastStatusFetch = now;
     setCache('serverStatus', data.status, CACHE_DURATION.status);
   } catch(e) {}
@@ -3674,45 +3343,7 @@ async function fetchFeaturedVideo(force = false) {
   } catch(e) {}
 }
 
-var lastKnownStatus = 'online';
-var adminLoginPeek = false;
-function setMaintenanceInfo(d) {
-  if (!d) return;
-  var t = document.getElementById('mt-text');
-  var b = document.getElementById('mt-tiktok-btn');
-  if (t && d.message) t.textContent = d.message + ' Login dan semua fitur dinonaktifkan sampai website dibuka kembali.';
-  if (b) {
-    var u = String(d.tiktok || '');
-    if (u.toLowerCase().indexOf('https://') === 0) { b.href = u; b.style.display = 'inline-flex'; }
-    else { b.style.display = 'none'; }
-  }
-}
-function applyMaintenanceState(status) {
-  var ov = document.getElementById('maintenance-overlay');
-  if (!ov) return;
-  if (status) lastKnownStatus = status;
-  var closed = lastKnownStatus !== 'online';
-  if (closed && !isAdminUser && !adminLoginPeek) { ov.classList.add('show'); document.body.style.overflow = 'hidden'; }
-  else { ov.classList.remove('show'); document.body.style.overflow = ''; }
-}
-function showMaintenance(d) {
-  setMaintenanceInfo(d);
-  adminLoginPeek = false;
-  serverOnline = false;
-  applyMaintenanceState('offline');
-}
-function openAdminLoginFromMaintenance() {
-  adminLoginPeek = true;
-  applyMaintenanceState();
-  showToast('Hanya admin yang bisa login saat website tutup.', 'info', 4000);
-}
-async function recheckMaintenance() {
-  await fetchServerStatus(true);
-  if (lastKnownStatus !== 'online') showToast('Website masih tutup. Pantau TikTok admin ya.', 'info', 3500);
-  else showToast('Website sudah dibuka kembali!', 'success');
-}
 function updateStatusUI(status) {
-  applyMaintenanceState(status);
   const ind = document.getElementById('server-status-indicator');
   const dot = document.getElementById('server-dot');
   const txt = document.getElementById('server-status-text');
@@ -3754,49 +3385,10 @@ function switchAuthTab(mode) {
   if (mode === 'login') {
     ind.style.transform = 'translateX(0%)'; loginBtn.style.color = 'white'; regBtn.style.color = 'var(--text-1)';
     emailField.classList.add('hide'); btnText.innerText = 'Masuk';
-    const fl = document.getElementById('forgot-link-wrap'); if (fl) fl.classList.remove('hide');
   } else {
     ind.style.transform = 'translateX(100%)'; regBtn.style.color = 'white'; loginBtn.style.color = 'var(--text-1)';
     emailField.classList.remove('hide'); btnText.innerText = 'Daftar';
-    const fl2 = document.getElementById('forgot-link-wrap'); if (fl2) fl2.classList.add('hide');
-    toggleForgotPanel(false);
   }
-}
-
-function toggleForgotPanel(show) {
-  var p = document.getElementById('forgot-panel');
-  var f = document.getElementById('auth-form-container');
-  var s = document.getElementById('auth-submit-btn');
-  var l = document.getElementById('forgot-link-wrap');
-  if (!p) return;
-  if (show) { p.classList.remove('hide'); f.classList.add('hide'); s.classList.add('hide'); l.classList.add('hide'); }
-  else { p.classList.add('hide'); f.classList.remove('hide'); s.classList.remove('hide'); if (currentAuthMode === 'login') l.classList.remove('hide'); document.getElementById('forgot-step2').classList.add('hide'); }
-}
-async function sendResetCode() {
-  var username = document.getElementById('forgot-username').value.trim();
-  if (!username) return showToast('Isi username dulu!', 'error');
-  var btn = document.getElementById('forgot-send-btn'); btn.disabled = true;
-  try {
-    var res = await fetch('/api/auth/forgot', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: username }) });
-    var data = await res.json();
-    showToast(data.message, data.success ? 'success' : 'error', 5000);
-    if (data.success) document.getElementById('forgot-step2').classList.remove('hide');
-  } catch (e) { showToast('Kesalahan koneksi', 'error'); }
-  finally { btn.disabled = false; }
-}
-async function submitResetPassword() {
-  var username = document.getElementById('forgot-username').value.trim();
-  var code = document.getElementById('forgot-code').value.trim();
-  var newPassword = document.getElementById('forgot-newpass').value;
-  if (!username || !code || !newPassword) return showToast('Semua field wajib!', 'error');
-  var btn = document.getElementById('forgot-submit-btn'); btn.disabled = true;
-  try {
-    var res = await fetch('/api/auth/reset', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: username, code: code, newPassword: newPassword }) });
-    var data = await res.json();
-    showToast(data.message, data.success ? 'success' : 'error', 5000);
-    if (data.success) { document.getElementById('forgot-code').value = ''; document.getElementById('forgot-newpass').value = ''; toggleForgotPanel(false); }
-  } catch (e) { showToast('Kesalahan koneksi', 'error'); }
-  finally { btn.disabled = false; }
 }
 
 async function handleAuthAction() {
@@ -3820,7 +3412,7 @@ async function handleAuthAction() {
   btn.disabled = true;
   document.getElementById('auth-btn-text').innerText = '';
   try {
-    const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, deviceToken, email: (document.getElementById('auth-email') || {}).value || '' }) });
+    const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, deviceToken }) });
     const data = await res.json();
     if (data.success) {
       if (currentAuthMode === 'register' && data.deviceToken) localStorage.setItem('am_device_token', data.deviceToken);
@@ -4451,7 +4043,6 @@ async function handleChangePassword() {
     const res = await fetch('/api/user/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, oldPassword, newPassword }) });
     const data = await res.json();
     if (data.success) {
-      if (data.token) localStorage.setItem('authToken', data.token);
       showToast('Password diubah!', 'success');
       document.getElementById('old-password-input').value = '';
       document.getElementById('new-password-input').value = '';
@@ -4470,7 +4061,6 @@ async function triggerUpdateUsername() {
       showToast('Username diubah!', 'success');
       loggedInUsername = result.newUsername;
       localStorage.setItem('savedUsername', loggedInUsername);
-      if (result.token) localStorage.setItem('authToken', result.token);
       document.getElementById('logged-username').innerText = loggedInUsername;
       document.getElementById('profile-uname').innerText = loggedInUsername;
       document.getElementById('drawer-username').innerText = loggedInUsername;
@@ -5236,7 +4826,6 @@ async function handleLogout() {
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   if (statusPollInterval) clearInterval(statusPollInterval);
   if (videoPollInterval) clearInterval(videoPollInterval);
-  try { await fetch('/api/auth/logout', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' }); } catch (e) {}
   localStorage.removeItem('authToken');
   localStorage.removeItem('savedUsername');
   sessionStorage.clear();
@@ -5255,6 +4844,70 @@ document.addEventListener('keydown', (e) => {
 </body>
 </html>`;
 
+// ====== OVERLAY & BANNER WEB TUTUP ======
+function buildSiteClosedSnippet() {
+  return `
+<style>
+#site-closed-overlay{position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;background:rgba(8,6,24,0.97);display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto;font-family:inherit;}
+#site-closed-overlay .sc-card{max-width:440px;width:100%;text-align:center;background:#16103a;border:3px solid #fff;border-radius:16px;padding:28px 22px;box-shadow:6px 6px 0 #f87171;color:#fff;}
+#site-closed-overlay .sc-icon{font-size:46px;line-height:1;margin-bottom:10px;}
+#site-closed-overlay h1{font-size:26px;font-weight:800;margin:0 0 12px;color:#f87171;letter-spacing:0.05em;}
+#site-closed-overlay p{font-size:14px;line-height:1.6;margin:0 0 18px;color:#e5e7eb;}
+#site-closed-overlay a.sc-btn{display:inline-block;padding:12px 22px;background:#fff;color:#000;border-radius:10px;font-weight:700;font-size:14px;text-decoration:none;border:3px solid #000;}
+#site-closed-banner{background:rgba(248,113,113,0.15);border:2px solid #f87171;color:#f87171;border-radius:10px;padding:10px 12px;font-size:12.5px;font-weight:700;text-align:center;line-height:1.5;}
+#site-closed-banner a{color:#fff;text-decoration:underline;}
+html,body{overflow:hidden !important;}
+</style>
+<script>
+(function(){
+  var TITLE = ${JSON.stringify(SITE_CLOSED_TITLE)};
+  var MSG = ${JSON.stringify(SITE_CLOSED_MESSAGE)};
+  var TIKTOK = ${JSON.stringify(SITE_CLOSED_TIKTOK)};
+  var LABEL = ${JSON.stringify(SITE_CLOSED_TIKTOK_LABEL)};
+
+  function addBanner(){
+    var auth = document.getElementById('auth-view');
+    if (!auth || document.getElementById('site-closed-banner')) return;
+    var b = document.createElement('div');
+    b.id = 'site-closed-banner';
+    b.innerHTML = '\u26A0 ' + TITLE + ' \u2014 login & daftar ditutup. Pantau TikTok admin <a href="' + TIKTOK + '" target="_blank" rel="noopener">' + LABEL + '</a> untuk update.';
+    auth.insertBefore(b, auth.firstChild);
+  }
+
+  function addOverlay(){
+    if (document.getElementById('site-closed-overlay')) return;
+    var o = document.createElement('div');
+    o.id = 'site-closed-overlay';
+    o.innerHTML = '<div class="sc-card"><div class="sc-icon">\uD83D\uDD12</div><h1></h1><p></p><a class="sc-btn" target="_blank" rel="noopener"></a></div>';
+    o.querySelector('h1').textContent = TITLE;
+    o.querySelector('p').textContent = MSG;
+    var a = o.querySelector('a');
+    a.href = TIKTOK;
+    a.textContent = 'Pantau TikTok ' + LABEL;
+    document.body.appendChild(o);
+  }
+
+  function apply(){ addBanner(); addOverlay(); }
+  apply();
+  setInterval(apply, 1000);
+
+  var origFetch = window.fetch;
+  if (origFetch) {
+    window.fetch = function(){
+      return origFetch.apply(this, arguments).then(function(r){
+        if (r && r.status === 503) apply();
+        return r;
+      });
+    };
+  }
+})();
+</script>`;
+}
+const siteClosedHtml = (() => {
+  const idx = htmlTemplate.lastIndexOf('</body>');
+  return htmlTemplate.slice(0, idx) + buildSiteClosedSnippet() + htmlTemplate.slice(idx);
+})();
+
 // ==========================================
 // SERVER
 // ==========================================
@@ -5271,7 +4924,6 @@ function jsonResponse(res, code, data) {
 }
 
 function readBody(req) {
-  if (typeof req._cachedBody === 'string') return Promise.resolve(req._cachedBody);
   return new Promise((resolve, reject) => {
     let body = '';
     let size = 0;
@@ -5280,55 +4932,45 @@ function readBody(req) {
       if (size > 50 * 1024 * 1024) { reject(new Error('Payload too large')); req.destroy(); }
       body += chunk;
     });
-    req.on('end', () => { req._cachedBody = body; resolve(body); });
+    req.on('end', () => resolve(body));
     req.on('error', reject);
   });
 }
 
-// ====== LUPA PASSWORD (KODE VIA EMAIL) ======
-// Set di environment: MAIL_USER=emailkamu@gmail.com  MAIL_PASS=<App Password 16 digit Gmail>
-const MAIL_USER = process.env.MAIL_USER || '';
-const MAIL_PASS = process.env.MAIL_PASS || '';
-const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || 'AM Premium';
-let mailer = null;
-try {
-  if (MAIL_USER && MAIL_PASS) {
-    mailer = require('nodemailer').createTransport({ service: 'gmail', auth: { user: MAIL_USER, pass: MAIL_PASS } });
-  } else {
-    console.warn('[RESET] MAIL_USER / MAIL_PASS belum diisi, fitur lupa password nonaktif.');
-  }
-} catch (e) { console.warn('[RESET] nodemailer belum terpasang. Jalankan: npm i nodemailer'); }
-
-const RESET_CODE_TTL = 10 * 60 * 1000;   // kode berlaku 10 menit
-const RESET_COOLDOWN = 60 * 1000;        // minta kode lagi minimal 60 detik
-const RESET_MAX_ATTEMPTS = 5;            // maksimal salah input kode
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-function hashResetCode(code) { return crypto.createHash('sha256').update(String(code)).digest('hex'); }
-async function sendResetEmail(to, username, code) {
-  if (!mailer) throw new Error('Layanan email belum dikonfigurasi');
-  await mailer.sendMail({
-    from: '"' + MAIL_FROM_NAME + '" <' + MAIL_USER + '>',
-    to,
-    subject: 'Kode reset password: ' + code,
-    text: 'Halo ' + username + ',\n\nKode reset password kamu: ' + code + '\nBerlaku 10 menit. Jangan bagikan kode ini ke siapa pun.\n\nAbaikan email ini jika kamu tidak memintanya.'
-  });
-}
-
 const server = http.createServer(async (req, res) => {
-  let parsedUrl;
-  try { parsedUrl = new URL(req.url, 'http://' + (req.headers.host || 'localhost')); }
-  catch (e) { res.writeHead(400, { 'Content-Type': 'text/plain' }); return res.end('Bad request'); }
-  let currentServerStatus = 'online';
-  try { currentServerStatus = await getServerStatusFromDb(); } catch (e) { console.error('[STATUS]', e.message); }
+  const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
+
+  // ====== LOCKDOWN: WEB TUTUP UNTUK SEMUA USER & ADMIN ======
+  if (SITE_CLOSED) {
+    const p = parsedUrl.pathname;
+    if (req.method === 'GET' && p === '/') {
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Content-Length': Buffer.byteLength(siteClosedHtml)
+      });
+      return res.end(siteClosedHtml);
+    }
+    const payload = JSON.stringify({
+      success: false,
+      siteClosed: true,
+      status: 'closed',
+      title: SITE_CLOSED_TITLE,
+      message: SITE_CLOSED_MESSAGE,
+      tiktok: SITE_CLOSED_TIKTOK
+    });
+    res.writeHead(503, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Retry-After': '3600',
+      'Content-Length': Buffer.byteLength(payload)
+    });
+    return res.end(payload);
+  }
+
+  let currentServerStatus = await getServerStatusFromDb();
 
   try {
-    applySecurityHeaders(req, res);
-    if (!(await authGate(req, res, parsedUrl))) return;
-    // Gerbang MODE TUTUP: saat server offline, hanya admin yang boleh memakai API (selain endpoint login/status).
-    if (currentServerStatus !== 'online' && parsedUrl.pathname.indexOf('/api/') === 0 && !MAINTENANCE_OPEN_PATHS.has(parsedUrl.pathname)) {
-      const mCheck = await validateAuthToken(req, extractAuthToken(req));
-      if (!(mCheck.ok && mCheck.state.isAdmin)) return maintenanceResponse(res);
-    }
     if (parsedUrl.pathname === '/' && req.method === 'GET') {
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
@@ -5338,9 +4980,7 @@ const server = http.createServer(async (req, res) => {
       res.end(htmlTemplate);
 
     } else if (parsedUrl.pathname === '/api/status') {
-      jsonResponse(res, 200, currentServerStatus === 'online'
-        ? { status: currentServerStatus, maintenance: false }
-        : Object.assign({ status: currentServerStatus }, getMaintenanceInfo()));
+      jsonResponse(res, 200, { status: currentServerStatus });
 
     } else if (parsedUrl.pathname === '/api/video') {
       const videoUrl = await getVideoFromDb();
@@ -5961,20 +5601,10 @@ const server = http.createServer(async (req, res) => {
       const cleanUser = username.toLowerCase();
       const userObj = await getUserFromDb(cleanUser);
       if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-      const cpIp = getClientIpInfo(req);
-      const cpLocked = getLoginLockRemaining(cleanUser, cpIp);
-      if (cpLocked > 0) return jsonResponse(res, 429, { success: false, message: 'Terlalu banyak percobaan gagal. Coba lagi dalam ' + Math.max(1, Math.ceil(cpLocked / 60000)) + ' menit.' });
-      const oldCheck = await verifyPassword(userObj.password, oldPassword);
-      if (!oldCheck.ok) {
-        recordLoginFailure(cleanUser, cpIp, true, !!userObj.isAdmin);
-        return jsonResponse(res, 401, { success: false, message: 'Password lama salah!' });
-      }
-      userObj.password = await hashPassword(String(newPassword));
-      userObj.sessionsValidFrom = Date.now();
+      if (userObj.password !== oldPassword) return jsonResponse(res, 401, { success: false, message: 'Password lama salah!' });
+      userObj.password = newPassword;
       await saveUserToDb(cleanUser, userObj);
-      invalidateAuthCache(cleanUser);
-      const cpSess = issueAuthToken(cleanUser, !!userObj.isAdmin, req);
-      jsonResponse(res, 200, { success: true, message: 'Password diubah!', token: cpSess.token });
+      jsonResponse(res, 200, { success: true, message: 'Password diubah!' });
 
     } else if (parsedUrl.pathname === '/api/chat/messages' && req.method === 'GET') {
       // Pesan chat TIDAK dihapus otomatis (permanen sampai admin menghapus manual).
@@ -6128,7 +5758,6 @@ const server = http.createServer(async (req, res) => {
       const targetUser = await getUserFromDb(cleanTarget);
       if (!targetUser) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan!' });
       await deleteUserFromDb(cleanTarget);
-      invalidateAuthCache(cleanTarget);
       const vipAccounts = await getVipAccountsFromDb();
       for (const [id, acc] of Object.entries(vipAccounts)) {
         if (acc.username === cleanTarget) await removeVipAccountFromDb(id);
@@ -6201,21 +5830,15 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const { currentUsername, newUsername } = JSON.parse(body);
       if (!currentUsername || !newUsername) return jsonResponse(res, 400, { success: false, message: 'Username lama dan baru diperlukan.' });
-      const cleanOld = String(currentUsername).toLowerCase();
-      const cleanNew = String(newUsername).trim().toLowerCase();
-      if (cleanNew.length < 3 || cleanNew.length > 32 || /[.#$\[\]\/\s]/.test(cleanNew)) return jsonResponse(res, 400, { success: false, message: 'Username baru minimal 3 karakter dan tidak boleh mengandung spasi atau karakter . # $ [ ] /' });
-      if (cleanNew === MAIN_ADMIN_USERNAME) return jsonResponse(res, 400, { success: false, message: 'Username sudah digunakan.' });
+      const cleanOld = currentUsername.toLowerCase();
+      const cleanNew = newUsername.trim().toLowerCase();
       const existingUser = await getUserFromDb(cleanNew);
       if (existingUser) return jsonResponse(res, 400, { success: false, message: 'Username sudah digunakan.' });
       const userData = await getUserFromDb(cleanOld);
       if (!userData) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan.' });
-      if (userData.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Username akun admin tidak dapat diubah.' });
       await saveUserToDb(cleanNew, userData);
       await set(ref(db, `users/${cleanOld}`), null);
-      invalidateAuthCache(cleanOld);
-      invalidateAuthCache(cleanNew);
-      const renSess = issueAuthToken(cleanNew, false, req);
-      jsonResponse(res, 200, { success: true, newUsername: cleanNew, token: renSess.token });
+      jsonResponse(res, 200, { success: true, newUsername: cleanNew });
 
     } else if (parsedUrl.pathname === '/api/admin/set-status' && req.method === 'POST') {
       const body = await readBody(req);
@@ -6337,14 +5960,10 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const { username, token } = JSON.parse(body);
       if (!username || !token) return jsonResponse(res, 400, { success: false });
-      const cleanUser = String(username).trim().toLowerCase();
-      if (/[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false });
-      const sessCheck = await validateAuthToken(req, String(token));
-      if (!sessCheck.ok || sessCheck.payload.u !== cleanUser) return jsonResponse(res, 401, { success: false, sessionExpired: true, message: 'Sesi login tidak valid atau sudah berakhir. Silakan login ulang.' });
+      const cleanUser = username.toLowerCase();
       await checkAndExpireBonusQuota(cleanUser);
       const existingUser = await getUserFromDb(cleanUser);
       if (!existingUser) return jsonResponse(res, 404, { success: false });
-      if (currentServerStatus !== 'online' && !existingUser.isAdmin) return maintenanceResponse(res);
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
       if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
@@ -6355,36 +5974,21 @@ const server = http.createServer(async (req, res) => {
 
     } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
       const body = await readBody(req);
-      const { mode, username, password, deviceToken, email } = JSON.parse(body);
+      const { mode, username, password, deviceToken } = JSON.parse(body);
       if (!username || !password) return jsonResponse(res, 400, { success: false, message: 'Username dan password wajib!' });
       const cleanUser = String(username).trim().toLowerCase();
       if (!cleanUser || /[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false, message: 'Username tidak boleh mengandung spasi atau karakter . # $ [ ] /' });
       let existingUser = await getUserFromDb(cleanUser);
       if (mode === 'register') {
-        if (currentServerStatus !== 'online') return maintenanceResponse(res);
         if (cleanUser === 'adminbaguss' || existingUser) return jsonResponse(res, 400, { success: false, message: 'Username tidak tersedia!' });
         if (cleanUser.length < 3) return jsonResponse(res, 400, { success: false, message: 'Username minimal 3 karakter!' });
         if (String(password).length < 4) return jsonResponse(res, 400, { success: false, message: 'Password minimal 4 karakter!' });
-        const cleanEmail = String(email || '').trim().toLowerCase();
-        if (!EMAIL_REGEX.test(cleanEmail)) return jsonResponse(res, 400, { success: false, message: 'Email valid wajib diisi (untuk reset password)!' });
         const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
-        await saveUserToDb(cleanUser, { password: await hashPassword(password), email: cleanEmail, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
-        const authSess = issueAuthToken(cleanUser, false, req);
-        return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: authSess.token });
+        await saveUserToDb(cleanUser, { password, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
+        const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
+        return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: fakeAuthToken });
       } else {
-        const ipInfo = getClientIpInfo(req);
-        const targetExists = !!(existingUser && typeof existingUser === 'object');
-        const targetIsAdmin = targetExists && !!existingUser.isAdmin;
-        const lockedMs = getLoginLockRemaining(cleanUser, ipInfo);
-        if (lockedMs > 0) {
-          console.warn('[SECURITY] Login diblokir sementara (terlalu banyak gagal) user=' + cleanUser + ' ip=' + ipInfo.ip);
-          return jsonResponse(res, 429, { success: false, message: 'Terlalu banyak percobaan login gagal. Coba lagi dalam ' + Math.max(1, Math.ceil(lockedMs / 60000)) + ' menit.' });
-        }
-        const pwCheck = await verifyPassword(targetExists ? existingUser.password : null, password);
-        if (targetExists && pwCheck.ok && currentServerStatus !== 'online' && !existingUser.isAdmin) return maintenanceResponse(res);
-        if (targetExists && pwCheck.ok) {
-          clearLoginFailures(cleanUser);
-          // Password tidak diubah/di-hash ulang saat login.
+        if (existingUser && existingUser.password === password) {
           await checkAndExpireBonusQuota(cleanUser);
           existingUser = await getUserFromDb(cleanUser);
           const now = Date.now();
@@ -6393,77 +5997,11 @@ const server = http.createServer(async (req, res) => {
           if (now - existingUser.lastResetTime >= twentyFourHours) { existingUser.activatedEmails = []; existingUser.lastResetTime = now; await saveUserToDb(cleanUser, existingUser); }
           const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
           const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
-          const authSess = issueAuthToken(cleanUser, !!existingUser.isAdmin, req);
-          if (existingUser.isAdmin) console.log('[SECURITY] Login admin berhasil user=' + cleanUser + ' ip=' + ipInfo.ip);
-          return jsonResponse(res, 200, { success: true, message: 'Login berhasil!', username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus, token: authSess.token, tokenExpiresAt: authSess.expiresAt });
+          const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
+          return jsonResponse(res, 200, { success: true, message: 'Login berhasil!', username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus, token: fakeAuthToken });
         }
-        recordLoginFailure(cleanUser, ipInfo, targetExists, targetIsAdmin);
-        if (targetIsAdmin) console.warn('[SECURITY] Gagal login ke akun admin user=' + cleanUser + ' ip=' + ipInfo.ip);
         return jsonResponse(res, 401, { success: false, message: 'Username atau password salah!' });
       }
-
-    } else if (parsedUrl.pathname === '/api/auth/logout' && req.method === 'POST') {
-      const outCheck = await validateAuthToken(req, extractAuthToken(req));
-      if (outCheck.ok) {
-        if (outCheck.state.isAdmin) await revokeAllSessions(outCheck.payload.u);
-        else if (outCheck.payload.n) revokedTokenIds.set(outCheck.payload.n, outCheck.payload.exp);
-      }
-      return jsonResponse(res, 200, { success: true });
-
-    } else if (parsedUrl.pathname === '/api/auth/forgot' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { username } = JSON.parse(body);
-      const generic = { success: true, message: 'Jika akun ada dan punya email terdaftar, kode sudah dikirim.' };
-      const cleanUser = String(username || '').trim().toLowerCase();
-      if (!cleanUser || /[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 200, generic);
-      const userObj = await getUserFromDb(cleanUser);
-      if (!userObj || userObj.isAdmin || !userObj.email || !EMAIL_REGEX.test(userObj.email) || /@am-premium\.local$/.test(userObj.email)) return jsonResponse(res, 200, generic);
-      const snap = await get(child(ref(db), 'passwordResets/' + cleanUser));
-      const old = snap.exists() ? snap.val() : null;
-      const now = Date.now();
-      if (old && old.sentAt && now - old.sentAt < RESET_COOLDOWN) {
-        return jsonResponse(res, 429, { success: false, message: 'Tunggu ' + Math.ceil((RESET_COOLDOWN - (now - old.sentAt)) / 1000) + ' detik sebelum minta kode lagi.' });
-      }
-      const code = String(crypto.randomInt(100000, 1000000));
-      try {
-        await sendResetEmail(userObj.email, cleanUser, code);
-      } catch (mailErr) {
-        console.error('[RESET] gagal kirim email:', mailErr.message);
-        return jsonResponse(res, 500, { success: false, message: 'Gagal mengirim email. Hubungi admin.' });
-      }
-      await set(ref(db, 'passwordResets/' + cleanUser), { codeHash: hashResetCode(code), expiresAt: now + RESET_CODE_TTL, attempts: 0, sentAt: now });
-      jsonResponse(res, 200, generic);
-
-    } else if (parsedUrl.pathname === '/api/auth/reset' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { username, code, newPassword } = JSON.parse(body);
-      const cleanUser = String(username || '').trim().toLowerCase();
-      if (!cleanUser || !code || !newPassword) return jsonResponse(res, 400, { success: false, message: 'Semua field wajib!' });
-      if (/[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false, message: 'Username tidak valid' });
-      { const adminProbe = await getUserFromDb(cleanUser); if (adminProbe && adminProbe.isAdmin) return jsonResponse(res, 403, { success: false, message: 'Reset password akun admin tidak tersedia lewat web.' }); }
-      if (String(newPassword).length < 4) return jsonResponse(res, 400, { success: false, message: 'Password minimal 4 karakter!' });
-      const snap = await get(child(ref(db), 'passwordResets/' + cleanUser));
-      const rec = snap.exists() ? snap.val() : null;
-      if (!rec || rec.expiresAt < Date.now()) return jsonResponse(res, 400, { success: false, message: 'Kode tidak valid atau sudah kedaluwarsa. Minta kode baru.' });
-      if ((rec.attempts || 0) >= RESET_MAX_ATTEMPTS) {
-        await set(ref(db, 'passwordResets/' + cleanUser), null);
-        return jsonResponse(res, 429, { success: false, message: 'Terlalu banyak percobaan. Minta kode baru.' });
-      }
-      const given = Buffer.from(hashResetCode(String(code).trim()), 'hex');
-      const saved = Buffer.from(rec.codeHash, 'hex');
-      if (given.length !== saved.length || !crypto.timingSafeEqual(given, saved)) {
-        rec.attempts = (rec.attempts || 0) + 1;
-        await set(ref(db, 'passwordResets/' + cleanUser), rec);
-        return jsonResponse(res, 400, { success: false, message: 'Kode salah.' });
-      }
-      const userObj = await getUserFromDb(cleanUser);
-      if (!userObj) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
-      userObj.password = await hashPassword(String(newPassword));
-      userObj.sessionsValidFrom = Date.now();
-      await saveUserToDb(cleanUser, userObj);
-      invalidateAuthCache(cleanUser);
-      await set(ref(db, 'passwordResets/' + cleanUser), null);
-      jsonResponse(res, 200, { success: true, message: 'Password berhasil diubah. Silakan login.' });
 
     } else if (parsedUrl.pathname === '/api/magiclink' && req.method === 'POST') {
       const body = await readBody(req);
