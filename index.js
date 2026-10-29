@@ -1046,7 +1046,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>AM PREMIUM • BANGGUS</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Bangers&family=Comic+Neue:wght@400;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg-0: #0a0a0f; --bg-1: #12121a; --bg-2: #1a1a24;
@@ -1249,184 +1249,6 @@ const htmlTemplate = `<!DOCTYPE html>
   .notif-toggle.active { background:var(--ok-soft); border-color:rgba(74,222,128,0.3); color:var(--ok); }
   .notif-toggle.blocked { background:var(--err-soft); border-color:rgba(248,113,113,0.3); color:var(--err); }
   .notif-toggle svg { width:14px; height:14px; }
-
-  /* ============================================================
-     TEMA KOMIK (POP-ART) - hanya tampilan, semua fitur tetap sama
-     ============================================================ */
-  :root {
-    --bg-0: #140f3a; --bg-1: #211a5a; --bg-2: #2c2475;
-    --line: #07041c; --line-2: #07041c;
-    --text-0: #fff8e7; --text-1: #e4dcc0; --text-2: #a9a1d6;
-    --accent: #ffd23f; --accent-2: #ffb700; --accent-soft: rgba(255,210,63,0.16);
-    --ok: #3ddc84; --ok-soft: rgba(61,220,132,0.16);
-    --warn: #ff9f1c; --warn-soft: rgba(255,159,28,0.18);
-    --err: #ff4d6d; --err-soft: rgba(255,77,109,0.18);
-    --info: #4cc9f0; --info-soft: rgba(76,201,240,0.16);
-    --netflix: #e50914;
-    --ink: #07041c;
-  }
-  html, body { font-family:'Comic Neue','Comic Sans MS',system-ui,sans-serif; font-size:14.5px; font-weight:700; }
-  body {
-    background-color:#140f3a;
-    background-image:
-      radial-gradient(rgba(255,210,63,0.16) 1.6px, transparent 2px),
-      radial-gradient(rgba(255,77,109,0.12) 1.4px, transparent 1.8px),
-      linear-gradient(180deg, #1b1450 0%, #140f3a 60%, #0d0a2b 100%);
-    background-size:16px 16px, 16px 16px, 100% 100%;
-    background-position:0 0, 8px 8px, 0 0;
-    background-attachment:fixed;
-  }
-  .display-font, .brand-text, .section-head, .stat-label, .nav-section-label, .btn, .badge, .field-label, .poll-title, .toast, .brand-sub {
-    font-family:'Bangers','Comic Neue',cursive; letter-spacing:0.06em; font-weight:400;
-  }
-  .brand-text { font-size:22px; color:var(--accent); text-shadow:2px 2px 0 var(--ink), 3px 3px 0 var(--err); }
-  .brand-sub { font-size:12px; color:var(--text-0); }
-  .brand-mark { background:var(--accent); border:3px solid var(--ink); border-radius:12px; box-shadow:3px 3px 0 var(--err); transform:rotate(-6deg); }
-  .brand-mark svg { stroke:var(--ink); }
-  .brand-mark span { color:var(--ink) !important; font-family:'Bangers',cursive; }
-  .display-font { color:var(--accent) !important; font-size:30px !important; text-shadow:3px 3px 0 var(--ink), 4px 4px 0 var(--err); }
-
-  .card, .card-elevated {
-    background:var(--bg-1); border:3px solid var(--ink); border-radius:14px;
-    box-shadow:5px 5px 0 var(--ink), 5px 5px 0 2px rgba(255,210,63,0.55);
-    animation:comicPop 0.35s cubic-bezier(0.34,1.56,0.64,1);
-  }
-  .card-elevated { background:linear-gradient(135deg, #2c2475 0%, #211a5a 100%); position:relative; }
-  @keyframes comicPop { 0% { opacity:0; transform:scale(0.94) rotate(-0.6deg); } 100% { opacity:1; transform:scale(1) rotate(0); } }
-
-  #auth-view::before {
-    content:'NEW ISSUE #1!'; position:absolute; top:-14px; right:-6px; padding:4px 12px;
-    background:var(--err); color:#fff; border:3px solid var(--ink); border-radius:8px;
-    font-family:'Bangers',cursive; letter-spacing:0.08em; font-size:14px; transform:rotate(5deg);
-    box-shadow:3px 3px 0 var(--ink); z-index:2;
-  }
-  #auth-view h1::after { content:' POW!'; color:var(--err); }
-  #terminal-view > .card:first-of-type, #terminal-view > div:nth-child(2) { position:relative; }
-
-  .inp { background:#120d33; border:3px solid var(--ink); border-radius:10px; color:var(--text-0); font-family:'Comic Neue',sans-serif; font-weight:700; box-shadow:inset 2px 2px 0 rgba(255,255,255,0.06); }
-  .inp:focus { border-color:var(--accent); box-shadow:3px 3px 0 var(--accent); }
-  .inp.mono { font-family:'IBM Plex Mono',monospace; font-weight:600; }
-  label.field-label { color:var(--accent); font-size:13px; }
-
-  .btn {
-    color:var(--ink); background:var(--accent); border:3px solid var(--ink); border-radius:10px;
-    box-shadow:4px 4px 0 var(--ink); text-transform:uppercase; font-size:15px; letter-spacing:0.07em;
-    transition:transform 0.08s, box-shadow 0.08s, background 0.12s;
-  }
-  .btn:hover:not(:disabled) { background:#ffe27a; transform:translate(-1px,-1px) rotate(-0.6deg); box-shadow:5px 5px 0 var(--ink); }
-  .btn:active:not(:disabled) { transform:translate(3px,3px); box-shadow:1px 1px 0 var(--ink); }
-  .btn-ghost { background:var(--bg-2); color:var(--text-0); border-color:var(--ink); }
-  .btn-ghost:hover:not(:disabled) { background:#3a3190; }
-  .btn-ok { background:var(--ok); color:var(--ink); }
-  .btn-ok:hover:not(:disabled) { background:#6af0a6; }
-  .btn-err { background:var(--err); color:#fff; text-shadow:1px 1px 0 var(--ink); }
-  .btn-err:hover:not(:disabled) { background:#ff7a92; }
-  .btn-info { background:var(--info); color:var(--ink); }
-  .btn-info:hover:not(:disabled) { background:#86dbf5; }
-  .btn-warn { background:var(--warn); color:var(--ink); }
-  .btn-netflix { background:var(--netflix); color:#fff; text-shadow:1px 1px 0 var(--ink); }
-  .btn-hd { background:linear-gradient(135deg,#22d3ee,#6366f1); color:#fff; text-shadow:1px 1px 0 var(--ink); }
-  .btn-apk { background:linear-gradient(135deg,#34d399,#10b981); color:var(--ink); text-shadow:none; }
-  .btn-sm { font-size:14px; }
-  .btn-xs { font-size:12.5px; box-shadow:2px 2px 0 var(--ink); border-width:2.5px; }
-  .btn-loading::after { border-color:rgba(7,4,28,0.3); border-top-color:var(--ink); }
-  .user-filter-btn[style*="var(--accent)"] { color:var(--ink) !important; }
-
-  .badge { border:2px solid var(--ink); border-radius:8px; box-shadow:2px 2px 0 var(--ink); font-size:12px; }
-  .badge-ok { background:var(--ok); color:var(--ink); }
-  .badge-err { background:var(--err); color:#fff; }
-  .badge-warn { background:var(--warn); color:var(--ink); }
-  .badge-info { background:var(--info); color:var(--ink); }
-  .badge-accent { background:var(--accent); color:var(--ink); }
-  .badge-muted { background:var(--bg-2); color:var(--text-0); }
-  .online-pill { background:var(--ok); color:var(--ink); border:2.5px solid var(--ink); box-shadow:2px 2px 0 var(--ink); font-family:'Bangers',cursive; letter-spacing:0.06em; font-size:13px; }
-  .online-pill .online-dot { background:var(--ink); box-shadow:none; }
-
-  #nav-drawer { background:var(--bg-1); border-left:4px solid var(--ink); box-shadow:-6px 0 0 rgba(255,210,63,0.45); }
-  .nav-link { color:var(--text-0); border:2.5px solid transparent; border-radius:10px; font-family:'Bangers',cursive; letter-spacing:0.06em; font-size:16px; font-weight:400; }
-  .nav-link:hover { background:var(--bg-2); border-color:var(--ink); transform:translateX(3px) rotate(-0.5deg); }
-  .nav-link.active { background:var(--accent); color:var(--ink); border-color:var(--ink); box-shadow:3px 3px 0 var(--ink); }
-  .nav-link.netflix-nav.active { background:var(--netflix); color:#fff; }
-  .nav-link.orders-nav.active { background:var(--info); color:var(--ink); }
-  .nav-link.hd-nav.active { background:#22d3ee; color:var(--ink); }
-  .nav-link.apk-nav.active { background:#34d399; color:var(--ink); }
-  .nav-section-label { color:var(--err); font-size:14px; }
-
-  .stat { background:var(--bg-2); border:3px solid var(--ink); border-radius:12px; box-shadow:3px 3px 0 var(--ink); }
-  .stat-label { color:var(--accent); font-size:12.5px; }
-  .stat-value { font-family:'Bangers',cursive; font-weight:400; letter-spacing:0.05em; font-size:20px; }
-  .divider { height:0; background:none; border-top:3px dashed rgba(255,210,63,0.5); }
-  .section-head { color:var(--accent); font-size:16px; text-shadow:2px 2px 0 var(--ink); }
-
-  .toast { border:3px solid var(--ink) !important; box-shadow:5px 5px 0 var(--ink); font-size:15px; border-radius:14px; }
-  .toast-success { background:var(--ok); color:var(--ink); }
-  .toast-error { background:var(--err); color:#fff; text-shadow:1px 1px 0 var(--ink); }
-  .toast-info { background:var(--accent); color:var(--ink); }
-  .toast-netflix { background:var(--netflix); color:#fff; text-shadow:1px 1px 0 var(--ink); }
-  .toast-order { background:var(--info); color:var(--ink); }
-
-  .prog { height:14px; background:#120d33; border:2.5px solid var(--ink); border-radius:999px; }
-  .prog-fill { background:repeating-linear-gradient(45deg, var(--accent), var(--accent) 8px, var(--accent-2) 8px, var(--accent-2) 16px); }
-  .dropzone, #hd-dropzone { border:3px dashed var(--accent) !important; border-radius:12px; }
-  .dropzone:hover, .dropzone.dragover { background:var(--accent-soft); }
-
-  /* Chat: balon bicara komik */
-  .chat-wrap { background:#120d33; border:3px solid var(--ink); border-radius:14px; box-shadow:4px 4px 0 var(--ink); }
-  .chat-msg { border:2.5px solid var(--ink); box-shadow:3px 3px 0 var(--ink); font-size:14px; position:relative; }
-  .chat-msg-them { background:#fff8e7; color:var(--ink); border-radius:16px 16px 16px 3px; }
-  .chat-msg-them .chat-msg-header, .chat-msg-them .chat-time { color:var(--ink); }
-  .chat-msg-me { background:var(--accent); color:var(--ink); border-radius:16px 16px 3px 16px; }
-  .chat-msg-poll { background:var(--bg-2); color:var(--text-0); border-color:var(--ink); border-radius:14px; }
-  .chat-msg-header { font-family:'Bangers',cursive; letter-spacing:0.05em; font-weight:400; font-size:13px; }
-  .chat-input-bar { background:var(--bg-1); border-top:3px solid var(--ink); }
-  .chat-input-bar button { background:var(--err); border:3px solid var(--ink); box-shadow:3px 3px 0 var(--ink); color:#fff; }
-  .chat-input-bar button:hover { background:#ff7a92; }
-  .react-chip { border:2px solid var(--ink); background:var(--bg-2); color:var(--text-0); box-shadow:2px 2px 0 var(--ink); }
-  .chat-msg-them .react-chip { background:#ffe9b0; color:var(--ink); }
-  .react-chip.mine { background:var(--accent); color:var(--ink); }
-  .react-picker { background:var(--bg-1); border:2.5px solid var(--ink); box-shadow:3px 3px 0 var(--ink); }
-  .poll-opt { border:2.5px solid var(--ink); background:#120d33; box-shadow:2px 2px 0 var(--ink); }
-  .poll-opt.chosen { border-color:var(--accent); }
-  .poll-fill { background:rgba(255,210,63,0.3); }
-  .poll-form { border:3px solid var(--ink); box-shadow:3px 3px 0 var(--ink); }
-  .poll-admin-btn { border:2.5px solid var(--ink); background:var(--bg-2); color:var(--text-0); box-shadow:2px 2px 0 var(--ink); }
-
-  .opt-row, .hist-item, .shop-item { border:3px solid var(--ink); border-radius:12px; box-shadow:3px 3px 0 var(--ink); }
-  .opt-row:hover { background:#3a3190; transform:translate(-1px,-1px); }
-  .opt-row.selected { border-color:var(--accent); background:var(--accent-soft); box-shadow:3px 3px 0 var(--accent); }
-  .opt-row.netflix.selected { border-color:var(--netflix); box-shadow:3px 3px 0 var(--netflix); }
-  .shop-item:hover { border-color:var(--accent); transform:translate(-2px,-2px) rotate(-0.5deg); box-shadow:5px 5px 0 var(--accent); }
-  .hist-item-order-id { background:var(--info); color:var(--ink); border:2px solid var(--ink); }
-  .link-line { border:2.5px solid var(--ink); background:#120d33; }
-  .dana-card { border:3px solid var(--ink); box-shadow:4px 4px 0 #0084ff; }
-  .dana-chip { border:2.5px solid var(--ink); font-family:'Bangers',cursive; font-weight:400; letter-spacing:0.08em; }
-  .dana-copy { border:3px solid var(--ink); box-shadow:3px 3px 0 var(--ink); font-family:'Bangers',cursive; font-weight:400; letter-spacing:0.06em; font-size:14px; }
-  .countdown-cell { border:3px solid var(--ink); box-shadow:2px 2px 0 var(--ink); }
-  .countdown-num { font-family:'Bangers',cursive; font-weight:400; font-size:24px; }
-  .apk-perm { border:2.5px solid var(--ink); box-shadow:2px 2px 0 var(--ink); }
-  .apk-perm.on { background:rgba(61,220,132,0.2); border-color:var(--ok); }
-  .apk-icon-box { border:3px dashed #34d399; }
-  .hd-compare { border:3px solid var(--ink); box-shadow:4px 4px 0 var(--ink); }
-  .hd-tag { border:2px solid var(--ink); font-family:'Bangers',cursive; font-weight:400; letter-spacing:0.06em; }
-  .notif-toggle { border:2.5px solid var(--ink); box-shadow:2px 2px 0 var(--ink); font-family:'Bangers',cursive; letter-spacing:0.06em; font-weight:400; font-size:13px; color:var(--text-0); }
-  .notif-toggle.active { background:var(--ok); color:var(--ink); }
-  .notif-toggle.blocked { background:var(--err); color:#fff; }
-  #tab-indicator { background:var(--err) !important; border:2.5px solid var(--ink); box-shadow:2px 2px 0 var(--ink); }
-  #tab-login-btn, #tab-reg-btn { font-family:'Bangers',cursive !important; letter-spacing:0.08em; font-weight:400 !important; font-size:15px !important; }
-  #auth-view [style*="border:1px solid var(--line-2); border-radius:10px; padding:3px"] { border:3px solid var(--ink) !important; background:#120d33 !important; }
-  #offline-banner { border:3px solid var(--ink) !important; box-shadow:3px 3px 0 var(--ink); font-family:'Bangers',cursive; letter-spacing:0.06em; font-size:15px; }
-  #main-display-video { border-radius:10px; }
-  #terminal-view > div[style*="height:150px"] { border:4px solid var(--ink) !important; box-shadow:5px 5px 0 var(--err); border-radius:12px !important; }
-
-  /* Info-box inline bergaya komik */
-  [style*="border-radius:9px"][style*="padding:11px"], [style*="border-radius:11px"][style*="padding:13px"], [style*="border-radius:10px"][style*="padding:10px 12px"] { border-width:2.5px !important; }
-
-  ::-webkit-scrollbar { width:9px; height:9px; }
-  ::-webkit-scrollbar-track { background:var(--bg-0); }
-  ::-webkit-scrollbar-thumb { background:var(--accent); border:2px solid var(--ink); border-radius:999px; }
-  ::-webkit-scrollbar-thumb:hover { background:var(--accent-2); }
-  ::selection { background:var(--err); color:#fff; }
-  @media (prefers-reduced-motion: reduce) { .card, .card-elevated { animation:none; } .btn, .nav-link, .shop-item, .opt-row { transition:none; } }
 </style>
 </head>
 <body>
@@ -1482,6 +1304,7 @@ const htmlTemplate = `<!DOCTYPE html>
     <button onclick="switchView('chat')" data-nav="chat" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat Global<span id="chat-unread-badge" class="badge badge-err hide" style="margin-left:auto; font-size:9px; padding:1px 6px;">0</span></button>
     <button onclick="switchView('profile')" data-nav="profile" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Profil Akun</button>
     <div class="nav-section-label">Lainnya</div>
+    <button onclick="switchView('guide')" data-nav="guide" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Panduan</button>
     <button onclick="switchView('announcement')" data-nav="announcement" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>Pengumuman</button>
     <button onclick="switchView('request')" data-nav="request" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>Request Fitur</button>
     <button id="nav-admin-btn" onclick="switchView('admin')" data-nav="admin" class="nav-link hide"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Panel Admin</button>
@@ -2038,6 +1861,40 @@ const htmlTemplate = `<!DOCTYPE html>
           <button onclick="handleChangePassword()" class="btn">Ubah Password</button>
         </div>
       </div>
+      <div style="padding-top:12px; border-top:1px solid var(--line);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:9px;">
+          <div class="section-head" style="margin:0; color:var(--info);">Gmail Terverifikasi</div>
+          <button onclick="loadVerifiedEmails()" class="btn btn-ghost btn-xs">Refresh</button>
+        </div>
+        <div id="quota-status-card" style="padding:11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:9px; margin-bottom:9px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:7px;">
+            <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em;">Status Kuota</div>
+            <span id="quota-status-badge" class="badge badge-ok" style="font-size:9px;">Tersedia</span>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; text-align:center;">
+            <div><div style="font-size:9px; color:var(--text-2);">Terpakai</div><div id="quota-used-display" class="mono" style="font-size:13px; font-weight:800;">0</div></div>
+            <div><div style="font-size:9px; color:var(--text-2);">Tersisa</div><div id="quota-remain-display" class="mono" style="font-size:13px; font-weight:800; color:var(--info);">2</div></div>
+            <div><div style="font-size:9px; color:var(--text-2);">Total</div><div id="quota-total-display" class="mono" style="font-size:13px; font-weight:800; color:var(--accent);">2</div></div>
+          </div>
+        </div>
+        <div id="reset-countdown-card" class="hide" style="padding:13px; background:linear-gradient(135deg,var(--err-soft),var(--accent-soft)); border:1px solid rgba(248,113,113,0.3); border-radius:11px; margin-bottom:9px;">
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+            <div style="width:34px; height:34px; border-radius:9px; background:rgba(248,113,113,0.2); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--err)" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <div><div style="font-size:12px; font-weight:800; color:var(--err);">Kuota habis</div><div style="font-size:10.5px; color:var(--text-1);">Reset dalam:</div></div>
+          </div>
+          <div class="countdown-grid">
+            <div class="countdown-cell"><div id="countdown-hours" class="countdown-num">00</div><div class="countdown-lbl">Jam</div></div>
+            <div class="countdown-cell"><div id="countdown-minutes" class="countdown-num">00</div><div class="countdown-lbl">Menit</div></div>
+            <div class="countdown-cell"><div id="countdown-seconds" class="countdown-num">00</div><div class="countdown-lbl">Detik</div></div>
+          </div>
+          <p style="font-size:10px; text-align:center; color:var(--text-1); margin-top:8px;">Reset berikutnya: <span id="next-reset-time" class="mono" style="color:var(--err); font-weight:700;">-</span></p>
+        </div>
+        <div id="verified-emails-list" style="display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto;">
+          <p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Memuat...</p>
+        </div>
+      </div>
     </div>
 
     <div id="section-admin" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
@@ -2210,6 +2067,21 @@ const htmlTemplate = `<!DOCTYPE html>
         <div id="admin-feature-requests-list" style="display:flex; flex-direction:column; gap:7px; max-height:250px; overflow-y:auto; font-size:11px;">
           <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Memuat...</p>
         </div>
+      </div>
+    </div>
+
+    <div id="section-guide" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
+        <div class="section-head" style="margin:0;">Panduan</div>
+        <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">1</div><div style="font-size:12px; color:var(--text-1);">Login/daftar dulu dengan akunmu</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--accent); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">2</div><div style="font-size:12px; color:var(--text-1);"><strong>Alight Motion:</strong> Masukkan email target, kirim magic link, copy URL, verifikasi</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--netflix); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">3</div><div style="font-size:12px; color:var(--text-1);"><strong>Netflix:</strong> Pilih plan, klik Generate, tunggu proses</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--info); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">4</div><div style="font-size:12px; color:var(--text-1);"><strong>Setiap generator membuat Order ID otomatis</strong>, cek di "Orderan Saya"</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--warn); color:#3a2800; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">5</div><div style="font-size:12px; color:var(--text-1);"><strong>Kuota sama semua fitur.</strong> Bonus kuota expired dalam 2 hari jika tidak dipakai.</div></div>
+        <div style="display:flex; gap:10px; padding:10px; background:var(--bg-2); border:1px solid var(--line); border-radius:9px;"><div style="width:24px; height:24px; border-radius:50%; background:var(--ok); color:white; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">6</div><div style="font-size:12px; color:var(--text-1);"><strong>Aktifkan Notifikasi</strong> (icon 🔔 di atas) untuk dapat pemberitahuan pengumuman & chat baru secara real-time!</div></div>
       </div>
     </div>
 
@@ -2572,7 +2444,7 @@ function switchView(viewName) {
   document.body.classList.toggle('chat-wide', viewName === 'chat');
   document.querySelectorAll('[data-nav]').forEach(el => { el.classList.toggle('active', el.dataset.nav === viewName); });
   toggleMenu();
-  ['terminal-view','section-profile','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-hdfoto','section-apk','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
+  ['terminal-view','section-profile','section-guide','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-hdfoto','section-apk','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hide');
   else if (viewName === 'orders') { document.getElementById('section-orders').classList.remove('hide'); loadMyOrders(); }
   else if (viewName === 'netflix') { document.getElementById('section-netflix').classList.remove('hide'); loadNetflixHistory(); updateNetflixQuotaDisplay(); }
@@ -2585,6 +2457,7 @@ function switchView(viewName) {
     document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
   }
   else if (viewName === 'profile') { document.getElementById('section-profile').classList.remove('hide'); loadVerifiedEmails(); }
+  else if (viewName === 'guide') document.getElementById('section-guide').classList.remove('hide');
   else if (viewName === 'announcement') { document.getElementById('section-announcement').classList.remove('hide'); loadUserAnnouncements(); }
   else if (viewName === 'request') { document.getElementById('section-request').classList.remove('hide'); loadUserFeatureRequests(); }
   else if (viewName === 'chat') { document.getElementById('section-chat').classList.remove('hide'); loadGlobalChat(true); unreadChatCount = 0; updateChatBadge(); }
@@ -4064,23 +3937,48 @@ async function loadVerifiedEmails(force = false) {
   if (!loggedInUsername) return;
   const now = Date.now();
   if (!force && now - lastEmailsFetch < CACHE_DURATION.emails) { const cached = getCached('verifiedEmails'); if (cached) { renderVerifiedEmails(cached); return; } }
+  const container = document.getElementById('verified-emails-list');
+  if (!container) return;
+  container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px;">⏳ Memuat...</p>';
   try {
     const res = await fetch('/api/user/my-emails?username=' + encodeURIComponent(loggedInUsername));
     const data = await res.json();
-    if (!data.success) return;
+    if (!data.success) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; return; }
     lastEmailsFetch = now; setCache('verifiedEmails', data, CACHE_DURATION.emails); renderVerifiedEmails(data);
-  } catch (e) {}
+  } catch (e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Kesalahan koneksi</p>'; }
 }
 
 function renderVerifiedEmails(data) {
+  const container = document.getElementById('verified-emails-list');
+  if (!container) return;
   updateQuotaStatusCard(data);
   handleCountdown(data);
   updateNetflixQuotaDisplay();
+  const emails = data.activatedEmails || [];
+  if (emails.length === 0) {
+    container.innerHTML = '<div style="padding:11px; text-align:center; background:var(--bg-2); border:1px dashed var(--line-2); border-radius:9px;"><div style="font-size:11.5px; color:var(--text-1); font-weight:600;">Belum ada Gmail</div><div style="font-size:10px; color:var(--text-2); margin-top:2px;">Gmail yang terverifikasi akan muncul di sini</div></div>';
+    return;
+  }
+  container.innerHTML = emails.map((email, idx) => {
+    const isLatest = idx === emails.length - 1;
+    const safeEmail = email.replace(/'/g, "\\\\'");
+    return '<div style="padding:8px 11px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:8px; display:flex; align-items:center; justify-content:space-between; gap:8px;"><div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;"><div style="width:28px; height:28px; border-radius:7px; background:rgba(96,165,250,0.15); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div><div style="min-width:0; flex:1;"><div class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(email) + '</div><div style="display:flex; align-items:center; gap:4px; margin-top:2px;"><span style="font-size:9px; color:var(--ok); font-weight:700;">●</span><span style="font-size:9px; color:var(--ok); font-weight:700;">Terverifikasi</span>' + (isLatest ? '<span style="font-size:9px; color:var(--warn); font-weight:700;">• Terbaru</span>' : '') + '</div></div></div><button onclick="copyEmail(\\'' + safeEmail + '\\')" class="btn btn-ghost btn-xs" style="flex-shrink:0;">Copy</button></div>';
+  }).join('');
 }
 
 function updateQuotaStatusCard(data) {
   const total = data.totalQuota || BASE_QUOTA;
   const used = data.usedQuota || 0;
+  const remain = Math.max(0, total - used);
+  document.getElementById('quota-used-display').innerText = used;
+  document.getElementById('quota-remain-display').innerText = (data.isAdmin || data.isVip) ? '∞' : remain;
+  document.getElementById('quota-total-display').innerText = (data.isAdmin || data.isVip) ? '∞' : total;
+  const card = document.getElementById('quota-status-card');
+  const badge = document.getElementById('quota-status-badge');
+  if (data.isAdmin || data.isVip) { card.style.background = 'var(--accent-soft)'; card.style.borderColor = 'rgba(139,124,246,0.3)'; badge.className = 'badge badge-accent'; badge.innerText = data.isAdmin ? '👑 Admin' : '⭐ VIP'; }
+  else if (remain <= 0) { card.style.background = 'var(--err-soft)'; card.style.borderColor = 'rgba(248,113,113,0.3)'; badge.className = 'badge badge-err'; badge.innerText = '✗ Habis'; }
+  else if (remain <= 1) { card.style.background = 'var(--warn-soft)'; card.style.borderColor = 'rgba(251,191,36,0.3)'; badge.className = 'badge badge-warn'; badge.innerText = '⚠ Terbatas'; }
+  else { card.style.background = 'var(--info-soft)'; card.style.borderColor = 'rgba(96,165,250,0.25)'; badge.className = 'badge badge-ok'; badge.innerText = '✓ Tersedia'; }
   userQuotaData = { usedQuota: used, bonusQuota: data.bonusQuota || 0, totalQuota: total, nextResetTime: data.nextResetTime || 0, lastResetTime: data.lastResetTime || 0 };
 }
 
@@ -4146,6 +4044,8 @@ function updateResetTimerDisplay(data) {
   }
   updateStatCard(); globalCountdownInterval = setInterval(updateStatCard, 60000);
 }
+
+function copyEmail(email) { navigator.clipboard.writeText(email).then(() => showToast('Tersalin!', 'success')).catch(() => showToast('Gagal', 'error')); }
 
 function initFileDrop() {
   const dropZone = document.getElementById('file-drop-zone');
