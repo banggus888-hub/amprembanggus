@@ -1044,7 +1044,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>AM PREMIUM • BANGGUS X NARUTO</title>
+<title>AM PREMIUM • BANGGUS</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Bangers&family=Comic+Neue:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
@@ -1251,28 +1251,29 @@ const htmlTemplate = `<!DOCTYPE html>
   .notif-toggle svg { width:14px; height:14px; }
 
   /* ============================================================
-     TEMA NARUTO (KONOHA) - hanya tampilan, semua fitur tetap sama
+     TEMA KOMIK (POP-ART) - hanya tampilan, semua fitur tetap sama
      ============================================================ */
   :root {
-    --bg-0: #0a1330; --bg-1: #11224d; --bg-2: #1a3170;
-    --line: #060b1f; --line-2: #060b1f;
-    --text-0: #fff4e0; --text-1: #f1dfbd; --text-2: #9fb2e6;
-    --accent: #ff8a00; --accent-2: #ff6a00; --accent-soft: rgba(255,138,0,0.18);
+    --bg-0: #140f3a; --bg-1: #211a5a; --bg-2: #2c2475;
+    --line: #07041c; --line-2: #07041c;
+    --text-0: #fff8e7; --text-1: #e4dcc0; --text-2: #a9a1d6;
+    --accent: #ffd23f; --accent-2: #ffb700; --accent-soft: rgba(255,210,63,0.16);
     --ok: #3ddc84; --ok-soft: rgba(61,220,132,0.16);
     --warn: #ff9f1c; --warn-soft: rgba(255,159,28,0.18);
-    --err: #ff3b4e; --err-soft: rgba(255,59,78,0.18);
-    --info: #38bdf8; --info-soft: rgba(56,189,248,0.16);
+    --err: #ff4d6d; --err-soft: rgba(255,77,109,0.18);
+    --info: #4cc9f0; --info-soft: rgba(76,201,240,0.16);
     --netflix: #e50914;
-    --ink: #060b1f;
+    --ink: #07041c;
   }
   html, body { font-family:'Comic Neue','Comic Sans MS',system-ui,sans-serif; font-size:14.5px; font-weight:700; }
   body {
-    background-color:#0a1330;
+    background-color:#140f3a;
     background-image:
-      radial-gradient(circle at 85% 8%, rgba(255,138,0,0.28) 0, transparent 38%),
-      radial-gradient(circle at 10% 92%, rgba(56,189,248,0.16) 0, transparent 40%),
-      repeating-linear-gradient(135deg, rgba(255,138,0,0.045) 0 2px, transparent 2px 22px),
-      linear-gradient(180deg, #11265c 0%, #0a1330 60%, #060b1f 100%);
+      radial-gradient(rgba(255,210,63,0.16) 1.6px, transparent 2px),
+      radial-gradient(rgba(255,77,109,0.12) 1.4px, transparent 1.8px),
+      linear-gradient(180deg, #1b1450 0%, #140f3a 60%, #0d0a2b 100%);
+    background-size:16px 16px, 16px 16px, 100% 100%;
+    background-position:0 0, 8px 8px, 0 0;
     background-attachment:fixed;
   }
   .display-font, .brand-text, .section-head, .stat-label, .nav-section-label, .btn, .badge, .field-label, .poll-title, .toast, .brand-sub {
@@ -1287,22 +1288,22 @@ const htmlTemplate = `<!DOCTYPE html>
 
   .card, .card-elevated {
     background:var(--bg-1); border:3px solid var(--ink); border-radius:14px;
-    box-shadow:5px 5px 0 var(--ink), 5px 5px 0 2px rgba(255,138,0,0.55);
+    box-shadow:5px 5px 0 var(--ink), 5px 5px 0 2px rgba(255,210,63,0.55);
     animation:comicPop 0.35s cubic-bezier(0.34,1.56,0.64,1);
   }
-  .card-elevated { background:linear-gradient(135deg, #1a3170 0%, #11224d 100%); position:relative; }
+  .card-elevated { background:linear-gradient(135deg, #2c2475 0%, #211a5a 100%); position:relative; }
   @keyframes comicPop { 0% { opacity:0; transform:scale(0.94) rotate(-0.6deg); } 100% { opacity:1; transform:scale(1) rotate(0); } }
 
   #auth-view::before {
-    content:'BANGGUS X NARUTO'; position:absolute; top:-14px; right:-6px; padding:4px 12px;
-    background:linear-gradient(135deg,#ff8a00,#ff5a00); color:#fff; border:3px solid var(--ink); border-radius:8px; text-shadow:1px 1px 0 var(--ink);
-    font-family:'Bangers',cursive; letter-spacing:0.08em; font-size:14px; transform:rotate(4deg);
-    box-shadow:3px 3px 0 var(--ink); z-index:2; white-space:nowrap;
+    content:'NEW ISSUE #1!'; position:absolute; top:-14px; right:-6px; padding:4px 12px;
+    background:var(--err); color:#fff; border:3px solid var(--ink); border-radius:8px;
+    font-family:'Bangers',cursive; letter-spacing:0.08em; font-size:14px; transform:rotate(5deg);
+    box-shadow:3px 3px 0 var(--ink); z-index:2;
   }
-  #auth-view h1::after { content:' 🍥'; color:var(--accent); }
+  #auth-view h1::after { content:' POW!'; color:var(--err); }
   #terminal-view > .card:first-of-type, #terminal-view > div:nth-child(2) { position:relative; }
 
-  .inp { background:#07102a; border:3px solid var(--ink); border-radius:10px; color:var(--text-0); font-family:'Comic Neue',sans-serif; font-weight:700; box-shadow:inset 2px 2px 0 rgba(255,255,255,0.06); }
+  .inp { background:#120d33; border:3px solid var(--ink); border-radius:10px; color:var(--text-0); font-family:'Comic Neue',sans-serif; font-weight:700; box-shadow:inset 2px 2px 0 rgba(255,255,255,0.06); }
   .inp:focus { border-color:var(--accent); box-shadow:3px 3px 0 var(--accent); }
   .inp.mono { font-family:'IBM Plex Mono',monospace; font-weight:600; }
   label.field-label { color:var(--accent); font-size:13px; }
@@ -1312,23 +1313,23 @@ const htmlTemplate = `<!DOCTYPE html>
     box-shadow:4px 4px 0 var(--ink); text-transform:uppercase; font-size:15px; letter-spacing:0.07em;
     transition:transform 0.08s, box-shadow 0.08s, background 0.12s;
   }
-  .btn:hover:not(:disabled) { background:#ffb347; transform:translate(-1px,-1px) rotate(-0.6deg); box-shadow:5px 5px 0 var(--ink); }
+  .btn:hover:not(:disabled) { background:#ffe27a; transform:translate(-1px,-1px) rotate(-0.6deg); box-shadow:5px 5px 0 var(--ink); }
   .btn:active:not(:disabled) { transform:translate(3px,3px); box-shadow:1px 1px 0 var(--ink); }
   .btn-ghost { background:var(--bg-2); color:var(--text-0); border-color:var(--ink); }
-  .btn-ghost:hover:not(:disabled) { background:#24408f; }
+  .btn-ghost:hover:not(:disabled) { background:#3a3190; }
   .btn-ok { background:var(--ok); color:var(--ink); }
   .btn-ok:hover:not(:disabled) { background:#6af0a6; }
   .btn-err { background:var(--err); color:#fff; text-shadow:1px 1px 0 var(--ink); }
-  .btn-err:hover:not(:disabled) { background:#ff6b78; }
+  .btn-err:hover:not(:disabled) { background:#ff7a92; }
   .btn-info { background:var(--info); color:var(--ink); }
-  .btn-info:hover:not(:disabled) { background:#7dd3fc; }
+  .btn-info:hover:not(:disabled) { background:#86dbf5; }
   .btn-warn { background:var(--warn); color:var(--ink); }
   .btn-netflix { background:var(--netflix); color:#fff; text-shadow:1px 1px 0 var(--ink); }
   .btn-hd { background:linear-gradient(135deg,#22d3ee,#6366f1); color:#fff; text-shadow:1px 1px 0 var(--ink); }
   .btn-apk { background:linear-gradient(135deg,#34d399,#10b981); color:var(--ink); text-shadow:none; }
   .btn-sm { font-size:14px; }
   .btn-xs { font-size:12.5px; box-shadow:2px 2px 0 var(--ink); border-width:2.5px; }
-  .btn-loading::after { border-color:rgba(6,11,31,0.3); border-top-color:var(--ink); }
+  .btn-loading::after { border-color:rgba(7,4,28,0.3); border-top-color:var(--ink); }
   .user-filter-btn[style*="var(--accent)"] { color:var(--ink) !important; }
 
   .badge { border:2px solid var(--ink); border-radius:8px; box-shadow:2px 2px 0 var(--ink); font-size:12px; }
@@ -1341,7 +1342,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .online-pill { background:var(--ok); color:var(--ink); border:2.5px solid var(--ink); box-shadow:2px 2px 0 var(--ink); font-family:'Bangers',cursive; letter-spacing:0.06em; font-size:13px; }
   .online-pill .online-dot { background:var(--ink); box-shadow:none; }
 
-  #nav-drawer { background:var(--bg-1); border-left:4px solid var(--ink); box-shadow:-6px 0 0 rgba(255,138,0,0.45); }
+  #nav-drawer { background:var(--bg-1); border-left:4px solid var(--ink); box-shadow:-6px 0 0 rgba(255,210,63,0.45); }
   .nav-link { color:var(--text-0); border:2.5px solid transparent; border-radius:10px; font-family:'Bangers',cursive; letter-spacing:0.06em; font-size:16px; font-weight:400; }
   .nav-link:hover { background:var(--bg-2); border-color:var(--ink); transform:translateX(3px) rotate(-0.5deg); }
   .nav-link.active { background:var(--accent); color:var(--ink); border-color:var(--ink); box-shadow:3px 3px 0 var(--ink); }
@@ -1354,7 +1355,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .stat { background:var(--bg-2); border:3px solid var(--ink); border-radius:12px; box-shadow:3px 3px 0 var(--ink); }
   .stat-label { color:var(--accent); font-size:12.5px; }
   .stat-value { font-family:'Bangers',cursive; font-weight:400; letter-spacing:0.05em; font-size:20px; }
-  .divider { height:0; background:none; border-top:3px dashed rgba(255,138,0,0.5); }
+  .divider { height:0; background:none; border-top:3px dashed rgba(255,210,63,0.5); }
   .section-head { color:var(--accent); font-size:16px; text-shadow:2px 2px 0 var(--ink); }
 
   .toast { border:3px solid var(--ink) !important; box-shadow:5px 5px 0 var(--ink); font-size:15px; border-radius:14px; }
@@ -1364,13 +1365,13 @@ const htmlTemplate = `<!DOCTYPE html>
   .toast-netflix { background:var(--netflix); color:#fff; text-shadow:1px 1px 0 var(--ink); }
   .toast-order { background:var(--info); color:var(--ink); }
 
-  .prog { height:14px; background:#07102a; border:2.5px solid var(--ink); border-radius:999px; }
+  .prog { height:14px; background:#120d33; border:2.5px solid var(--ink); border-radius:999px; }
   .prog-fill { background:repeating-linear-gradient(45deg, var(--accent), var(--accent) 8px, var(--accent-2) 8px, var(--accent-2) 16px); }
   .dropzone, #hd-dropzone { border:3px dashed var(--accent) !important; border-radius:12px; }
   .dropzone:hover, .dropzone.dragover { background:var(--accent-soft); }
 
   /* Chat: balon bicara komik */
-  .chat-wrap { background:#07102a; border:3px solid var(--ink); border-radius:14px; box-shadow:4px 4px 0 var(--ink); }
+  .chat-wrap { background:#120d33; border:3px solid var(--ink); border-radius:14px; box-shadow:4px 4px 0 var(--ink); }
   .chat-msg { border:2.5px solid var(--ink); box-shadow:3px 3px 0 var(--ink); font-size:14px; position:relative; }
   .chat-msg-them { background:#fff8e7; color:var(--ink); border-radius:16px 16px 16px 3px; }
   .chat-msg-them .chat-msg-header, .chat-msg-them .chat-time { color:var(--ink); }
@@ -1379,24 +1380,24 @@ const htmlTemplate = `<!DOCTYPE html>
   .chat-msg-header { font-family:'Bangers',cursive; letter-spacing:0.05em; font-weight:400; font-size:13px; }
   .chat-input-bar { background:var(--bg-1); border-top:3px solid var(--ink); }
   .chat-input-bar button { background:var(--err); border:3px solid var(--ink); box-shadow:3px 3px 0 var(--ink); color:#fff; }
-  .chat-input-bar button:hover { background:#ff6b78; }
+  .chat-input-bar button:hover { background:#ff7a92; }
   .react-chip { border:2px solid var(--ink); background:var(--bg-2); color:var(--text-0); box-shadow:2px 2px 0 var(--ink); }
   .chat-msg-them .react-chip { background:#ffe9b0; color:var(--ink); }
   .react-chip.mine { background:var(--accent); color:var(--ink); }
   .react-picker { background:var(--bg-1); border:2.5px solid var(--ink); box-shadow:3px 3px 0 var(--ink); }
-  .poll-opt { border:2.5px solid var(--ink); background:#07102a; box-shadow:2px 2px 0 var(--ink); }
+  .poll-opt { border:2.5px solid var(--ink); background:#120d33; box-shadow:2px 2px 0 var(--ink); }
   .poll-opt.chosen { border-color:var(--accent); }
-  .poll-fill { background:rgba(255,138,0,0.3); }
+  .poll-fill { background:rgba(255,210,63,0.3); }
   .poll-form { border:3px solid var(--ink); box-shadow:3px 3px 0 var(--ink); }
   .poll-admin-btn { border:2.5px solid var(--ink); background:var(--bg-2); color:var(--text-0); box-shadow:2px 2px 0 var(--ink); }
 
   .opt-row, .hist-item, .shop-item { border:3px solid var(--ink); border-radius:12px; box-shadow:3px 3px 0 var(--ink); }
-  .opt-row:hover { background:#24408f; transform:translate(-1px,-1px); }
+  .opt-row:hover { background:#3a3190; transform:translate(-1px,-1px); }
   .opt-row.selected { border-color:var(--accent); background:var(--accent-soft); box-shadow:3px 3px 0 var(--accent); }
   .opt-row.netflix.selected { border-color:var(--netflix); box-shadow:3px 3px 0 var(--netflix); }
   .shop-item:hover { border-color:var(--accent); transform:translate(-2px,-2px) rotate(-0.5deg); box-shadow:5px 5px 0 var(--accent); }
   .hist-item-order-id { background:var(--info); color:var(--ink); border:2px solid var(--ink); }
-  .link-line { border:2.5px solid var(--ink); background:#07102a; }
+  .link-line { border:2.5px solid var(--ink); background:#120d33; }
   .dana-card { border:3px solid var(--ink); box-shadow:4px 4px 0 #0084ff; }
   .dana-chip { border:2.5px solid var(--ink); font-family:'Bangers',cursive; font-weight:400; letter-spacing:0.08em; }
   .dana-copy { border:3px solid var(--ink); box-shadow:3px 3px 0 var(--ink); font-family:'Bangers',cursive; font-weight:400; letter-spacing:0.06em; font-size:14px; }
@@ -1412,7 +1413,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .notif-toggle.blocked { background:var(--err); color:#fff; }
   #tab-indicator { background:var(--err) !important; border:2.5px solid var(--ink); box-shadow:2px 2px 0 var(--ink); }
   #tab-login-btn, #tab-reg-btn { font-family:'Bangers',cursive !important; letter-spacing:0.08em; font-weight:400 !important; font-size:15px !important; }
-  #auth-view [style*="border:1px solid var(--line-2); border-radius:10px; padding:3px"] { border:3px solid var(--ink) !important; background:#07102a !important; }
+  #auth-view [style*="border:1px solid var(--line-2); border-radius:10px; padding:3px"] { border:3px solid var(--ink) !important; background:#120d33 !important; }
   #offline-banner { border:3px solid var(--ink) !important; box-shadow:3px 3px 0 var(--ink); font-family:'Bangers',cursive; letter-spacing:0.06em; font-size:15px; }
   #main-display-video { border-radius:10px; }
   #terminal-view > div[style*="height:150px"] { border:4px solid var(--ink) !important; box-shadow:5px 5px 0 var(--err); border-radius:12px !important; }
@@ -1426,65 +1427,11 @@ const htmlTemplate = `<!DOCTYPE html>
   ::-webkit-scrollbar-thumb:hover { background:var(--accent-2); }
   ::selection { background:var(--err); color:#fff; }
   @media (prefers-reduced-motion: reduce) { .card, .card-elevated { animation:none; } .btn, .nav-link, .shop-item, .opt-row { transition:none; } }
-
-  /* ===== Hiasan khas Naruto (murni CSS) ===== */
-  .app-shell { z-index:1; }
-  .topbar .brand-mark { background:linear-gradient(135deg,#1e3a8a,#2563eb); box-shadow:3px 3px 0 var(--accent); }
-  .topbar .brand-mark svg { display:none; }
-  .topbar .brand-mark::before { content:'🍥'; font-size:20px; line-height:1; transform:rotate(6deg); }
-  .brand-text { text-shadow:2px 2px 0 var(--ink), 3px 3px 0 #1e3a8a; }
-
-  .naruto-banner {
-    position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; gap:10px;
-    margin:0 0 12px 0; padding:8px 12px; border:3px solid var(--ink); border-radius:12px;
-    background:linear-gradient(135deg,#ff8a00 0%,#ff5a00 55%,#ff8a00 100%);
-    box-shadow:4px 4px 0 var(--ink), 4px 4px 0 2px rgba(56,189,248,0.55);
-  }
-  .naruto-banner::before {
-    content:''; position:absolute; top:0; bottom:0; width:60px; left:-80px;
-    background:linear-gradient(100deg, transparent, rgba(255,255,255,0.45), transparent);
-    animation:narutoShine 3.6s ease-in-out infinite;
-  }
-  .naruto-banner-text {
-    font-family:'Bangers','Comic Neue',cursive; font-size:24px; letter-spacing:0.12em; line-height:1; color:#fff7e6;
-    text-shadow:2px 2px 0 var(--ink), 3px 3px 0 #1e3a8a; white-space:nowrap;
-  }
-  .naruto-banner-sub {
-    position:relative; font-family:'Bangers','Comic Neue',cursive; letter-spacing:0.1em; font-size:11px; color:var(--ink);
-    text-align:center; width:100%; margin-top:-2px;
-  }
-  .naruto-banner-col { display:flex; flex-direction:column; align-items:center; gap:2px; position:relative; }
-  .naruto-banner-icon { font-size:22px; line-height:1; filter:drop-shadow(2px 2px 0 var(--ink)); }
-  @keyframes narutoShine { 0% { left:-80px; } 55%,100% { left:110%; } }
-
-  body::after {
-    content:''; position:fixed; right:-80px; bottom:-80px; width:250px; height:250px; border-radius:50%;
-    pointer-events:none; z-index:0; opacity:0.16;
-    background:
-      radial-gradient(circle at 50% 50%, #000 0 9%, transparent 10%),
-      radial-gradient(circle at 50% 50%, transparent 0 34%, #000 35% 37%, transparent 38%),
-      radial-gradient(circle at 50% 21%, #000 0 6.5%, transparent 7.5%),
-      radial-gradient(circle at 75% 63%, #000 0 6.5%, transparent 7.5%),
-      radial-gradient(circle at 25% 63%, #000 0 6.5%, transparent 7.5%),
-      radial-gradient(circle, #e11d2e 0 62%, #7f0d17 100%);
-    animation:sharinganSpin 22s linear infinite;
-  }
-  @keyframes sharinganSpin { to { transform:rotate(360deg); } }
-  .toast-info { background:linear-gradient(135deg,#ff8a00,#ff6a00); }
-  @media (prefers-reduced-motion: reduce) { .naruto-banner::before, body::after { animation:none; } }
 </style>
 </head>
 <body>
 <div id="toast-container"></div>
 <div class="app-shell">
-  <div class="naruto-banner">
-    <span class="naruto-banner-icon">🍥</span>
-    <div class="naruto-banner-col">
-      <div class="naruto-banner-text">BANGGUS X NARUTO</div>
-      <div class="naruto-banner-sub">Dattebayo! • Hidden Leaf Edition</div>
-    </div>
-    <span class="naruto-banner-icon">🍃</span>
-  </div>
   <div class="topbar">
     <div style="display:flex; align-items:center; gap:10px;">
       <div class="brand-mark">
@@ -1527,8 +1474,8 @@ const htmlTemplate = `<!DOCTYPE html>
     <div class="nav-section-label">Fitur</div>
     <button onclick="switchView('generator')" data-nav="generator" class="nav-link active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Alight Motion</button>
     <button onclick="switchView('netflix')" data-nav="netflix" class="nav-link netflix-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/></svg>Netflix Token</button>
-    <button onclick="switchView('hdfoto')" data-nav="hdfoto" class="nav-link hd-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>HD Foto</button>
-    <button onclick="switchView('apk')" data-nav="apk" class="nav-link apk-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>Build APK</button>
+    <button onclick="switchView('hdfoto')" data-nav="hdfoto" class="nav-link hd-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>HD Foto<span class="badge badge-ok" style="margin-left:auto; font-size:9px; padding:1px 6px;">NEW</span></button>
+    <button onclick="switchView('apk')" data-nav="apk" class="nav-link apk-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>Build APK<span class="badge badge-ok" style="margin-left:auto; font-size:9px; padding:1px 6px;">NEW</span></button>
     <button onclick="switchView('orders')" data-nav="orders" class="nav-link orders-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>Orderan Saya</button>
     <div class="nav-section-label">Akun</div>
     <button onclick="switchView('vipshop')" data-nav="vipshop" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>Beli VIP<span class="badge badge-warn" style="margin-left:auto; font-size:9px; padding:1px 6px;">HOT</span></button>
