@@ -49,6 +49,19 @@ const qrPendingIds = new Set();
 const ONLINE_TIMEOUT = 45 * 1000;
 const ONLINE_CLEANUP_INTERVAL = 60 * 1000;
 
+// ====== KONFIGURASI PIN ADMIN ======
+// PIN sebaiknya disimpan di environment variable ADMIN_PIN (nilai di bawah hanya cadangan)
+const ADMIN_PIN = String(process.env.ADMIN_PIN || '210310');
+const ADMIN_PIN_MAX_ATTEMPTS = 5;
+const ADMIN_PIN_LOCK_MS = 5 * 60 * 1000;
+const adminPinAttempts = new Map();
+const adminSessionTokens = new Map();
+function isAdminPinValid(pin) {
+  const a = crypto.createHash('sha256').update(String(pin || '')).digest();
+  const b = crypto.createHash('sha256').update(ADMIN_PIN).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
 // ====== KONFIGURASI BONUS QUOTA EXPIRY ======
 const BONUS_EXPIRY_MS = 2 * 24 * 60 * 60 * 1000;
 const BASE_QUOTA = 2;
@@ -1520,6 +1533,7 @@ const htmlTemplate = `<!DOCTYPE html>
       <div id="auth-form-container" class="auth-tab-content" style="display:flex; flex-direction:column; gap:12px;">
         <div><label class="field-label">Username</label><input type="text" id="auth-username" placeholder="username_kamu" class="inp mono"></div>
         <div><label class="field-label">Password</label><input type="password" id="auth-password" placeholder="••••••••" class="inp"></div>
+        <div id="auth-pin-container" class="hide"><label class="field-label">PIN Admin</label><input type="password" id="auth-pin" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="••••••" class="inp mono"></div>
         <div id="email-field-container" class="hide">
           <p style="font-size:10.5px; color:var(--warn); margin:0;">1 perangkat hanya bisa mendaftar 1 akun</p>
         </div>
@@ -3379,17 +3393,28 @@ function switchAuthTab(mode) {
   } else {
     ind.style.transform = 'translateX(100%)'; regBtn.style.color = 'white'; loginBtn.style.color = 'var(--text-1)';
     emailField.classList.remove('hide'); btnText.innerText = 'Daftar';
+    const pinBox = document.getElementById('auth-pin-container'); if (pinBox) pinBox.classList.add('hide');
   }
 }
 
 async function handleAuthAction() {
   const username = document.getElementById('auth-username').value.trim();
   const password = document.getElementById('auth-password').value.trim();
+  const pinContainer = document.getElementById('auth-pin-container');
+  const pinInput = document.getElementById('auth-pin');
+  const pinVisible = pinContainer && !pinContainer.classList.contains('hide');
+  const pin = pinInput ? pinInput.value.trim() : '';
   const formContainer = document.getElementById('auth-form-container');
   if (!username || !password) {
     formContainer.classList.add('shake-error');
     setTimeout(() => formContainer.classList.remove('shake-error'), 500);
     return showToast('Username dan password wajib!', 'error');
+  }
+  if (currentAuthMode === 'login' && pinVisible && !pin) {
+    formContainer.classList.add('shake-error');
+    setTimeout(() => formContainer.classList.remove('shake-error'), 500);
+    if (pinInput) pinInput.focus();
+    return showToast('Masukkan PIN admin!', 'error');
   }
   let deviceToken = localStorage.getItem('am_device_token');
   if (currentAuthMode === 'register' && deviceToken) {
@@ -3403,11 +3428,13 @@ async function handleAuthAction() {
   btn.disabled = true;
   document.getElementById('auth-btn-text').innerText = '';
   try {
-    const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, deviceToken }) });
+    const res = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: currentAuthMode, username, password, deviceToken, pin: (currentAuthMode === 'login' && pinVisible) ? pin : undefined }) });
     const data = await res.json();
     if (data.success) {
       if (currentAuthMode === 'register' && data.deviceToken) localStorage.setItem('am_device_token', data.deviceToken);
       if (data.token) { localStorage.setItem('authToken', data.token); localStorage.setItem('savedUsername', data.username); }
+      if (pinInput) pinInput.value = '';
+      if (pinContainer) pinContainer.classList.add('hide');
       showToast(data.message, 'success');
       document.getElementById('auth-view').style.transition = 'opacity 0.3s';
       document.getElementById('auth-view').style.opacity = '0';
@@ -3416,6 +3443,10 @@ async function handleAuthAction() {
         document.getElementById('auth-view').style.opacity = '1';
       }, 300);
     } else {
+      if (data.needPin && pinContainer) {
+        pinContainer.classList.remove('hide');
+        if (pinInput) { pinInput.value = ''; setTimeout(() => pinInput.focus(), 50); }
+      }
       formContainer.classList.add('shake-error');
       setTimeout(() => formContainer.classList.remove('shake-error'), 500);
       showToast(data.message, 'error');
@@ -5862,6 +5893,8 @@ const server = http.createServer(async (req, res) => {
       await checkAndExpireBonusQuota(cleanUser);
       const existingUser = await getUserFromDb(cleanUser);
       if (!existingUser) return jsonResponse(res, 404, { success: false });
+      // Akun admin hanya boleh memulihkan sesi jika token berasal dari login yang sudah lolos PIN
+      if (existingUser.isAdmin && adminSessionTokens.get(token) !== cleanUser) return jsonResponse(res, 401, { success: false, message: 'Sesi admin berakhir, login ulang dengan PIN.' });
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
       if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
@@ -5872,7 +5905,7 @@ const server = http.createServer(async (req, res) => {
 
     } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
       const body = await readBody(req);
-      const { mode, username, password, deviceToken } = JSON.parse(body);
+      const { mode, username, password, deviceToken, pin } = JSON.parse(body);
       if (!username || !password) return jsonResponse(res, 400, { success: false, message: 'Username dan password wajib!' });
       const cleanUser = String(username).trim().toLowerCase();
       if (!cleanUser || /[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false, message: 'Username tidak boleh mengandung spasi atau karakter . # $ [ ] /' });
@@ -5887,6 +5920,28 @@ const server = http.createServer(async (req, res) => {
         return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: fakeAuthToken });
       } else {
         if (existingUser && existingUser.password === password) {
+          // ===== PIN ADMIN: akun admin wajib memasukkan PIN setelah username & password benar =====
+          let adminToken = null;
+          if (existingUser.isAdmin) {
+            const nowPin = Date.now();
+            const att = adminPinAttempts.get(cleanUser) || { count: 0, lockUntil: 0 };
+            if (att.lockUntil > nowPin) {
+              const sisa = Math.ceil((att.lockUntil - nowPin) / 60000);
+              return jsonResponse(res, 429, { success: false, needPin: true, message: 'Terlalu banyak percobaan PIN. Coba lagi ' + sisa + ' menit lagi.' });
+            }
+            if (pin === undefined || pin === null || String(pin).trim() === '') {
+              return jsonResponse(res, 401, { success: false, needPin: true, message: 'Akun admin terdeteksi. Masukkan PIN admin!' });
+            }
+            if (!isAdminPinValid(String(pin).trim())) {
+              att.count += 1;
+              if (att.count >= ADMIN_PIN_MAX_ATTEMPTS) { att.count = 0; att.lockUntil = nowPin + ADMIN_PIN_LOCK_MS; }
+              adminPinAttempts.set(cleanUser, att);
+              return jsonResponse(res, 401, { success: false, needPin: true, message: 'PIN admin salah!' });
+            }
+            adminPinAttempts.delete(cleanUser);
+            adminToken = 'token_' + crypto.randomBytes(24).toString('hex');
+            adminSessionTokens.set(adminToken, cleanUser);
+          }
           await checkAndExpireBonusQuota(cleanUser);
           existingUser = await getUserFromDb(cleanUser);
           const now = Date.now();
@@ -5895,7 +5950,7 @@ const server = http.createServer(async (req, res) => {
           if (now - existingUser.lastResetTime >= twentyFourHours) { existingUser.activatedEmails = []; existingUser.lastResetTime = now; await saveUserToDb(cleanUser, existingUser); }
           const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
           const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
-          const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
+          const fakeAuthToken = adminToken || ('token_' + Math.random().toString(36).substring(2) + Date.now());
           return jsonResponse(res, 200, { success: true, message: 'Login berhasil!', username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus, token: fakeAuthToken });
         }
         return jsonResponse(res, 401, { success: false, message: 'Username atau password salah!' });
