@@ -1044,7 +1044,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>AM PREMIUM • BANGGUS</title>
+<title>AM PREMIUM • BANGGUS X NARUTO</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Bangers&family=Comic+Neue:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
@@ -1251,29 +1251,28 @@ const htmlTemplate = `<!DOCTYPE html>
   .notif-toggle svg { width:14px; height:14px; }
 
   /* ============================================================
-     TEMA KOMIK (POP-ART) - hanya tampilan, semua fitur tetap sama
+     TEMA NARUTO (KONOHA) - hanya tampilan, semua fitur tetap sama
      ============================================================ */
   :root {
-    --bg-0: #140f3a; --bg-1: #211a5a; --bg-2: #2c2475;
-    --line: #07041c; --line-2: #07041c;
-    --text-0: #fff8e7; --text-1: #e4dcc0; --text-2: #a9a1d6;
-    --accent: #ffd23f; --accent-2: #ffb700; --accent-soft: rgba(255,210,63,0.16);
+    --bg-0: #0a1330; --bg-1: #11224d; --bg-2: #1a3170;
+    --line: #060b1f; --line-2: #060b1f;
+    --text-0: #fff4e0; --text-1: #f1dfbd; --text-2: #9fb2e6;
+    --accent: #ff8a00; --accent-2: #ff6a00; --accent-soft: rgba(255,138,0,0.18);
     --ok: #3ddc84; --ok-soft: rgba(61,220,132,0.16);
     --warn: #ff9f1c; --warn-soft: rgba(255,159,28,0.18);
-    --err: #ff4d6d; --err-soft: rgba(255,77,109,0.18);
-    --info: #4cc9f0; --info-soft: rgba(76,201,240,0.16);
+    --err: #ff3b4e; --err-soft: rgba(255,59,78,0.18);
+    --info: #38bdf8; --info-soft: rgba(56,189,248,0.16);
     --netflix: #e50914;
-    --ink: #07041c;
+    --ink: #060b1f;
   }
   html, body { font-family:'Comic Neue','Comic Sans MS',system-ui,sans-serif; font-size:14.5px; font-weight:700; }
   body {
-    background-color:#140f3a;
+    background-color:#0a1330;
     background-image:
-      radial-gradient(rgba(255,210,63,0.16) 1.6px, transparent 2px),
-      radial-gradient(rgba(255,77,109,0.12) 1.4px, transparent 1.8px),
-      linear-gradient(180deg, #1b1450 0%, #140f3a 60%, #0d0a2b 100%);
-    background-size:16px 16px, 16px 16px, 100% 100%;
-    background-position:0 0, 8px 8px, 0 0;
+      radial-gradient(circle at 85% 8%, rgba(255,138,0,0.28) 0, transparent 38%),
+      radial-gradient(circle at 10% 92%, rgba(56,189,248,0.16) 0, transparent 40%),
+      repeating-linear-gradient(135deg, rgba(255,138,0,0.045) 0 2px, transparent 2px 22px),
+      linear-gradient(180deg, #11265c 0%, #0a1330 60%, #060b1f 100%);
     background-attachment:fixed;
   }
   .display-font, .brand-text, .section-head, .stat-label, .nav-section-label, .btn, .badge, .field-label, .poll-title, .toast, .brand-sub {
@@ -1288,22 +1287,22 @@ const htmlTemplate = `<!DOCTYPE html>
 
   .card, .card-elevated {
     background:var(--bg-1); border:3px solid var(--ink); border-radius:14px;
-    box-shadow:5px 5px 0 var(--ink), 5px 5px 0 2px rgba(255,210,63,0.55);
+    box-shadow:5px 5px 0 var(--ink), 5px 5px 0 2px rgba(255,138,0,0.55);
     animation:comicPop 0.35s cubic-bezier(0.34,1.56,0.64,1);
   }
-  .card-elevated { background:linear-gradient(135deg, #2c2475 0%, #211a5a 100%); position:relative; }
+  .card-elevated { background:linear-gradient(135deg, #1a3170 0%, #11224d 100%); position:relative; }
   @keyframes comicPop { 0% { opacity:0; transform:scale(0.94) rotate(-0.6deg); } 100% { opacity:1; transform:scale(1) rotate(0); } }
 
   #auth-view::before {
-    content:'NEW ISSUE #1!'; position:absolute; top:-14px; right:-6px; padding:4px 12px;
-    background:var(--err); color:#fff; border:3px solid var(--ink); border-radius:8px;
-    font-family:'Bangers',cursive; letter-spacing:0.08em; font-size:14px; transform:rotate(5deg);
-    box-shadow:3px 3px 0 var(--ink); z-index:2;
+    content:'BANGGUS X NARUTO'; position:absolute; top:-14px; right:-6px; padding:4px 12px;
+    background:linear-gradient(135deg,#ff8a00,#ff5a00); color:#fff; border:3px solid var(--ink); border-radius:8px; text-shadow:1px 1px 0 var(--ink);
+    font-family:'Bangers',cursive; letter-spacing:0.08em; font-size:14px; transform:rotate(4deg);
+    box-shadow:3px 3px 0 var(--ink); z-index:2; white-space:nowrap;
   }
-  #auth-view h1::after { content:' POW!'; color:var(--err); }
+  #auth-view h1::after { content:' 🍥'; color:var(--accent); }
   #terminal-view > .card:first-of-type, #terminal-view > div:nth-child(2) { position:relative; }
 
-  .inp { background:#120d33; border:3px solid var(--ink); border-radius:10px; color:var(--text-0); font-family:'Comic Neue',sans-serif; font-weight:700; box-shadow:inset 2px 2px 0 rgba(255,255,255,0.06); }
+  .inp { background:#07102a; border:3px solid var(--ink); border-radius:10px; color:var(--text-0); font-family:'Comic Neue',sans-serif; font-weight:700; box-shadow:inset 2px 2px 0 rgba(255,255,255,0.06); }
   .inp:focus { border-color:var(--accent); box-shadow:3px 3px 0 var(--accent); }
   .inp.mono { font-family:'IBM Plex Mono',monospace; font-weight:600; }
   label.field-label { color:var(--accent); font-size:13px; }
@@ -1313,23 +1312,23 @@ const htmlTemplate = `<!DOCTYPE html>
     box-shadow:4px 4px 0 var(--ink); text-transform:uppercase; font-size:15px; letter-spacing:0.07em;
     transition:transform 0.08s, box-shadow 0.08s, background 0.12s;
   }
-  .btn:hover:not(:disabled) { background:#ffe27a; transform:translate(-1px,-1px) rotate(-0.6deg); box-shadow:5px 5px 0 var(--ink); }
+  .btn:hover:not(:disabled) { background:#ffb347; transform:translate(-1px,-1px) rotate(-0.6deg); box-shadow:5px 5px 0 var(--ink); }
   .btn:active:not(:disabled) { transform:translate(3px,3px); box-shadow:1px 1px 0 var(--ink); }
   .btn-ghost { background:var(--bg-2); color:var(--text-0); border-color:var(--ink); }
-  .btn-ghost:hover:not(:disabled) { background:#3a3190; }
+  .btn-ghost:hover:not(:disabled) { background:#24408f; }
   .btn-ok { background:var(--ok); color:var(--ink); }
   .btn-ok:hover:not(:disabled) { background:#6af0a6; }
   .btn-err { background:var(--err); color:#fff; text-shadow:1px 1px 0 var(--ink); }
-  .btn-err:hover:not(:disabled) { background:#ff7a92; }
+  .btn-err:hover:not(:disabled) { background:#ff6b78; }
   .btn-info { background:var(--info); color:var(--ink); }
-  .btn-info:hover:not(:disabled) { background:#86dbf5; }
+  .btn-info:hover:not(:disabled) { background:#7dd3fc; }
   .btn-warn { background:var(--warn); color:var(--ink); }
   .btn-netflix { background:var(--netflix); color:#fff; text-shadow:1px 1px 0 var(--ink); }
   .btn-hd { background:linear-gradient(135deg,#22d3ee,#6366f1); color:#fff; text-shadow:1px 1px 0 var(--ink); }
   .btn-apk { background:linear-gradient(135deg,#34d399,#10b981); color:var(--ink); text-shadow:none; }
   .btn-sm { font-size:14px; }
   .btn-xs { font-size:12.5px; box-shadow:2px 2px 0 var(--ink); border-width:2.5px; }
-  .btn-loading::after { border-color:rgba(7,4,28,0.3); border-top-color:var(--ink); }
+  .btn-loading::after { border-color:rgba(6,11,31,0.3); border-top-color:var(--ink); }
   .user-filter-btn[style*="var(--accent)"] { color:var(--ink) !important; }
 
   .badge { border:2px solid var(--ink); border-radius:8px; box-shadow:2px 2px 0 var(--ink); font-size:12px; }
@@ -1342,7 +1341,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .online-pill { background:var(--ok); color:var(--ink); border:2.5px solid var(--ink); box-shadow:2px 2px 0 var(--ink); font-family:'Bangers',cursive; letter-spacing:0.06em; font-size:13px; }
   .online-pill .online-dot { background:var(--ink); box-shadow:none; }
 
-  #nav-drawer { background:var(--bg-1); border-left:4px solid var(--ink); box-shadow:-6px 0 0 rgba(255,210,63,0.45); }
+  #nav-drawer { background:var(--bg-1); border-left:4px solid var(--ink); box-shadow:-6px 0 0 rgba(255,138,0,0.45); }
   .nav-link { color:var(--text-0); border:2.5px solid transparent; border-radius:10px; font-family:'Bangers',cursive; letter-spacing:0.06em; font-size:16px; font-weight:400; }
   .nav-link:hover { background:var(--bg-2); border-color:var(--ink); transform:translateX(3px) rotate(-0.5deg); }
   .nav-link.active { background:var(--accent); color:var(--ink); border-color:var(--ink); box-shadow:3px 3px 0 var(--ink); }
@@ -1355,7 +1354,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .stat { background:var(--bg-2); border:3px solid var(--ink); border-radius:12px; box-shadow:3px 3px 0 var(--ink); }
   .stat-label { color:var(--accent); font-size:12.5px; }
   .stat-value { font-family:'Bangers',cursive; font-weight:400; letter-spacing:0.05em; font-size:20px; }
-  .divider { height:0; background:none; border-top:3px dashed rgba(255,210,63,0.5); }
+  .divider { height:0; background:none; border-top:3px dashed rgba(255,138,0,0.5); }
   .section-head { color:var(--accent); font-size:16px; text-shadow:2px 2px 0 var(--ink); }
 
   .toast { border:3px solid var(--ink) !important; box-shadow:5px 5px 0 var(--ink); font-size:15px; border-radius:14px; }
@@ -1365,13 +1364,13 @@ const htmlTemplate = `<!DOCTYPE html>
   .toast-netflix { background:var(--netflix); color:#fff; text-shadow:1px 1px 0 var(--ink); }
   .toast-order { background:var(--info); color:var(--ink); }
 
-  .prog { height:14px; background:#120d33; border:2.5px solid var(--ink); border-radius:999px; }
+  .prog { height:14px; background:#07102a; border:2.5px solid var(--ink); border-radius:999px; }
   .prog-fill { background:repeating-linear-gradient(45deg, var(--accent), var(--accent) 8px, var(--accent-2) 8px, var(--accent-2) 16px); }
   .dropzone, #hd-dropzone { border:3px dashed var(--accent) !important; border-radius:12px; }
   .dropzone:hover, .dropzone.dragover { background:var(--accent-soft); }
 
   /* Chat: balon bicara komik */
-  .chat-wrap { background:#120d33; border:3px solid var(--ink); border-radius:14px; box-shadow:4px 4px 0 var(--ink); }
+  .chat-wrap { background:#07102a; border:3px solid var(--ink); border-radius:14px; box-shadow:4px 4px 0 var(--ink); }
   .chat-msg { border:2.5px solid var(--ink); box-shadow:3px 3px 0 var(--ink); font-size:14px; position:relative; }
   .chat-msg-them { background:#fff8e7; color:var(--ink); border-radius:16px 16px 16px 3px; }
   .chat-msg-them .chat-msg-header, .chat-msg-them .chat-time { color:var(--ink); }
@@ -1380,24 +1379,24 @@ const htmlTemplate = `<!DOCTYPE html>
   .chat-msg-header { font-family:'Bangers',cursive; letter-spacing:0.05em; font-weight:400; font-size:13px; }
   .chat-input-bar { background:var(--bg-1); border-top:3px solid var(--ink); }
   .chat-input-bar button { background:var(--err); border:3px solid var(--ink); box-shadow:3px 3px 0 var(--ink); color:#fff; }
-  .chat-input-bar button:hover { background:#ff7a92; }
+  .chat-input-bar button:hover { background:#ff6b78; }
   .react-chip { border:2px solid var(--ink); background:var(--bg-2); color:var(--text-0); box-shadow:2px 2px 0 var(--ink); }
   .chat-msg-them .react-chip { background:#ffe9b0; color:var(--ink); }
   .react-chip.mine { background:var(--accent); color:var(--ink); }
   .react-picker { background:var(--bg-1); border:2.5px solid var(--ink); box-shadow:3px 3px 0 var(--ink); }
-  .poll-opt { border:2.5px solid var(--ink); background:#120d33; box-shadow:2px 2px 0 var(--ink); }
+  .poll-opt { border:2.5px solid var(--ink); background:#07102a; box-shadow:2px 2px 0 var(--ink); }
   .poll-opt.chosen { border-color:var(--accent); }
-  .poll-fill { background:rgba(255,210,63,0.3); }
+  .poll-fill { background:rgba(255,138,0,0.3); }
   .poll-form { border:3px solid var(--ink); box-shadow:3px 3px 0 var(--ink); }
   .poll-admin-btn { border:2.5px solid var(--ink); background:var(--bg-2); color:var(--text-0); box-shadow:2px 2px 0 var(--ink); }
 
   .opt-row, .hist-item, .shop-item { border:3px solid var(--ink); border-radius:12px; box-shadow:3px 3px 0 var(--ink); }
-  .opt-row:hover { background:#3a3190; transform:translate(-1px,-1px); }
+  .opt-row:hover { background:#24408f; transform:translate(-1px,-1px); }
   .opt-row.selected { border-color:var(--accent); background:var(--accent-soft); box-shadow:3px 3px 0 var(--accent); }
   .opt-row.netflix.selected { border-color:var(--netflix); box-shadow:3px 3px 0 var(--netflix); }
   .shop-item:hover { border-color:var(--accent); transform:translate(-2px,-2px) rotate(-0.5deg); box-shadow:5px 5px 0 var(--accent); }
   .hist-item-order-id { background:var(--info); color:var(--ink); border:2px solid var(--ink); }
-  .link-line { border:2.5px solid var(--ink); background:#120d33; }
+  .link-line { border:2.5px solid var(--ink); background:#07102a; }
   .dana-card { border:3px solid var(--ink); box-shadow:4px 4px 0 #0084ff; }
   .dana-chip { border:2.5px solid var(--ink); font-family:'Bangers',cursive; font-weight:400; letter-spacing:0.08em; }
   .dana-copy { border:3px solid var(--ink); box-shadow:3px 3px 0 var(--ink); font-family:'Bangers',cursive; font-weight:400; letter-spacing:0.06em; font-size:14px; }
@@ -1413,7 +1412,7 @@ const htmlTemplate = `<!DOCTYPE html>
   .notif-toggle.blocked { background:var(--err); color:#fff; }
   #tab-indicator { background:var(--err) !important; border:2.5px solid var(--ink); box-shadow:2px 2px 0 var(--ink); }
   #tab-login-btn, #tab-reg-btn { font-family:'Bangers',cursive !important; letter-spacing:0.08em; font-weight:400 !important; font-size:15px !important; }
-  #auth-view [style*="border:1px solid var(--line-2); border-radius:10px; padding:3px"] { border:3px solid var(--ink) !important; background:#120d33 !important; }
+  #auth-view [style*="border:1px solid var(--line-2); border-radius:10px; padding:3px"] { border:3px solid var(--ink) !important; background:#07102a !important; }
   #offline-banner { border:3px solid var(--ink) !important; box-shadow:3px 3px 0 var(--ink); font-family:'Bangers',cursive; letter-spacing:0.06em; font-size:15px; }
   #main-display-video { border-radius:10px; }
   #terminal-view > div[style*="height:150px"] { border:4px solid var(--ink) !important; box-shadow:5px 5px 0 var(--err); border-radius:12px !important; }
@@ -1428,230 +1427,64 @@ const htmlTemplate = `<!DOCTYPE html>
   ::selection { background:var(--err); color:#fff; }
   @media (prefers-reduced-motion: reduce) { .card, .card-elevated { animation:none; } .btn, .nav-link, .shop-item, .opt-row { transition:none; } }
 
-  /* ============================================================
-     TEMA ANIME SAKURA - hanya tampilan, semua fitur tetap sama
-     ============================================================ */
-  :root {
-    --bg-0:#0f0a2a; --bg-1:#1b1445; --bg-2:#271f5c;
-    --line:rgba(255,182,230,0.20); --line-2:rgba(255,182,230,0.30);
-    --text-0:#fff5fb; --text-1:#e8d9f7; --text-2:#aa9dd2;
-    --accent:#ff8fcf; --accent-2:#c084fc; --accent-soft:rgba(255,143,207,0.16);
-    --ok:#7ef0c0; --ok-soft:rgba(126,240,192,0.16);
-    --warn:#ffd27a; --warn-soft:rgba(255,210,122,0.18);
-    --err:#ff7a9c; --err-soft:rgba(255,122,156,0.18);
-    --info:#7cd4ff; --info-soft:rgba(124,212,255,0.16);
-    --netflix:#e50914; --ink:#2b1048;
-    --glow:0 0 18px rgba(255,143,207,0.35);
-    --grad:linear-gradient(135deg,#ff8fcf 0%,#c084fc 55%,#8fb8ff 100%);
+  /* ===== Hiasan khas Naruto (murni CSS) ===== */
+  .app-shell { z-index:1; }
+  .topbar .brand-mark { background:linear-gradient(135deg,#1e3a8a,#2563eb); box-shadow:3px 3px 0 var(--accent); }
+  .topbar .brand-mark svg { display:none; }
+  .topbar .brand-mark::before { content:'🍥'; font-size:20px; line-height:1; transform:rotate(6deg); }
+  .brand-text { text-shadow:2px 2px 0 var(--ink), 3px 3px 0 #1e3a8a; }
+
+  .naruto-banner {
+    position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; gap:10px;
+    margin:0 0 12px 0; padding:8px 12px; border:3px solid var(--ink); border-radius:12px;
+    background:linear-gradient(135deg,#ff8a00 0%,#ff5a00 55%,#ff8a00 100%);
+    box-shadow:4px 4px 0 var(--ink), 4px 4px 0 2px rgba(56,189,248,0.55);
   }
-  html, body { font-family:'Zen Maru Gothic','M PLUS Rounded 1c','Nunito',system-ui,sans-serif; font-size:14.5px; font-weight:500; }
-  body {
+  .naruto-banner::before {
+    content:''; position:absolute; top:0; bottom:0; width:60px; left:-80px;
+    background:linear-gradient(100deg, transparent, rgba(255,255,255,0.45), transparent);
+    animation:narutoShine 3.6s ease-in-out infinite;
+  }
+  .naruto-banner-text {
+    font-family:'Bangers','Comic Neue',cursive; font-size:24px; letter-spacing:0.12em; line-height:1; color:#fff7e6;
+    text-shadow:2px 2px 0 var(--ink), 3px 3px 0 #1e3a8a; white-space:nowrap;
+  }
+  .naruto-banner-sub {
+    position:relative; font-family:'Bangers','Comic Neue',cursive; letter-spacing:0.1em; font-size:11px; color:var(--ink);
+    text-align:center; width:100%; margin-top:-2px;
+  }
+  .naruto-banner-col { display:flex; flex-direction:column; align-items:center; gap:2px; position:relative; }
+  .naruto-banner-icon { font-size:22px; line-height:1; filter:drop-shadow(2px 2px 0 var(--ink)); }
+  @keyframes narutoShine { 0% { left:-80px; } 55%,100% { left:110%; } }
+
+  body::after {
+    content:''; position:fixed; right:-80px; bottom:-80px; width:250px; height:250px; border-radius:50%;
+    pointer-events:none; z-index:0; opacity:0.16;
     background:
-      radial-gradient(1000px 560px at 88% -8%, rgba(192,132,252,0.38), transparent 62%),
-      radial-gradient(820px 520px at -10% 18%, rgba(255,143,207,0.24), transparent 62%),
-      radial-gradient(800px 560px at 50% 112%, rgba(124,212,255,0.20), transparent 62%),
-      linear-gradient(180deg,#1d1350 0%,#130d37 55%,#0b0722 100%);
-    background-attachment:fixed; background-size:auto;
+      radial-gradient(circle at 50% 50%, #000 0 9%, transparent 10%),
+      radial-gradient(circle at 50% 50%, transparent 0 34%, #000 35% 37%, transparent 38%),
+      radial-gradient(circle at 50% 21%, #000 0 6.5%, transparent 7.5%),
+      radial-gradient(circle at 75% 63%, #000 0 6.5%, transparent 7.5%),
+      radial-gradient(circle at 25% 63%, #000 0 6.5%, transparent 7.5%),
+      radial-gradient(circle, #e11d2e 0 62%, #7f0d17 100%);
+    animation:sharinganSpin 22s linear infinite;
   }
-  #anime-sky { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
-  #anime-sky::before {
-    content:''; position:absolute; inset:0; opacity:0.75;
-    background-image:
-      radial-gradient(1.6px 1.6px at 18px 26px, #fff, transparent),
-      radial-gradient(1.2px 1.2px at 92px 74px, #ffd9f1, transparent),
-      radial-gradient(1.8px 1.8px at 150px 20px, #fff, transparent),
-      radial-gradient(1.2px 1.2px at 60px 130px, #cfe6ff, transparent),
-      radial-gradient(1.5px 1.5px at 180px 150px, #ffe3f5, transparent);
-    background-size:210px 180px; animation:twinkle 5s ease-in-out infinite alternate;
-  }
-  #anime-sky::after {
-    content:''; position:absolute; top:34px; right:-26px; width:150px; height:150px; border-radius:50%;
-    background:radial-gradient(circle at 36% 34%, #fffafd 0%, #ffd6f0 52%, rgba(255,214,240,0) 72%);
-    box-shadow:0 0 90px 34px rgba(255,143,207,0.22); opacity:0.5; animation:moonFloat 9s ease-in-out infinite;
-  }
-  #anime-sakura { position:fixed; top:0; left:0; z-index:0; pointer-events:none; }
-  @keyframes twinkle { 0% { opacity:0.35; } 100% { opacity:0.85; } }
-  @keyframes moonFloat { 0%,100% { transform:translateY(0); } 50% { transform:translateY(10px); } }
-  @keyframes sakuraRise { 0% { opacity:0; transform:translateY(10px) scale(0.98); } 100% { opacity:1; transform:translateY(0) scale(1); } }
-  @keyframes shimmerMove { 0% { background-position:0% 50%; } 100% { background-position:200% 50%; } }
-  @keyframes sparkBurst { 0% { opacity:1; transform:translate(0,0) scale(1) rotate(0deg); } 100% { opacity:0; transform:translate(var(--dx),var(--dy)) scale(0.2) rotate(200deg); } }
-  @keyframes tagFloat { 0%,100% { transform:rotate(4deg) translateY(0); } 50% { transform:rotate(4deg) translateY(-3px); } }
-
-  .display-font, .brand-text, .section-head, .stat-label, .nav-section-label, .btn, .badge, .field-label, .poll-title, .toast, .brand-sub,
-  .nav-link, .online-pill, .chat-msg-header, .dana-chip, .dana-copy, .hd-tag, .notif-toggle, .stat-value, .countdown-num,
-  #tab-login-btn, #tab-reg-btn, #offline-banner, .brand-mark span {
-    font-family:'Fredoka','Zen Maru Gothic',system-ui,sans-serif !important; letter-spacing:0.02em;
-  }
-  .brand-text { font-size:21px; font-weight:700; background:linear-gradient(90deg,#ffb3de,#c9a8ff,#9fe0ff); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:transparent; text-shadow:none; }
-  .brand-sub { font-size:11px; color:var(--text-1); font-weight:500; letter-spacing:0.14em; }
-  .brand-mark { position:relative; background:var(--grad); border:2px solid rgba(255,255,255,0.55); border-radius:14px; box-shadow:var(--glow); transform:none; }
-  .brand-mark::before, .brand-mark::after { content:''; position:absolute; top:-8px; width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent; border-bottom:12px solid #ff8fcf; }
-  .brand-mark::before { left:2px; transform:rotate(-12deg); }
-  .brand-mark::after { right:2px; transform:rotate(12deg); border-bottom-color:#b78bff; }
-  .brand-mark svg { stroke:#fff; }
-  .brand-mark span { color:#fff !important; }
-  .display-font {
-    font-size:30px !important; font-weight:700 !important; background:linear-gradient(90deg,#ffb3de,#c9a8ff,#9fe0ff);
-    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:transparent !important;
-    text-shadow:none !important; filter:drop-shadow(0 0 12px rgba(255,143,207,0.45));
-  }
-  #auth-view h1::after { content:' ✧'; color:#ffd1ec; }
-  #auth-view::before {
-    content:'✿ Youkoso! ✿'; position:absolute; top:-14px; right:-4px; padding:4px 14px; background:var(--grad); color:var(--ink);
-    border:1.5px solid rgba(255,255,255,0.7); border-radius:999px; font-family:'Fredoka',sans-serif; font-weight:600; font-size:13px;
-    letter-spacing:0.04em; transform:rotate(4deg); box-shadow:var(--glow); z-index:2; animation:tagFloat 4s ease-in-out infinite;
-  }
-
-  .card, .card-elevated {
-    background:linear-gradient(180deg, rgba(255,143,207,0.08), rgba(255,143,207,0) 38%), rgba(27,20,69,0.82);
-    border:1px solid var(--line-2); border-radius:20px;
-    box-shadow:0 10px 32px rgba(95,45,170,0.32), inset 0 1px 0 rgba(255,255,255,0.10);
-    animation:sakuraRise 0.45s ease-out;
-  }
-  .card-elevated { background:linear-gradient(135deg, rgba(192,132,252,0.20) 0%, rgba(255,143,207,0.08) 45%, rgba(27,20,69,0.85) 100%); }
-
-  .inp { background:rgba(10,6,32,0.62); border:1.5px solid var(--line-2); border-radius:14px; color:var(--text-0); font-family:'Zen Maru Gothic',sans-serif; font-weight:500; box-shadow:inset 0 2px 6px rgba(0,0,0,0.25); }
-  .inp:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(255,143,207,0.22), var(--glow); }
-  .inp.mono { font-family:'IBM Plex Mono',monospace; font-weight:500; }
-  label.field-label { color:#ffb3de; font-size:12px; font-weight:600; }
-
-  .btn {
-    color:var(--ink); background:linear-gradient(120deg,#ff8fcf,#c084fc,#ff8fcf); background-size:200% 200%;
-    border:1.5px solid rgba(255,255,255,0.45); border-radius:14px; text-transform:none; font-size:14px; font-weight:600; letter-spacing:0.02em;
-    box-shadow:0 5px 16px rgba(255,143,207,0.35), inset 0 1px 0 rgba(255,255,255,0.5); text-shadow:none;
-    transition:transform 0.15s, box-shadow 0.15s, filter 0.15s, background-position 0.5s;
-  }
-  .btn:hover:not(:disabled) { background:linear-gradient(120deg,#ff8fcf,#c084fc,#ff8fcf); background-size:200% 200%; background-position:100% 50%; filter:brightness(1.08); transform:translateY(-2px); box-shadow:0 9px 22px rgba(255,143,207,0.45), inset 0 1px 0 rgba(255,255,255,0.5); }
-  .btn:active:not(:disabled) { transform:translateY(1px); box-shadow:0 2px 8px rgba(255,143,207,0.3); }
-  .btn-ghost { background:rgba(255,255,255,0.07); color:var(--text-0); border:1.5px solid var(--line-2); box-shadow:none; }
-  .btn-ghost:hover:not(:disabled) { background:rgba(255,143,207,0.16); border-color:var(--accent); box-shadow:var(--glow); }
-  .btn-ok { background:linear-gradient(135deg,#34d399,#7ef0c0); color:#053a28; box-shadow:0 5px 16px rgba(52,211,153,0.35), inset 0 1px 0 rgba(255,255,255,0.5); }
-  .btn-ok:hover:not(:disabled) { background:linear-gradient(135deg,#34d399,#7ef0c0); }
-  .btn-err { background:linear-gradient(135deg,#ff5d8f,#ff8fa3); color:#fff; box-shadow:0 5px 16px rgba(255,93,143,0.38), inset 0 1px 0 rgba(255,255,255,0.4); }
-  .btn-err:hover:not(:disabled) { background:linear-gradient(135deg,#ff5d8f,#ff8fa3); }
-  .btn-info { background:linear-gradient(135deg,#5ec8ff,#a5a8ff); color:#0c2a4a; box-shadow:0 5px 16px rgba(94,200,255,0.35), inset 0 1px 0 rgba(255,255,255,0.5); }
-  .btn-info:hover:not(:disabled) { background:linear-gradient(135deg,#5ec8ff,#a5a8ff); }
-  .btn-warn { background:linear-gradient(135deg,#ffb84d,#ffd98a); color:#4a2a00; box-shadow:0 5px 16px rgba(255,184,77,0.35), inset 0 1px 0 rgba(255,255,255,0.5); }
-  .btn-warn:hover:not(:disabled) { background:linear-gradient(135deg,#ffb84d,#ffd98a); }
-  .btn-netflix { background:linear-gradient(135deg,#e50914,#ff5d6c); color:#fff; box-shadow:0 5px 16px rgba(229,9,20,0.4), inset 0 1px 0 rgba(255,255,255,0.35); }
-  .btn-netflix:hover:not(:disabled) { background:linear-gradient(135deg,#e50914,#ff5d6c); }
-  .btn-hd { background:linear-gradient(135deg,#22d3ee,#8b7cf6); color:#fff; box-shadow:0 5px 16px rgba(34,211,238,0.35), inset 0 1px 0 rgba(255,255,255,0.4); }
-  .btn-hd:hover:not(:disabled) { background:linear-gradient(135deg,#22d3ee,#8b7cf6); }
-  .btn-apk { background:linear-gradient(135deg,#34d399,#38bdf8); color:#052b2b; box-shadow:0 5px 16px rgba(52,211,153,0.35), inset 0 1px 0 rgba(255,255,255,0.5); }
-  .btn-apk:hover:not(:disabled) { background:linear-gradient(135deg,#34d399,#38bdf8); }
-  .btn-sm { font-size:13px; border-radius:12px; }
-  .btn-xs { font-size:12px; border-radius:10px; box-shadow:0 3px 10px rgba(255,143,207,0.28); border-width:1px; }
-  .btn-ghost.btn-xs, .btn-ghost.btn-sm { box-shadow:none; }
-  .btn-loading::after { border-color:rgba(43,16,72,0.3); border-top-color:var(--ink); }
-
-  .badge { border-radius:999px; box-shadow:none; font-size:11px; font-weight:600; border:1px solid transparent; }
-  .badge-ok { background:rgba(126,240,192,0.16); color:#9ff5d2; border-color:rgba(126,240,192,0.45); }
-  .badge-err { background:rgba(255,122,156,0.18); color:#ffa3bb; border-color:rgba(255,122,156,0.45); }
-  .badge-warn { background:rgba(255,210,122,0.16); color:#ffe0a1; border-color:rgba(255,210,122,0.45); }
-  .badge-info { background:rgba(124,212,255,0.16); color:#a9e4ff; border-color:rgba(124,212,255,0.45); }
-  .badge-accent { background:rgba(255,143,207,0.18); color:#ffb8e0; border-color:rgba(255,143,207,0.5); }
-  .badge-muted { background:rgba(255,255,255,0.07); color:var(--text-1); border-color:var(--line-2); }
-  .online-pill { background:rgba(126,240,192,0.16); color:#9ff5d2; border:1px solid rgba(126,240,192,0.5); box-shadow:none; font-size:12px; font-weight:600; }
-  .online-pill .online-dot { background:#7ef0c0; box-shadow:0 0 8px #7ef0c0; }
-
-  #nav-drawer { background:rgba(22,15,58,0.93); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); border-left:1px solid var(--line-2); box-shadow:-12px 0 44px rgba(120,60,200,0.38); }
-  #drawer-overlay { background:rgba(8,4,24,0.72) !important; }
-  .nav-link { color:var(--text-0); border:1px solid transparent; border-radius:14px; font-size:15px; font-weight:500; }
-  .nav-link:hover { background:rgba(255,143,207,0.13); border-color:var(--line-2); transform:translateX(4px); }
-  .nav-link.active { background:var(--grad); color:var(--ink); border-color:rgba(255,255,255,0.5); box-shadow:var(--glow); font-weight:600; }
-  .nav-link.netflix-nav.active { background:linear-gradient(135deg,#e50914,#ff5d6c); color:#fff; }
-  .nav-link.orders-nav.active { background:linear-gradient(135deg,#5ec8ff,#a5a8ff); color:#0c2a4a; }
-  .nav-link.hd-nav.active { background:linear-gradient(135deg,#22d3ee,#8b7cf6); color:#fff; }
-  .nav-link.apk-nav.active { background:linear-gradient(135deg,#34d399,#38bdf8); color:#052b2b; }
-  .nav-section-label { color:#c9a8ff; font-size:12px; font-weight:600; }
-  .nav-section-label::before { content:'✦ '; color:#ff8fcf; }
-
-  .stat { background:rgba(255,255,255,0.06); border:1px solid var(--line-2); border-radius:16px; box-shadow:inset 0 1px 0 rgba(255,255,255,0.08); }
-  .stat-label { color:#ffb3de; font-size:11px; font-weight:600; }
-  .stat-value { font-weight:600; font-size:18px; letter-spacing:0.03em; }
-  .divider { height:0; background:none; border-top:1px dashed rgba(255,182,230,0.35); }
-  .section-head { color:#ffb3de; font-size:13px; font-weight:600; text-shadow:none; }
-
-  .toast { border:1px solid rgba(255,255,255,0.35) !important; box-shadow:0 12px 34px rgba(0,0,0,0.45), var(--glow); font-size:13.5px; font-weight:600; border-radius:18px; }
-  .toast-success { background:linear-gradient(135deg,#34d399,#7ef0c0); color:#053a28; text-shadow:none; }
-  .toast-error { background:linear-gradient(135deg,#ff5d8f,#ff8fa3); color:#fff; text-shadow:none; }
-  .toast-info { background:var(--grad); color:var(--ink); }
-  .toast-netflix { background:linear-gradient(135deg,#e50914,#ff5d6c); color:#fff; text-shadow:none; }
-  .toast-order { background:linear-gradient(135deg,#5ec8ff,#a5a8ff); color:#0c2a4a; }
-
-  .prog { height:10px; background:rgba(255,255,255,0.08); border:1px solid var(--line-2); border-radius:999px; }
-  .prog-fill { background:linear-gradient(90deg,#ff8fcf,#c084fc,#8fd8ff,#ff8fcf); background-size:200% 100%; animation:shimmerMove 2.2s linear infinite; }
-  .dropzone, #hd-dropzone { border:2px dashed rgba(255,143,207,0.65) !important; border-radius:18px; background:rgba(255,143,207,0.05); }
-  .dropzone:hover, .dropzone.dragover { background:rgba(255,143,207,0.16); }
-
-  .chat-wrap { background:rgba(10,6,32,0.58); border:1px solid var(--line-2); border-radius:20px; box-shadow:0 10px 30px rgba(95,45,170,0.3); }
-  .chat-msg { border:1px solid var(--line-2); box-shadow:0 4px 14px rgba(0,0,0,0.25); font-size:14px; }
-  .chat-msg-them { background:rgba(255,255,255,0.10); color:var(--text-0); border-radius:18px 18px 18px 6px; }
-  .chat-msg-them .chat-msg-header, .chat-msg-them .chat-time { color:var(--text-1); }
-  .chat-msg-me { background:linear-gradient(135deg,#ff8fcf,#c084fc); color:var(--ink); border-color:rgba(255,255,255,0.5); border-radius:18px 18px 6px 18px; }
-  .chat-msg-poll { background:rgba(255,255,255,0.07); color:var(--text-0); border-color:var(--line-2); border-radius:18px; }
-  .chat-msg-header { font-size:13px; font-weight:600; }
-  .chat-input-bar { background:rgba(27,20,69,0.92); border-top:1px solid var(--line-2); }
-  .chat-input-bar button { background:var(--grad); border:1.5px solid rgba(255,255,255,0.5); box-shadow:var(--glow); color:var(--ink); }
-  .chat-input-bar button:hover { filter:brightness(1.1); background:var(--grad); }
-  .react-chip { border:1px solid var(--line-2); background:rgba(255,255,255,0.08); color:var(--text-0); box-shadow:none; }
-  .chat-msg-them .react-chip { background:rgba(255,255,255,0.12); color:var(--text-0); }
-  .react-chip.mine { background:rgba(255,143,207,0.3); color:#fff; border-color:var(--accent); }
-  .react-picker { background:rgba(27,20,69,0.97); border:1px solid var(--line-2); box-shadow:0 8px 24px rgba(0,0,0,0.4); }
-  .poll-opt { border:1px solid var(--line-2); background:rgba(10,6,32,0.5); box-shadow:none; }
-  .poll-opt.chosen { border-color:var(--accent); box-shadow:var(--glow); }
-  .poll-fill { background:rgba(255,143,207,0.28); }
-  .poll-form { border:1px solid var(--line-2); box-shadow:none; }
-  .poll-admin-btn { border:1px solid var(--line-2); background:rgba(255,255,255,0.07); color:var(--text-0); box-shadow:none; }
-
-  .opt-row, .hist-item, .shop-item { background:rgba(255,255,255,0.05); border:1px solid var(--line-2); border-radius:16px; box-shadow:0 4px 14px rgba(0,0,0,0.2); }
-  .opt-row:hover { background:rgba(255,143,207,0.12); transform:translateY(-1px); }
-  .opt-row.selected { border-color:var(--accent); background:rgba(255,143,207,0.16); box-shadow:var(--glow); }
-  .opt-row.netflix.selected { border-color:var(--netflix); box-shadow:0 0 18px rgba(229,9,20,0.4); }
-  .shop-item:hover { border-color:var(--accent); transform:translateY(-3px); box-shadow:0 10px 26px rgba(255,143,207,0.3); }
-  .hist-item-order-id { background:rgba(124,212,255,0.18); color:#a9e4ff; border:1px solid rgba(124,212,255,0.45); }
-  .link-line { border:1px solid var(--line-2); background:rgba(10,6,32,0.55); border-radius:12px; }
-  .dana-card { border:1px solid rgba(124,212,255,0.5); border-radius:18px; box-shadow:0 8px 26px rgba(0,132,255,0.32); }
-  .dana-chip { border:1px solid rgba(255,255,255,0.4); font-weight:600; letter-spacing:0.05em; }
-  .dana-copy { border:1.5px solid rgba(255,255,255,0.45); box-shadow:0 4px 14px rgba(0,132,255,0.35); font-weight:600; letter-spacing:0.03em; font-size:13px; }
-  .countdown-cell { border:1px solid var(--line-2); box-shadow:none; border-radius:14px; }
-  .countdown-num { font-weight:600; font-size:22px; }
-  .apk-perm { border:1px solid var(--line-2); box-shadow:none; border-radius:12px; }
-  .apk-perm.on { background:rgba(126,240,192,0.16); border-color:var(--ok); }
-  .apk-icon-box { border:2px dashed #7ef0c0; border-radius:16px; }
-  .hd-compare { border:1px solid var(--line-2); box-shadow:0 8px 24px rgba(95,45,170,0.3); border-radius:18px; }
-  .hd-tag { border:1px solid rgba(255,255,255,0.4); font-weight:600; letter-spacing:0.04em; }
-  .notif-toggle { border:1px solid var(--line-2); border-radius:999px; box-shadow:none; font-size:12px; font-weight:600; color:var(--text-0); }
-  .notif-toggle.active { background:rgba(126,240,192,0.2); color:#9ff5d2; border-color:rgba(126,240,192,0.5); }
-  .notif-toggle.blocked { background:rgba(255,122,156,0.2); color:#ffa3bb; border-color:rgba(255,122,156,0.5); }
-  #tab-indicator { background:var(--grad) !important; border:none; box-shadow:var(--glow); }
-  #tab-login-btn, #tab-reg-btn { letter-spacing:0.03em; font-weight:600 !important; font-size:14px !important; }
-  #auth-view [style*="border:1px solid var(--line-2); border-radius:10px; padding:3px"] { border:1px solid var(--line-2) !important; background:rgba(10,6,32,0.55) !important; border-radius:16px !important; }
-  #offline-banner { border:1px solid var(--line-2) !important; box-shadow:0 4px 16px rgba(0,0,0,0.3); font-size:14px; font-weight:600; border-radius:14px !important; }
-  #main-display-video { border-radius:14px; }
-  #terminal-view > div[style*="height:150px"] { border:2px solid rgba(255,182,230,0.6) !important; box-shadow:0 0 34px rgba(192,132,252,0.5) !important; border-radius:20px !important; }
-
-  [style*="border-radius:9px"][style*="padding:11px"], [style*="border-radius:11px"][style*="padding:13px"], [style*="border-radius:10px"][style*="padding:10px 12px"] { border-width:1px !important; }
-
-  ::-webkit-scrollbar-track { background:rgba(10,6,32,0.6); }
-  ::-webkit-scrollbar-thumb { background:linear-gradient(180deg,#ff8fcf,#c084fc); border:2px solid transparent; background-clip:padding-box; border-radius:999px; }
-  ::-webkit-scrollbar-thumb:hover { background:linear-gradient(180deg,#ffb3de,#d4a5ff); background-clip:padding-box; }
-  ::selection { background:#ff8fcf; color:#2b1048; }
-
-  .anime-spark { position:fixed; pointer-events:none; z-index:10000; font-size:15px; color:#ffd1ec; text-shadow:0 0 8px #ff8fcf; animation:sparkBurst 0.85s ease-out forwards; }
-  @media (prefers-reduced-motion: reduce) {
-    #anime-sky::before, #anime-sky::after, #auth-view::before, .prog-fill, .card, .card-elevated, .anime-spark { animation:none !important; }
-    .btn, .nav-link, .shop-item, .opt-row { transition:none; }
-  }
+  @keyframes sharinganSpin { to { transform:rotate(360deg); } }
+  .toast-info { background:linear-gradient(135deg,#ff8a00,#ff6a00); }
+  @media (prefers-reduced-motion: reduce) { .naruto-banner::before, body::after { animation:none; } }
 </style>
-<meta name="theme-color" content="#120c33">
-<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700;900&family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<div id="anime-sky" aria-hidden="true"></div>
-<canvas id="anime-sakura" aria-hidden="true"></canvas>
 <div id="toast-container"></div>
 <div class="app-shell">
+  <div class="naruto-banner">
+    <span class="naruto-banner-icon">🍥</span>
+    <div class="naruto-banner-col">
+      <div class="naruto-banner-text">BANGGUS X NARUTO</div>
+      <div class="naruto-banner-sub">Dattebayo! • Hidden Leaf Edition</div>
+    </div>
+    <span class="naruto-banner-icon">🍃</span>
+  </div>
   <div class="topbar">
     <div style="display:flex; align-items:center; gap:10px;">
       <div class="brand-mark">
@@ -1694,8 +1527,8 @@ const htmlTemplate = `<!DOCTYPE html>
     <div class="nav-section-label">Fitur</div>
     <button onclick="switchView('generator')" data-nav="generator" class="nav-link active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Alight Motion</button>
     <button onclick="switchView('netflix')" data-nav="netflix" class="nav-link netflix-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/></svg>Netflix Token</button>
-    <button onclick="switchView('hdfoto')" data-nav="hdfoto" class="nav-link hd-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>HD Foto<span class="badge badge-ok" style="margin-left:auto; font-size:9px; padding:1px 6px;">NEW</span></button>
-    <button onclick="switchView('apk')" data-nav="apk" class="nav-link apk-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>Build APK<span class="badge badge-ok" style="margin-left:auto; font-size:9px; padding:1px 6px;">NEW</span></button>
+    <button onclick="switchView('hdfoto')" data-nav="hdfoto" class="nav-link hd-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>HD Foto</button>
+    <button onclick="switchView('apk')" data-nav="apk" class="nav-link apk-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>Build APK</button>
     <button onclick="switchView('orders')" data-nav="orders" class="nav-link orders-nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>Orderan Saya</button>
     <div class="nav-section-label">Akun</div>
     <button onclick="switchView('vipshop')" data-nav="vipshop" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>Beli VIP<span class="badge badge-warn" style="margin-left:auto; font-size:9px; padding:1px 6px;">HOT</span></button>
@@ -5052,88 +4885,6 @@ document.addEventListener('keydown', (e) => {
   }
 });
 </script>
-<script>
-/* ===== TEMA ANIME: kelopak sakura + percikan klik (hanya efek visual) ===== */
-(function () {
-  try {
-    var cv = document.getElementById('anime-sakura');
-    if (!cv || !cv.getContext) return;
-    var ctx = cv.getContext('2d');
-    if (!ctx) return;
-    var reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var W = 0, H = 0, petals = [], running = true;
-
-    function resize() {
-      W = window.innerWidth; H = window.innerHeight;
-      cv.width = Math.floor(W * dpr); cv.height = Math.floor(H * dpr);
-      cv.style.width = W + 'px'; cv.style.height = H + 'px';
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
-    function mk(init) {
-      return {
-        x: Math.random() * W, y: init ? Math.random() * H : -20,
-        s: 5 + Math.random() * 8, vy: 0.45 + Math.random() * 1.0, vx: -0.25 + Math.random() * 0.7,
-        r: Math.random() * 6.28, vr: (Math.random() - 0.5) * 0.04, sw: Math.random() * 6.28,
-        hue: Math.random() < 0.72 ? 330 + Math.random() * 25 : 265 + Math.random() * 30,
-        a: 0.35 + Math.random() * 0.4
-      };
-    }
-    function draw(p) {
-      ctx.save();
-      ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.globalAlpha = p.a;
-      ctx.fillStyle = 'hsl(' + p.hue + ',90%,82%)';
-      ctx.beginPath();
-      ctx.moveTo(0, -p.s);
-      ctx.bezierCurveTo(p.s * 0.95, -p.s * 0.75, p.s * 0.8, p.s * 0.6, 0, p.s * 0.5);
-      ctx.bezierCurveTo(-p.s * 0.8, p.s * 0.6, -p.s * 0.95, -p.s * 0.75, 0, -p.s);
-      ctx.fill();
-      ctx.restore();
-    }
-    function frame() {
-      if (!running) return;
-      ctx.clearRect(0, 0, W, H);
-      for (var i = 0; i < petals.length; i++) {
-        var p = petals[i];
-        p.sw += 0.02; p.x += p.vx + Math.sin(p.sw) * 0.5; p.y += p.vy; p.r += p.vr;
-        if (p.y > H + 20 || p.x > W + 30 || p.x < -30) petals[i] = mk(false);
-        draw(petals[i]);
-      }
-      requestAnimationFrame(frame);
-    }
-
-    resize();
-    var COUNT = W < 600 ? 20 : 36;
-    for (var i = 0; i < COUNT; i++) petals.push(mk(true));
-    window.addEventListener('resize', resize);
-
-    if (reduce) {
-      for (var j = 0; j < petals.length; j++) draw(petals[j]);
-    } else {
-      document.addEventListener('visibilitychange', function () {
-        if (document.hidden) { running = false; }
-        else if (!running) { running = true; requestAnimationFrame(frame); }
-      });
-      requestAnimationFrame(frame);
-
-      var marks = ['✦', '✧', '✿', '❀', '★'];
-      document.addEventListener('pointerdown', function (e) {
-        for (var k = 0; k < 5; k++) {
-          var s = document.createElement('span');
-          s.className = 'anime-spark';
-          s.textContent = marks[Math.floor(Math.random() * marks.length)];
-          s.style.left = e.clientX + 'px'; s.style.top = e.clientY + 'px';
-          var ang = Math.random() * 6.28, dist = 24 + Math.random() * 30;
-          s.style.setProperty('--dx', Math.round(Math.cos(ang) * dist) + 'px');
-          s.style.setProperty('--dy', Math.round(Math.sin(ang) * dist) + 'px');
-          document.body.appendChild(s);
-          (function (el) { setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 900); })(s);
-        }
-      }, { passive: true });
-    }
-  } catch (err) { /* efek visual saja, abaikan error */ }
-})();
-</script>
 </body>
 </html>`;
 
@@ -6273,7 +6024,6 @@ server.listen(PORT, () => {
   console.log('║  📲 Bayar QR Otomatis + Aktivasi VIP Otomatis                ║');
   console.log('║  💬 Chat Global & Orderan                                    ║');
   console.log('║  🔔 Browser Notification (BARU!)                             ║');
-  console.log('║  🌸 Tema UI Anime Sakura (BARU!)                             ║');
   console.log('║  ⚙️  Panel Admin Lengkap                                     ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 });
