@@ -127,6 +127,58 @@ async function getUserFromDb(username) {
 }
 async function saveUserToDb(username, userData) { await set(ref(db, `users/${username}`), userData); }
 async function deleteUserFromDb(username) { await set(ref(db, `users/${username}`), null); }
+
+// ====== SESI LOGIN PERMANEN (disimpan di database, tahan refresh / tutup Chrome / restart server) ======
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // sesi berlaku 30 hari, otomatis diperpanjang saat dipakai
+const sessionMemoryFallback = new Map();
+function hashSessionToken(token) { return crypto.createHash('sha256').update(String(token || '')).digest('hex'); }
+async function createSessionToken(username) {
+  const token = 'token_' + crypto.randomBytes(32).toString('hex');
+  const now = Date.now();
+  const data = { username: String(username).toLowerCase(), createdAt: now, lastSeen: now, expiresAt: now + SESSION_TTL_MS };
+  sessionMemoryFallback.set(hashSessionToken(token), data);
+  try { await set(ref(db, 'sessions/' + hashSessionToken(token)), data); } catch (e) { console.error('Gagal simpan sesi ke database:', e.message); }
+  return token;
+}
+async function validateSessionToken(username, token) {
+  if (!username || !token) return false;
+  const key = hashSessionToken(token);
+  const uname = String(username).toLowerCase();
+  let s = null;
+  try {
+    const snap = await get(child(ref(db), 'sessions/' + key));
+    if (snap.exists()) s = snap.val();
+  } catch (e) {}
+  if (!s) s = sessionMemoryFallback.get(key) || null;
+  if (!s || s.username !== uname) return false;
+  const now = Date.now();
+  if (!s.expiresAt || s.expiresAt < now) { await deleteSessionToken(token); return false; }
+  if (now - (s.lastSeen || 0) > 60 * 60 * 1000) {
+    const upd = { ...s, lastSeen: now, expiresAt: now + SESSION_TTL_MS };
+    sessionMemoryFallback.set(key, upd);
+    try { await set(ref(db, 'sessions/' + key), upd); } catch (e) {}
+  }
+  return true;
+}
+async function deleteSessionToken(token) {
+  if (!token) return;
+  const key = hashSessionToken(token);
+  sessionMemoryFallback.delete(key);
+  try { await set(ref(db, 'sessions/' + key), null); } catch (e) {}
+}
+async function renameSessionUser(token, oldUser, newUser) {
+  if (!token) return;
+  const key = hashSessionToken(token);
+  try {
+    const snap = await get(child(ref(db), 'sessions/' + key));
+    const s = snap.exists() ? snap.val() : sessionMemoryFallback.get(key);
+    if (s && s.username === oldUser) {
+      const upd = { ...s, username: newUser };
+      sessionMemoryFallback.set(key, upd);
+      await set(ref(db, 'sessions/' + key), upd);
+    }
+  } catch (e) {}
+}
 async function getRedeemFromDb(code) {
   const snapshot = await get(child(ref(db), `redeems/${code}`));
   return snapshot.exists() ? snapshot.val() : null;
@@ -3507,6 +3559,7 @@ async function checkSavedSession() {
     const res = await fetch('/api/auth/session', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: savedUname, token }) });
     const data = await res.json();
     if (data.success) applySession(data);
+    else if (res.status === 401 || res.status === 404) { localStorage.removeItem('authToken'); localStorage.removeItem('savedUsername'); }
   } catch (e) {}
 }
 checkSavedSession();
@@ -4848,6 +4901,7 @@ async function handleLogout() {
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
   if (statusPollInterval) clearInterval(statusPollInterval);
   if (videoPollInterval) clearInterval(videoPollInterval);
+  try { await fetch('/api/auth/logout', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token: localStorage.getItem('authToken') || '' }) }); } catch (e) {}
   localStorage.removeItem('authToken');
   localStorage.removeItem('savedUsername');
   sessionStorage.clear();
@@ -5767,6 +5821,7 @@ const server = http.createServer(async (req, res) => {
       if (!userData) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan.' });
       await saveUserToDb(cleanNew, userData);
       await set(ref(db, `users/${cleanOld}`), null);
+      await renameSessionUser(String(req.headers['authorization'] || '').replace(/^Bearer\s+/i, ''), cleanOld, cleanNew);
       jsonResponse(res, 200, { success: true, newUsername: cleanNew });
 
     } else if (parsedUrl.pathname === '/api/admin/set-status' && req.method === 'POST') {
@@ -5893,8 +5948,9 @@ const server = http.createServer(async (req, res) => {
       await checkAndExpireBonusQuota(cleanUser);
       const existingUser = await getUserFromDb(cleanUser);
       if (!existingUser) return jsonResponse(res, 404, { success: false });
-      // Akun admin hanya boleh memulihkan sesi jika token berasal dari login yang sudah lolos PIN
-      if (existingUser.isAdmin && adminSessionTokens.get(token) !== cleanUser) return jsonResponse(res, 401, { success: false, message: 'Sesi admin berakhir, login ulang dengan PIN.' });
+      // Sesi hanya valid jika token berasal dari login yang sah (admin: sudah lolos PIN) dan belum kedaluwarsa
+      const sessionOk = await validateSessionToken(cleanUser, token);
+      if (!sessionOk) return jsonResponse(res, 401, { success: false, invalid: true, message: 'Sesi berakhir, silakan login ulang.' });
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
       if (!existingUser.lastResetTime) existingUser.lastResetTime = now;
@@ -5902,6 +5958,13 @@ const server = http.createServer(async (req, res) => {
       const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
       const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
       jsonResponse(res, 200, { success: true, username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus });
+
+    } else if (parsedUrl.pathname === '/api/auth/logout' && req.method === 'POST') {
+      const body = await readBody(req);
+      let tk = '';
+      try { tk = JSON.parse(body || '{}').token || ''; } catch (e) {}
+      await deleteSessionToken(tk);
+      jsonResponse(res, 200, { success: true });
 
     } else if (parsedUrl.pathname === '/api/auth' && req.method === 'POST') {
       const body = await readBody(req);
@@ -5916,7 +5979,7 @@ const server = http.createServer(async (req, res) => {
         if (String(password).length < 4) return jsonResponse(res, 400, { success: false, message: 'Password minimal 4 karakter!' });
         const newDeviceToken = deviceToken || ('dev_' + Math.random().toString(36).substring(2) + Date.now());
         await saveUserToDb(cleanUser, { password, isAdmin: false, activatedEmails: [], bonusQuota: 0, baseQuota: BASE_QUOTA, lastResetTime: Date.now(), vipUntil: 0, deviceToken: newDeviceToken });
-        const fakeAuthToken = 'token_' + Math.random().toString(36).substring(2) + Date.now();
+        const fakeAuthToken = await createSessionToken(cleanUser);
         return jsonResponse(res, 200, { success: true, message: 'Registrasi berhasil!', username: cleanUser, isAdmin: false, usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, isVip: false, serverStatus: currentServerStatus, deviceToken: newDeviceToken, token: fakeAuthToken });
       } else {
         if (existingUser && existingUser.password === password) {
@@ -5939,7 +6002,7 @@ const server = http.createServer(async (req, res) => {
               return jsonResponse(res, 401, { success: false, needPin: true, message: 'PIN admin salah!' });
             }
             adminPinAttempts.delete(cleanUser);
-            adminToken = 'token_' + crypto.randomBytes(24).toString('hex');
+            adminToken = await createSessionToken(cleanUser);
             adminSessionTokens.set(adminToken, cleanUser);
           }
           await checkAndExpireBonusQuota(cleanUser);
@@ -5950,7 +6013,7 @@ const server = http.createServer(async (req, res) => {
           if (now - existingUser.lastResetTime >= twentyFourHours) { existingUser.activatedEmails = []; existingUser.lastResetTime = now; await saveUserToDb(cleanUser, existingUser); }
           const isVipActive = existingUser.vipUntil && existingUser.vipUntil > now;
           const usedCount = existingUser.activatedEmails ? existingUser.activatedEmails.length : 0;
-          const fakeAuthToken = adminToken || ('token_' + Math.random().toString(36).substring(2) + Date.now());
+          const fakeAuthToken = adminToken || await createSessionToken(cleanUser);
           return jsonResponse(res, 200, { success: true, message: 'Login berhasil!', username: cleanUser, isAdmin: existingUser.isAdmin, usedQuota: usedCount, bonusQuota: existingUser.bonusQuota || 0, totalQuota: (existingUser.baseQuota || BASE_QUOTA) + (existingUser.bonusQuota || 0), isVip: isVipActive, vipUntil: existingUser.vipUntil || 0, serverStatus: currentServerStatus, token: fakeAuthToken });
         }
         return jsonResponse(res, 401, { success: false, message: 'Username atau password salah!' });
