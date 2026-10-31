@@ -1102,6 +1102,54 @@ async function generateNetflixToken(plan, proxy) {
 }
 
 // ==========================================
+// ENDPOINT TIAP FITUR (halaman + daftar API per fitur)
+// ==========================================
+// Setiap fitur punya alamat halaman sendiri (contoh: /netflix, /chat-global) yang langsung membuka fitur tersebut.
+// Daftar lengkap fitur beserta endpoint API-nya bisa dilihat di GET /api/features dan GET /api/features/:id
+const FEATURE_ROUTES = [
+  { id: 'generator', name: 'Alight Motion Premium', path: '/alight-motion', aliases: ['/generator', '/alight', '/am'],
+    api: ['/api/verif', '/api/magiclink', '/api/status', '/api/video', '/api/redeem', '/api/redeems/active', '/api/redeems/claimed'] },
+  { id: 'netflix', name: 'Netflix Token', path: '/netflix', aliases: ['/netflix-token'],
+    api: ['/api/netflix/check-quota', '/api/netflix/generate', '/api/netflix/history'] },
+  { id: 'hdfoto', name: 'HD Foto', path: '/hd-foto', aliases: ['/hdfoto', '/hd'],
+    api: ['/api/hd/check-quota', '/api/hd/upscale'] },
+  { id: 'apk', name: 'Build APK', path: '/build-apk', aliases: ['/apk', '/apk-builder'],
+    api: ['/api/apk/build', '/api/apk/status', '/api/apk/history', '/api/apk/download'] },
+  { id: 'orders', name: 'Orderan Saya', path: '/orderan', aliases: ['/orders', '/order'],
+    api: ['/api/orders/my'] },
+  { id: 'vipshop', name: 'Beli VIP', path: '/beli-vip', aliases: ['/vip', '/vipshop', '/vip-shop'],
+    api: ['/api/vip-shop', '/api/transaction/create', '/api/transaction/upload-proof', '/api/transaction/my', '/api/qris/create', '/api/qris/status'] },
+  { id: 'chat', name: 'Chat Global', path: '/chat-global', aliases: ['/chat'],
+    api: ['/api/chat/messages', '/api/chat/send', '/api/chat/delete', '/api/chat/react', '/api/chat/poll', '/api/chat/vote', '/api/chat/poll-close'] },
+  { id: 'profile', name: 'Profil Akun', path: '/profil', aliases: ['/profile'],
+    api: ['/api/user/my-emails', '/api/user/change-password', '/api/user/username', '/api/auth', '/api/auth/session', '/api/auth/logout'] },
+  { id: 'announcement', name: 'Pengumuman', path: '/pengumuman', aliases: ['/announcement', '/announcements'],
+    api: ['/api/announcements'] },
+  { id: 'request', name: 'Request Fitur', path: '/request-fitur', aliases: ['/request', '/feature-request'],
+    api: ['/api/feature-request/submit', '/api/feature-request/my'] },
+  { id: 'admin', name: 'Panel Admin', path: '/admin', aliases: ['/panel-admin'], adminOnly: true,
+    api: ['/api/admin/*'] }
+];
+function normalizeFeaturePath(p) {
+  let s = String(p || '/').toLowerCase();
+  while (s.length > 1 && s.charAt(s.length - 1) === '/') s = s.slice(0, -1);
+  return s;
+}
+const FEATURE_ROUTE_MAP = {};
+const FEATURE_PATHS = {};
+FEATURE_ROUTES.forEach(f => {
+  FEATURE_PATHS[f.id] = f.path;
+  [f.path].concat(f.aliases || []).forEach(p => { FEATURE_ROUTE_MAP[p] = f.id; });
+});
+function findFeatureByPath(p) {
+  const id = FEATURE_ROUTE_MAP[normalizeFeaturePath(p)];
+  return id ? FEATURE_ROUTES.find(f => f.id === id) : null;
+}
+function featureToJson(f) {
+  return { id: f.id, name: f.name, page: f.path, aliases: f.aliases || [], adminOnly: !!f.adminOnly, api: f.api };
+}
+
+// ==========================================
 // HTML TEMPLATE
 // ==========================================
 const htmlTemplate = `<!DOCTYPE html>
@@ -2635,6 +2683,7 @@ function toggleMenu() {
 
 function switchView(viewName) {
   currentView = viewName;
+  featureUrlSync(viewName);
   document.body.classList.toggle('chat-wide', viewName === 'chat');
   document.querySelectorAll('[data-nav]').forEach(el => { el.classList.toggle('active', el.dataset.nav === viewName); });
   toggleMenu();
@@ -2660,6 +2709,55 @@ function switchView(viewName) {
     loadAdminRedeems(); loadAdminAnnouncements(); loadAdminVipList(); loadAllUsers(); loadVipAccounts(); loadAdminFeatureRequests(); loadAdminVipShop(); loadAdminTransactions(); loadAdminOrders();
   }
 }
+
+// ====== ENDPOINT / URL TIAP FITUR (sisi klien) ======
+const FEATURE_PATHS = ${JSON.stringify(FEATURE_PATHS)};
+const FEATURE_ROUTE_MAP = ${JSON.stringify(FEATURE_ROUTE_MAP)};
+let featureUrlSilent = false;
+
+function normalizeClientFeaturePath(p) {
+  var s = String(p || '/').toLowerCase();
+  while (s.length > 1 && s.charAt(s.length - 1) === '/') s = s.slice(0, -1);
+  return s;
+}
+
+function featureUrlSync(viewName) {
+  if (featureUrlSilent) return;
+  if (viewName === 'admin' && !isAdminUser) return;
+  var target = FEATURE_PATHS[viewName];
+  if (!target || location.pathname === target) return;
+  try { history.pushState({ view: viewName }, '', target); } catch (e) {}
+}
+
+function openFeatureView(viewName) {
+  var drawer = document.getElementById('nav-drawer');
+  var wasOpen = !!(drawer && drawer.classList.contains('open'));
+  featureUrlSilent = true;
+  try { switchView(viewName); } catch (e) {}
+  featureUrlSilent = false;
+  if (!wasOpen && drawer && drawer.classList.contains('open')) toggleMenu();
+}
+
+function applyFeatureRoute() {
+  var view = FEATURE_ROUTE_MAP[normalizeClientFeaturePath(location.pathname)];
+  if (!view) return;
+  if (view === 'admin' && !isAdminUser) {
+    showToast('Akses ditolak!', 'error');
+    try { history.replaceState({ view: 'generator' }, '', FEATURE_PATHS.generator); } catch (e) {}
+    return;
+  }
+  if (view !== 'generator') openFeatureView(view);
+  if (location.pathname !== FEATURE_PATHS[view]) {
+    try { history.replaceState({ view: view }, '', FEATURE_PATHS[view]); } catch (e) {}
+  }
+}
+
+window.addEventListener('popstate', function() {
+  if (!loggedInUsername) return;
+  var view = FEATURE_ROUTE_MAP[normalizeClientFeaturePath(location.pathname)] || 'generator';
+  if (view === 'admin' && !isAdminUser) view = 'generator';
+  openFeatureView(view);
+});
 
 function copyDanaNumber() {
   navigator.clipboard.writeText(DANA_ADMIN_NUMBER).then(() => showToast('Nomor tersalin!', 'success')).catch(() => showToast('Gagal', 'error'));
@@ -3549,6 +3647,7 @@ function applySession(data) {
   if (data.isAdmin) { roleBadge.className = 'badge badge-warn'; roleBadge.innerText = '👑 Admin'; document.getElementById('nav-admin-btn').classList.remove('hide'); }
   else if (data.isVip) { roleBadge.className = 'badge badge-accent'; roleBadge.innerText = '⭐ VIP'; }
   else { roleBadge.className = 'badge badge-muted'; roleBadge.innerText = 'User'; }
+  try { applyFeatureRoute(); } catch (e) {}
 }
 
 async function checkSavedSession() {
@@ -4923,7 +5022,7 @@ document.addEventListener('keydown', (e) => {
 // ==========================================
 // SERVER
 // ==========================================
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 function jsonResponse(res, code, data) {
   const body = JSON.stringify(data);
@@ -4961,6 +5060,24 @@ const server = http.createServer(async (req, res) => {
         'Content-Length': Buffer.byteLength(htmlTemplate)
       });
       res.end(htmlTemplate);
+
+    } else if (req.method === 'GET' && findFeatureByPath(parsedUrl.pathname)) {
+      // Halaman tiap fitur (membuka aplikasi langsung di fitur terkait)
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'public, max-age=300',
+        'Content-Length': Buffer.byteLength(htmlTemplate)
+      });
+      res.end(htmlTemplate);
+
+    } else if (parsedUrl.pathname === '/api/features' && req.method === 'GET') {
+      jsonResponse(res, 200, { success: true, features: FEATURE_ROUTES.map(featureToJson) });
+
+    } else if (parsedUrl.pathname.startsWith('/api/features/') && req.method === 'GET') {
+      const featureKey = normalizeFeaturePath(parsedUrl.pathname.slice('/api/features/'.length)).replace('/', '');
+      const feature = FEATURE_ROUTES.find(f => f.id === featureKey || f.path === '/' + featureKey || (f.aliases || []).indexOf('/' + featureKey) !== -1);
+      if (!feature) return jsonResponse(res, 404, { success: false, message: 'Fitur tidak ditemukan' });
+      jsonResponse(res, 200, { success: true, feature: featureToJson(feature) });
 
     } else if (parsedUrl.pathname === '/api/status') {
       jsonResponse(res, 200, { status: currentServerStatus });
@@ -6091,4 +6208,7 @@ server.listen(PORT, () => {
   console.log('║  🔔 Browser Notification (BARU!)                             ║');
   console.log('║  ⚙️  Panel Admin Lengkap                                     ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
+  console.log('🔗 Endpoint halaman tiap fitur:');
+  FEATURE_ROUTES.forEach(f => console.log('   ' + f.path.padEnd(18) + ' → ' + f.name));
+  console.log('   /api/features      → daftar semua fitur & endpoint API\n');
 });
