@@ -40,6 +40,10 @@ const QR_DEFAULT_VALID_MS = 25 * 60 * 1000;
 const qrActivationLocks = new Set();
 const qrConfirmCooldown = new Map();
 const qrPendingIds = new Set();
+const QR_CREATE_COOLDOWN_MS = 10 * 1000;   // jeda minimal antar pembuatan invoice baru per user (anti-spam)
+const QR_CONFIRM_COOLDOWN_MS = 3 * 1000;   // jeda minimal antar klik "Saya sudah bayar" per transaksi
+const qrCreateCooldown = new Map();
+const qrCreateLocks = new Set();
 
 // ====== KONFIGURASI ONLINE TRACKING ======
 const ONLINE_TIMEOUT = 45 * 1000;
@@ -419,7 +423,6 @@ function qrTrxClientView(trx) {
     amount: trx.qrAmount || trx.vipPrice,
     qrString: trx.qrString || null,
     qrImage: trx.qrImage || null,
-    checkoutUrl: trx.checkoutUrl || null,
     expiresAt: trx.qrExpiresAt || (trx.createdAt + QR_DEFAULT_VALID_MS)
   };
 }
@@ -2081,35 +2084,41 @@ const htmlTemplate = `<!DOCTYPE html>
             <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--ok); letter-spacing:0.06em;">Bayar dengan QR</div>
             <span id="qris-status-badge" class="badge badge-warn">Menunggu</span>
           </div>
-          <div style="text-align:center;">
-            <div id="qris-qr-box" style="position:relative; display:inline-flex; align-items:center; justify-content:center; width:236px; height:236px; max-width:100%; background:#ffffff; border-radius:14px; padding:10px; overflow:hidden;">
-              <img id="qris-qr-img" class="hide" alt="QR Pembayaran" style="width:100%; height:100%; object-fit:contain; display:block;">
-              <div id="qris-qr-canvas" class="hide" style="display:flex; align-items:center; justify-content:center;"></div>
-              <div id="qris-qr-loading" style="font-size:11px; color:#444; text-align:center; font-weight:700;">Membuat QR...</div>
-              <div id="qris-qr-overlay" class="hide" style="position:absolute; inset:0; background:rgba(255,255,255,0.88); display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:800; color:#111; text-align:center; padding:12px;"></div>
-            </div>
+          <div id="qris-start-box" style="display:flex; flex-direction:column; gap:8px; text-align:center;">
+            <div style="font-size:11px; color:var(--text-1); line-height:1.5;">Tekan tombol di bawah untuk menampilkan kode pembayaran (QR) layanan yang kamu pilih.</div>
+            <button onclick="showQrisPayment()" id="btn-qris-show" class="btn btn-warn">💳 Tampilkan Kode Pembayaran</button>
           </div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-            <div style="padding:9px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:9px; text-align:center;">
-              <div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Jumlah Bayar</div>
-              <div id="qris-amount-display" class="mono" style="font-size:16px; font-weight:800; color:var(--info);">Rp 0</div>
+          <div id="qris-detail" class="hide" style="display:flex; flex-direction:column; gap:11px;">
+            <div style="text-align:center;">
+              <div id="qris-qr-box" style="position:relative; display:inline-flex; align-items:center; justify-content:center; width:236px; height:236px; max-width:100%; background:#ffffff; border-radius:14px; padding:10px; overflow:hidden;">
+                <img id="qris-qr-img" class="hide" alt="QR Pembayaran" style="width:100%; height:100%; object-fit:contain; display:block;">
+                <div id="qris-qr-canvas" class="hide" style="display:flex; align-items:center; justify-content:center;"></div>
+                <div id="qris-qr-loading" style="font-size:11px; color:#444; text-align:center; font-weight:700;">Membuat QR...</div>
+                <div id="qris-qr-overlay" class="hide" style="position:absolute; inset:0; background:rgba(255,255,255,0.88); display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:800; color:#111; text-align:center; padding:12px;"></div>
+              </div>
             </div>
-            <div style="padding:9px; background:var(--warn-soft); border:1px solid rgba(251,191,36,0.25); border-radius:9px; text-align:center;">
-              <div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Masa Aktif</div>
-              <div id="qris-expiry-text" class="mono" style="font-size:16px; font-weight:800; color:var(--warn);">--:--</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+              <div style="padding:9px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:9px; text-align:center;">
+                <div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Jumlah Bayar</div>
+                <div id="qris-amount-display" class="mono" style="font-size:16px; font-weight:800; color:var(--info);">Rp 0</div>
+              </div>
+              <div style="padding:9px; background:var(--warn-soft); border:1px solid rgba(251,191,36,0.25); border-radius:9px; text-align:center;">
+                <div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Masa Aktif</div>
+                <div id="qris-expiry-text" class="mono" style="font-size:16px; font-weight:800; color:var(--warn);">--:--</div>
+              </div>
             </div>
+            <div style="padding:9px 11px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:9px;">
+              <div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700; margin-bottom:3px;">Kode Pembayaran</div>
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                <span id="qris-invoice-id" class="mono" style="font-size:12px; font-weight:700; word-break:break-all;">-</span>
+                <button onclick="copyQrisCode()" class="btn btn-ghost btn-xs" style="flex-shrink:0;">📋 Salin</button>
+              </div>
+              <div style="font-size:9px; color:var(--text-2); margin-top:5px;">Kode Pesanan: <span id="qris-trx-id" class="mono">-</span></div>
+            </div>
+            <div id="qris-result-text" style="text-align:center; font-size:11px; color:var(--text-1); line-height:1.5;">-</div>
+            <button onclick="confirmQrisPaid()" id="btn-qris-paid" class="btn btn-ok hide">Saya Sudah Bayar</button>
+            <button onclick="reloadQrisPayment()" id="btn-qris-reload" class="btn btn-ghost btn-xs hide">↻ Buat QR Baru</button>
           </div>
-          <div style="padding:9px 11px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:9px;">
-            <div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700; margin-bottom:3px;">Kode Pembayaran</div>
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-              <span id="qris-invoice-id" class="mono" style="font-size:12px; font-weight:700; word-break:break-all;">-</span>
-              <button onclick="copyQrisCode()" class="btn btn-ghost btn-xs" style="flex-shrink:0;">📋 Salin</button>
-            </div>
-            <div style="font-size:9px; color:var(--text-2); margin-top:5px;">Kode Pesanan: <span id="qris-trx-id" class="mono">-</span></div>
-          </div>
-          <a id="qris-checkout-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-warn hide" style="text-align:center; text-decoration:none;">🔗 Buka Halaman Pembayaran</a>
-          <div id="qris-result-text" style="text-align:center; font-size:11px; color:var(--text-1); line-height:1.5;">-</div>
-          <button onclick="reloadQrisPayment()" id="btn-qris-reload" class="btn btn-ghost btn-xs">↻ Buat QR Baru</button>
         </div>
       </div>
       <div style="padding-top:12px; border-top:1px solid var(--line);">
@@ -3773,7 +3782,7 @@ function selectVipItem(itemId) {
   document.getElementById('vip-purchase-form').classList.remove('hide');
   document.getElementById('vip-purchase-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
   showToast('Dipilih: ' + data.name, 'info');
-  startQrisPayment(id);
+  resetQrisPanel(id);
 }
 
 async function loadUserTransactions() {
@@ -3802,6 +3811,8 @@ let qrisPollTimer = null;
 let qrisExpiryTimer = null;
 let qrisCheckBusy = false;
 let qrisReqSeq = 0;
+let qrisCreating = false;
+let qrisManualBusy = false;
 
 function setQrisBadge(type) {
   var el = document.getElementById('qris-status-badge');
@@ -3833,6 +3844,7 @@ function startQrisCountdown(expiresAt) {
     if (left <= 0) {
       el.innerText = '00:00';
       setQrisBadge('failed');
+      setQrisButtons('expired');
       showQrisOverlay('QR kedaluwarsa. Tekan Buat QR Baru.');
       setQrisMessage('QR sudah kedaluwarsa. Tekan Buat QR Baru.', 'var(--err)');
       if (qrisExpiryTimer) { clearInterval(qrisExpiryTimer); qrisExpiryTimer = null; }
@@ -3908,16 +3920,55 @@ function copyQrisCode() {
   navigator.clipboard.writeText(code).then(function() { showToast('Kode pembayaran tersalin!', 'success'); }).catch(function() { showToast('Gagal menyalin', 'error'); });
 }
 
+function setQrisButtons(state) {
+  var pb = document.getElementById('btn-qris-paid');
+  var rb = document.getElementById('btn-qris-reload');
+  if (pb) pb.classList.toggle('hide', state !== 'active');
+  if (rb) rb.classList.toggle('hide', state !== 'expired');
+}
+
+function showQrisStartBox(show) {
+  var sb = document.getElementById('qris-start-box');
+  var dt = document.getElementById('qris-detail');
+  if (sb) sb.classList.toggle('hide', !show);
+  if (dt) dt.classList.toggle('hide', show);
+}
+
+// Dipanggil saat user memilih produk: hanya reset tampilan, TIDAK membuat invoice
+function resetQrisPanel(vipId) {
+  qrisVipId = vipId;
+  qrisReqSeq++;
+  stopQrisTimers();
+  qrisTrxId = null;
+  qrisCreating = false;
+  setQrisBadge('pending');
+  resetQrisDisplay();
+  setQrisButtons('none');
+  showQrisStartBox(true);
+  var btn = document.getElementById('btn-qris-show');
+  if (btn) { btn.disabled = false; btn.innerText = '💳 Tampilkan Kode Pembayaran'; }
+}
+
+// Dipanggil saat user menekan tombol "Tampilkan Kode Pembayaran"
+function showQrisPayment() {
+  if (!qrisVipId) return showToast('Pilih produk VIP dulu!', 'error');
+  if (qrisCreating) return;
+  startQrisPayment(qrisVipId);
+}
+
 async function startQrisPayment(vipId) {
-  if (!loggedInUsername || !vipId) return;
+  if (!loggedInUsername || !vipId || qrisCreating) return;
+  qrisCreating = true;
   qrisVipId = vipId;
   var mySeq = ++qrisReqSeq;
   stopQrisTimers();
   qrisTrxId = null;
+  var showBtn = document.getElementById('btn-qris-show');
+  if (showBtn) { showBtn.disabled = true; showBtn.innerText = 'Membuat kode pembayaran...'; }
   setQrisBadge('pending');
   resetQrisDisplay();
-  var link = document.getElementById('qris-checkout-link');
-  link.classList.add('hide');
+  setQrisButtons('none');
+  showQrisStartBox(false);
   setQrisMessage('Membuat QR pembayaran...', 'var(--text-1)');
   document.getElementById('qris-expiry-text').innerText = '--:--';
   document.getElementById('qris-invoice-id').innerText = '-';
@@ -3928,8 +3979,7 @@ async function startQrisPayment(vipId) {
     var data = await res.json();
     if (mySeq !== qrisReqSeq) return;
     if (!data.success) {
-      document.getElementById('qris-qr-loading').innerText = 'Gagal membuat QR';
-      setQrisMessage(data.message || 'Gagal membuat QR pembayaran', 'var(--err)');
+      showQrisStartBox(true);
       showToast(data.message || 'Gagal membuat QR pembayaran', 'error');
       return;
     }
@@ -3938,16 +3988,60 @@ async function startQrisPayment(vipId) {
     document.getElementById('qris-invoice-id').innerText = data.invoiceId || '-';
     document.getElementById('qris-trx-id').innerText = data.transactionId || '-';
     renderQrisQr(data);
-    setQrisMessage('Scan QR di atas dengan aplikasi e-wallet / mobile banking dan bayar sesuai jumlah. Setelah pembayaran terdeteksi, akun otomatis menjadi VIP.', 'var(--text-1)');
+    setQrisButtons('active');
+    setQrisMessage('Scan QR di atas dengan aplikasi e-wallet / mobile banking dan bayar sesuai jumlah. Setelah membayar, tekan tombol Saya Sudah Bayar.', 'var(--text-1)');
     startQrisCountdown(data.expiresAt);
     qrisPollTimer = setInterval(checkQrisStatus, 5000);
-    showToast('QR pembayaran siap.', 'success');
+    showToast(data.reused ? 'Kode pembayaran kamu yang masih aktif ditampilkan.' : 'Kode pembayaran siap.', 'success');
     loadUserTransactions();
   } catch (e) {
     if (mySeq !== qrisReqSeq) return;
-    document.getElementById('qris-qr-loading').innerText = 'Gagal membuat QR';
-    setQrisMessage('Kesalahan koneksi', 'var(--err)');
+    showQrisStartBox(true);
     showToast('Kesalahan koneksi', 'error');
+  } finally {
+    if (mySeq === qrisReqSeq) {
+      qrisCreating = false;
+      if (showBtn) { showBtn.disabled = false; showBtn.innerText = ' Tampilkan Kode Pembayaran'; }
+    }
+  }
+}
+
+// Tombol "Saya Sudah Bayar": langsung cek ke server / penyedia pembayaran
+async function confirmQrisPaid() {
+  if (!qrisTrxId) return showToast('Kode pembayaran belum dibuat.', 'error');
+  if (qrisManualBusy) return;
+  qrisManualBusy = true;
+  var btn = document.getElementById('btn-qris-paid');
+  if (btn) { btn.disabled = true; btn.innerText = 'Mengecek pembayaran...'; }
+  setQrisMessage('Mengecek pembayaran...', 'var(--text-1)');
+  var trxAtStart = qrisTrxId;
+  try {
+    var res = await fetch('/api/qris/status?username=' + encodeURIComponent(loggedInUsername) + '&transactionId=' + encodeURIComponent(trxAtStart) + '&manual=1');
+    var data = await res.json();
+    if (trxAtStart !== qrisTrxId) return;
+    if (!data.success) {
+      setQrisMessage(data.message || 'Gagal mengecek pembayaran.', 'var(--err)');
+      showToast(data.message || 'Gagal mengecek pembayaran', 'error');
+    } else if (data.status === 'paid') {
+      onQrisPaid(data);
+    } else if (data.status === 'failed') {
+      onQrisFailed(data);
+    } else if (data.throttled) {
+      setQrisMessage('Tunggu beberapa detik, lalu coba lagi.', 'var(--warn)');
+    } else if (data.busy) {
+      setQrisMessage('Pembayaran sedang diproses. Coba lagi sebentar lagi.', 'var(--warn)');
+    } else if (data.warning) {
+      setQrisMessage('Belum bisa mengecek ke penyedia pembayaran. Coba lagi sebentar lagi.', 'var(--warn)');
+    } else {
+      setQrisMessage('Silakan bayar terlebih dahulu.', 'var(--err)');
+      showToast('Silakan bayar terlebih dahulu', 'error');
+    }
+  } catch (e) {
+    setQrisMessage('Kesalahan koneksi. Coba lagi.', 'var(--err)');
+    showToast('Kesalahan koneksi', 'error');
+  } finally {
+    qrisManualBusy = false;
+    if (btn) { btn.disabled = false; btn.innerText = '✅ Saya Sudah Bayar'; }
   }
 }
 
@@ -3971,7 +4065,7 @@ function onQrisPaid(data) {
   stopQrisTimers();
   qrisTrxId = null;
   setQrisBadge('paid');
-  document.getElementById('qris-checkout-link').classList.add('hide');
+  setQrisButtons('none');
   document.getElementById('qris-expiry-text').innerText = '--:--';
   showQrisOverlay('✅ Pembayaran berhasil!');
   setQrisMessage('✅ Pembayaran terdeteksi! Akun kamu sekarang VIP.', 'var(--ok)');
@@ -3984,7 +4078,7 @@ function onQrisFailed(data) {
   stopQrisTimers();
   qrisTrxId = null;
   setQrisBadge('failed');
-  document.getElementById('qris-checkout-link').classList.add('hide');
+  setQrisButtons('expired');
   document.getElementById('qris-expiry-text').innerText = '00:00';
   showQrisOverlay('QR kedaluwarsa / dibatalkan. Tekan Buat QR Baru.');
   setQrisMessage(data.message || 'QR kedaluwarsa / dibatalkan. Tekan Buat QR Baru.', 'var(--err)');
@@ -5443,6 +5537,16 @@ const server = http.createServer(async (req, res) => {
       const allTrxQr = await getTransactionsFromDb();
       const reusable = Object.values(allTrxQr).find(t => t.username === cleanUser && t.method === 'qris' && t.vipId === vipId && t.status === 'pending' && (t.qrString || t.qrImage) && t.vipPrice === price && (t.qrExpiresAt ? t.qrExpiresAt > nowTs + 60000 : (nowTs - t.createdAt) < QR_DEFAULT_VALID_MS - 60000));
       if (reusable) return jsonResponse(res, 200, Object.assign({ success: true, reused: true }, qrTrxClientView(reusable)));
+      // Anti-spam: satu pembuatan invoice per user pada satu waktu + jeda minimal antar pembuatan
+      if (qrCreateLocks.has(cleanUser)) return jsonResponse(res, 429, { success: false, message: 'Permintaan sebelumnya masih diproses. Tunggu sebentar.' });
+      const lastCreateTs = qrCreateCooldown.get(cleanUser) || 0;
+      if (nowTs - lastCreateTs < QR_CREATE_COOLDOWN_MS) {
+        const waitSec = Math.ceil((QR_CREATE_COOLDOWN_MS - (nowTs - lastCreateTs)) / 1000);
+        return jsonResponse(res, 429, { success: false, message: 'Terlalu cepat. Coba lagi dalam ' + waitSec + ' detik.' });
+      }
+      qrCreateCooldown.set(cleanUser, nowTs);
+      qrCreateLocks.add(cleanUser);
+      try {
       const transactionId = 'TRX-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
       let invoice;
       try {
@@ -5467,17 +5571,21 @@ const server = http.createServer(async (req, res) => {
         transactionId, username: cleanUser, vipId, vipName: item.name, vipPrice: price, vipDays: days,
         status: 'pending', method: 'qris', invoiceId: invoice.id,
         qrAmount: invoice.amount || price, qrString: invoice.qrString, qrImage: invoice.qrImage,
-        checkoutUrl: invoice.checkoutUrl, qrExpiresAt: invoice.expiresAt,
+        qrExpiresAt: invoice.expiresAt,
         proofImage: null, proofFileName: null, createdAt: Date.now(), updatedAt: Date.now(), adminNote: ''
       };
       await saveTransactionToDb(transactionId, newTrx);
       qrPendingIds.add(transactionId);
       jsonResponse(res, 200, Object.assign({ success: true, reused: false }, qrTrxClientView(newTrx)));
+      } finally {
+        qrCreateLocks.delete(cleanUser);
+      }
 
     } else if (parsedUrl.pathname === '/api/qris/status' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       const transactionId = parsedUrl.searchParams.get('transactionId');
       const cleanUser = username ? username.toLowerCase() : '';
+      const isManualCheck = parsedUrl.searchParams.get('manual') === '1';
       const trx = transactionId ? await getTransactionFromDb(transactionId) : null;
       if (!trx || trx.method !== 'qris') return jsonResponse(res, 404, { success: false, message: 'Transaksi QR tidak ditemukan!' });
       if (trx.username !== cleanUser) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
@@ -5486,12 +5594,19 @@ const server = http.createServer(async (req, res) => {
         return jsonResponse(res, 200, { success: true, status: 'paid', message: 'Pembayaran berhasil. Akun VIP aktif!', session: u ? buildSessionPayload(cleanUser, u) : null });
       }
       if (trx.status === 'failed') return jsonResponse(res, 200, { success: true, status: 'failed', message: trx.adminNote || 'Pembayaran gagal / kedaluwarsa.' });
+      if (isManualCheck) {
+        const nowCk = Date.now();
+        const lastCk = qrConfirmCooldown.get(transactionId) || 0;
+        if (nowCk - lastCk < QR_CONFIRM_COOLDOWN_MS) return jsonResponse(res, 200, { success: true, status: 'pending', throttled: true });
+        qrConfirmCooldown.set(transactionId, nowCk);
+        if (qrConfirmCooldown.size > 500) { for (const [k, v] of qrConfirmCooldown) { if (nowCk - v > 60000) qrConfirmCooldown.delete(k); } }
+      }
       try {
         const inv = normalizeQrInvoice(await qrPayRequest('GET', '/v1/invoices/' + encodeURIComponent(trx.invoiceId)));
         const state = qrClassify(inv);
         if (state === 'paid') {
           const act = await activateVipFromTransaction(transactionId);
-          if (act.busy) return jsonResponse(res, 200, { success: true, status: 'pending' });
+          if (act.busy) return jsonResponse(res, 200, { success: true, status: 'pending', busy: true });
           const u = await getUserFromDb(cleanUser);
           return jsonResponse(res, 200, { success: true, status: 'paid', activated: !!act.activated, message: 'Pembayaran berhasil. Akun VIP aktif!', session: u ? buildSessionPayload(cleanUser, u) : null });
         }
