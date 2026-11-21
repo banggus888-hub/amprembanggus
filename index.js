@@ -28,10 +28,6 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getDatabase(firebaseApp);
 
-// ====== KONFIGURASI DANA ADMIN ======
-const DANA_ADMIN_NUMBER = '085377788830';
-const DANA_ADMIN_NAME = 'L,S';
-
 // ====== KONFIGURASI PEMBAYARAN QR OTOMATIS (INVOICE API) ======
 // API key sebaiknya disimpan di environment variable QR_PAY_API_KEY (nilai di bawah hanya cadangan)
 const QR_PAY_API_KEY = process.env.QR_PAY_API_KEY || 'sk_live_847f571682ccb5e89642d69d6b3a2dd9d8150cf1f72804c4';
@@ -1118,7 +1114,7 @@ const FEATURE_ROUTES = [
   { id: 'orders', name: 'Orderan Saya', path: '/orderan', aliases: ['/orders', '/order'],
     api: ['/api/orders/my'] },
   { id: 'vipshop', name: 'Beli VIP', path: '/beli-vip', aliases: ['/vip', '/vipshop', '/vip-shop'],
-    api: ['/api/vip-shop', '/api/transaction/create', '/api/transaction/upload-proof', '/api/transaction/my', '/api/qris/create', '/api/qris/status'] },
+    api: ['/api/vip-shop', '/api/transaction/my', '/api/qris/create', '/api/qris/status'] },
   { id: 'chat', name: 'Chat Global', path: '/chat-global', aliases: ['/chat'],
     api: ['/api/chat/messages', '/api/chat/send', '/api/chat/delete', '/api/chat/react', '/api/chat/poll', '/api/chat/vote', '/api/chat/poll-close'] },
   { id: 'profile', name: 'Profil Akun', path: '/profil', aliases: ['/profile'],
@@ -1159,6 +1155,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>AM PREMIUM • BANGGUS</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Bangers&family=Comic+Neue:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -1275,13 +1272,6 @@ const htmlTemplate = `<!DOCTYPE html>
   .opt-row:hover { border-color:var(--line); background:var(--line); }
   .opt-row.selected { border-color:var(--accent); background:var(--accent-soft); }
   .opt-row.netflix.selected { border-color:var(--netflix); background:rgba(229,9,20,0.1); }
-  .dana-card { background:linear-gradient(180deg,#0a1a2e,#08121d); border:1px solid #10385c; border-radius:12px; padding:16px; text-align:center; }
-  .dana-chip { display:inline-flex; align-items:center; justify-content:center; padding:4px 12px; background:#0084ff; color:white; border-radius:6px; font-weight:800; font-size:12px; letter-spacing:0.04em; margin-bottom:10px; }
-  .dana-number { font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:800; color:#60c4ff; letter-spacing:0.03em; margin:8px 0; }
-  .dana-copy { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; background:#0084ff; color:white; border:none; border-radius:8px; font-weight:600; font-size:12px; cursor:pointer; transition:background 0.15s; }
-  .dana-copy:hover { background:#0070db; }
-  .dana-step { display:flex; gap:8px; align-items:flex-start; font-size:11.5px; color:var(--text-1); margin-bottom:7px; }
-  .dana-step-num { width:20px; height:20px; border-radius:50%; background:#10385c; color:#60c4ff; font-size:10px; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px; }
   .countdown-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
   .countdown-cell { background:var(--bg-0); border:1px solid var(--line-2); border-radius:8px; padding:8px 4px; text-align:center; }
   .countdown-num { font-family:'IBM Plex Mono',monospace; font-size:18px; font-weight:800; color:var(--err); line-height:1; }
@@ -1511,9 +1501,6 @@ const htmlTemplate = `<!DOCTYPE html>
   .shop-item:hover { border-color:var(--accent); transform:translate(-2px,-2px) rotate(-0.5deg); box-shadow:5px 5px 0 var(--accent); }
   .hist-item-order-id { background:var(--info); color:var(--ink); border:2px solid var(--ink); }
   .link-line { border:2.5px solid var(--ink); background:#120d33; }
-  .dana-card { border:3px solid var(--ink); box-shadow:4px 4px 0 #0084ff; }
-  .dana-chip { border:2.5px solid var(--ink); font-family:'Bangers',cursive; font-weight:400; letter-spacing:0.08em; }
-  .dana-copy { border:3px solid var(--ink); box-shadow:3px 3px 0 var(--ink); font-family:'Bangers',cursive; font-weight:400; letter-spacing:0.06em; font-size:14px; }
   .countdown-cell { border:3px solid var(--ink); box-shadow:2px 2px 0 var(--ink); }
   .countdown-num { font-family:'Bangers',cursive; font-weight:400; font-size:24px; }
   .apk-perm { border:2.5px solid var(--ink); box-shadow:2px 2px 0 var(--ink); }
@@ -2020,61 +2007,40 @@ const htmlTemplate = `<!DOCTYPE html>
           <div style="font-size:9.5px; font-weight:700; text-transform:uppercase; color:var(--info); letter-spacing:0.06em; margin-bottom:3px;">Total</div>
           <div id="selected-vip-price-display" class="mono" style="font-weight:800; font-size:16px; color:var(--info);">Rp 0</div>
         </div>
-        <div id="pay-method-chooser" style="display:flex; flex-direction:column; gap:8px;">
-          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--text-2); letter-spacing:0.06em;">Pilih Metode Pembayaran</div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-            <button onclick="choosePayMethod('qr')" id="pay-method-btn-qr" class="btn btn-ghost btn-sm">📲 QR (Otomatis)</button>
-            <button onclick="choosePayMethod('dana')" id="pay-method-btn-dana" class="btn btn-ghost btn-sm">💳 Nomor DANA</button>
-          </div>
-        </div>
-        <div id="qris-section" class="hide" style="display:flex; flex-direction:column; gap:10px; padding:12px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:11px;">
+        <div id="qris-section" style="display:flex; flex-direction:column; gap:11px; padding:13px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:12px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--ok); letter-spacing:0.06em;">Bayar dengan QR (Otomatis)</div>
+            <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--ok); letter-spacing:0.06em;">Bayar dengan QR</div>
             <span id="qris-status-badge" class="badge badge-warn">Menunggu</span>
           </div>
           <div style="text-align:center;">
-            <div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Nominal sesuai produk</div>
-            <div id="qris-amount-display" class="mono" style="font-size:18px; font-weight:800; color:var(--info);">Rp 0</div>
+            <div id="qris-qr-box" style="position:relative; display:inline-flex; align-items:center; justify-content:center; width:236px; height:236px; max-width:100%; background:#ffffff; border-radius:14px; padding:10px; overflow:hidden;">
+              <img id="qris-qr-img" class="hide" alt="QR Pembayaran" style="width:100%; height:100%; object-fit:contain; display:block;">
+              <div id="qris-qr-canvas" class="hide" style="display:flex; align-items:center; justify-content:center;"></div>
+              <div id="qris-qr-loading" style="font-size:11px; color:#444; text-align:center; font-weight:700;">Membuat QR...</div>
+              <div id="qris-qr-overlay" class="hide" style="position:absolute; inset:0; background:rgba(255,255,255,0.88); display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:800; color:#111; text-align:center; padding:12px;"></div>
+            </div>
           </div>
-          <a id="qris-checkout-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-warn hide" style="text-align:center; text-decoration:none;">🔗 Buka Halaman Pembayaran QR</a>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div style="padding:9px; background:var(--info-soft); border:1px solid rgba(96,165,250,0.25); border-radius:9px; text-align:center;">
+              <div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Jumlah Bayar</div>
+              <div id="qris-amount-display" class="mono" style="font-size:16px; font-weight:800; color:var(--info);">Rp 0</div>
+            </div>
+            <div style="padding:9px; background:var(--warn-soft); border:1px solid rgba(251,191,36,0.25); border-radius:9px; text-align:center;">
+              <div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Masa Aktif</div>
+              <div id="qris-expiry-text" class="mono" style="font-size:16px; font-weight:800; color:var(--warn);">--:--</div>
+            </div>
+          </div>
+          <div style="padding:9px 11px; background:var(--bg-0); border:1px solid var(--line-2); border-radius:9px;">
+            <div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700; margin-bottom:3px;">Kode Pembayaran</div>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+              <span id="qris-invoice-id" class="mono" style="font-size:12px; font-weight:700; word-break:break-all;">-</span>
+              <button onclick="copyQrisCode()" class="btn btn-ghost btn-xs" style="flex-shrink:0;">📋 Salin</button>
+            </div>
+            <div style="font-size:9px; color:var(--text-2); margin-top:5px;">Kode Pesanan: <span id="qris-trx-id" class="mono">-</span></div>
+          </div>
+          <a id="qris-checkout-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-warn hide" style="text-align:center; text-decoration:none;">🔗 Buka Halaman Pembayaran</a>
           <div id="qris-result-text" style="text-align:center; font-size:11px; color:var(--text-1); line-height:1.5;">-</div>
-          <div id="qris-expiry-text" style="text-align:center; font-size:10.5px; color:var(--warn);"></div>
-          <div style="text-align:center; font-size:9.5px; color:var(--text-2);">Invoice: <span id="qris-invoice-id" class="mono">-</span></div>
-          <button onclick="reloadQrisPayment()" id="btn-qris-reload" class="btn btn-ghost btn-xs">↻ Buat Link Baru</button>
-        </div>
-        <div id="dana-method-wrap" class="hide" style="display:flex; flex-direction:column; gap:12px;">
-        <div class="dana-card">
-          <div class="dana-chip">DANA</div>
-          <div style="font-size:10px; color:#60c4ff; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:3px;">Transfer ke</div>
-          <div class="dana-number" id="dana-number-display">-</div>
-          <div style="font-size:11px; color:var(--text-1); margin-bottom:9px;" id="dana-owner-display">a.n. -</div>
-          <button onclick="copyDanaNumber()" class="dana-copy">📋 Copy Nomor</button>
-          <div style="margin-top:12px; text-align:left; background:rgba(0,0,0,0.3); border-radius:8px; padding:10px;">
-            <div class="dana-step"><div class="dana-step-num">1</div><span>Buka aplikasi <strong style="color:#60c4ff;">DANA</strong></span></div>
-            <div class="dana-step"><div class="dana-step-num">2</div><span>Pilih menu <strong style="color:#60c4ff;">Kirim/Transfer</strong></span></div>
-            <div class="dana-step"><div class="dana-step-num">3</div><span>Masukkan nomor & jumlah</span></div>
-            <div class="dana-step"><div class="dana-step-num">4</div><span>Konfirmasi & simpan bukti</span></div>
-            <div class="dana-step" style="margin-bottom:0;"><div class="dana-step-num">5</div><span>Upload bukti di bawah</span></div>
-          </div>
-        </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:7px;">
-          <div style="padding:9px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:7px;"><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">ID Top Up</div><div id="topup-id-display" class="mono" style="font-size:11px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">-</div></div>
-          <div style="padding:9px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:7px;"><div style="font-size:9px; color:var(--text-2); text-transform:uppercase; font-weight:700;">Status</div><div id="topup-status-display" style="margin-top:2px;"><span class="badge badge-warn">Menunggu</span></div></div>
-        </div>
-        <button onclick="handleCreatePayment()" id="btn-create-payment" class="btn btn-info">💳 Buat Pesanan & Bayar</button>
-        <div id="payment-proof-section" class="hide" style="display:flex; flex-direction:column; gap:12px; padding-top:12px; border-top:1px solid var(--line);">
-          <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--ok); letter-spacing:0.06em;">Upload Bukti</div>
-          <div class="dropzone" onclick="document.getElementById('payment-proof-file').click()">
-            <input type="file" id="payment-proof-file" accept="image/*" class="hide" onchange="handlePaymentProofSelect(event)">
-            <div id="proof-file-info" style="font-size:12px; font-weight:600;">Klik untuk upload</div>
-            <div style="font-size:10.5px; color:var(--text-2); margin-top:3px;">JPG, PNG (max 5MB)</div>
-          </div>
-          <button onclick="handleUploadProof()" id="btn-upload-proof" class="btn btn-ok" disabled>Kirim Bukti</button>
-        </div>
-        <div id="transaction-status-box" class="hide" style="padding:11px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:9px;">
-          <div style="font-size:9.5px; font-weight:700; text-transform:uppercase; color:var(--text-2); letter-spacing:0.06em; margin-bottom:5px;">Status</div>
-          <div id="transaction-status-content"></div>
-        </div>
+          <button onclick="reloadQrisPayment()" id="btn-qris-reload" class="btn btn-ghost btn-xs">↻ Buat QR Baru</button>
         </div>
       </div>
       <div style="padding-top:12px; border-top:1px solid var(--line);">
@@ -2364,8 +2330,6 @@ const htmlTemplate = `<!DOCTYPE html>
 </div>
 
 <script>
-const DANA_ADMIN_NUMBER = '${DANA_ADMIN_NUMBER}';
-const DANA_ADMIN_NAME = '${DANA_ADMIN_NAME}';
 const BASE_QUOTA = 2;
 
 let currentAuthMode = 'login';
@@ -2386,7 +2350,6 @@ const CHAT_REACT_MAP = { like:'👍', love:'❤️', haha:'😂', wow:'😮', sa
 let currentView = 'generator';
 let userQuotaData = { usedQuota: 0, bonusQuota: 0, totalQuota: BASE_QUOTA, nextResetTime: 0, lastResetTime: 0 };
 let claimedRedeemCodes = {};
-let selectedPaymentProofFile = null;
 let currentTransactionId = null;
 let cachedVipShopItems = [];
 let selectedNetflixPlan = 'premium';
@@ -2696,8 +2659,6 @@ function switchView(viewName) {
   else if (viewName === 'vipshop') {
     document.getElementById('section-vipshop').classList.remove('hide');
     loadVipShopItems(); loadUserTransactions();
-    document.getElementById('dana-number-display').innerText = DANA_ADMIN_NUMBER;
-    document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
   }
   else if (viewName === 'profile') { document.getElementById('section-profile').classList.remove('hide'); loadVerifiedEmails(); }
   else if (viewName === 'announcement') { document.getElementById('section-announcement').classList.remove('hide'); loadUserAnnouncements(); }
@@ -2758,10 +2719,6 @@ window.addEventListener('popstate', function() {
   if (view === 'admin' && !isAdminUser) view = 'generator';
   openFeatureView(view);
 });
-
-function copyDanaNumber() {
-  navigator.clipboard.writeText(DANA_ADMIN_NUMBER).then(() => showToast('Nomor tersalin!', 'success')).catch(() => showToast('Gagal', 'error'));
-}
 
 function guardServerOnline(featureName) {
   if (serverOnline || isAdminUser) return true;
@@ -3744,76 +3701,10 @@ function selectVipItem(itemId) {
   document.getElementById('selected-vip-name').value = data.name;
   document.getElementById('selected-vip-display').innerText = data.name + ' (' + data.days + ' hari)';
   document.getElementById('selected-vip-price-display').innerText = 'Rp ' + Number(data.price).toLocaleString('id-ID');
-  document.getElementById('dana-number-display').innerText = DANA_ADMIN_NUMBER;
-  document.getElementById('dana-owner-display').innerText = 'a.n. ' + DANA_ADMIN_NAME;
   document.getElementById('vip-purchase-form').classList.remove('hide');
-  document.getElementById('payment-proof-section').classList.add('hide');
-  document.getElementById('transaction-status-box').classList.add('hide');
-  document.getElementById('topup-id-display').innerText = '-';
-  document.getElementById('topup-status-display').innerHTML = '<span class="badge badge-warn">Menunggu</span>';
   document.getElementById('vip-purchase-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
   showToast('Dipilih: ' + data.name, 'info');
-}
-
-async function handleCreatePayment() {
-  const vipId = document.getElementById('selected-vip-id').value;
-  const vipName = document.getElementById('selected-vip-name').value;
-  const vipPrice = document.getElementById('selected-vip-price').value;
-  const vipDays = document.getElementById('selected-vip-days').value;
-  if (!vipId) return showToast('Pilih layanan dulu!', 'error');
-  const btn = document.getElementById('btn-create-payment');
-  btn.disabled = true; btn.innerText = 'Memproses...';
-  try {
-    const res = await fetch('/api/transaction/create', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, vipId, vipName, vipPrice: parseInt(vipPrice), vipDays: parseInt(vipDays) }) });
-    const data = await res.json();
-    if (data.success) {
-      currentTransactionId = data.transactionId;
-      document.getElementById('topup-id-display').innerText = data.transactionId;
-      document.getElementById('topup-status-display').innerHTML = '<span class="badge badge-warn">Menunggu</span>';
-      document.getElementById('payment-proof-section').classList.remove('hide');
-      showToast('Pesanan dibuat! Transfer via DANA & upload bukti.', 'success');
-      loadUserTransactions();
-    } else showToast(data.message || 'Gagal', 'error');
-  } catch(e) { showToast('Kesalahan koneksi', 'error'); }
-  finally { btn.disabled = false; btn.innerHTML = '💳 Buat Pesanan & Bayar'; }
-}
-
-function handlePaymentProofSelect(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  if (!file.type.startsWith('image/')) return showToast('Harus gambar!', 'error');
-  if (file.size > 5 * 1024 * 1024) return showToast('Max 5MB', 'error');
-  selectedPaymentProofFile = file;
-  document.getElementById('proof-file-info').innerText = '📎 ' + file.name + ' (' + (file.size/1024).toFixed(0) + ' KB)';
-  document.getElementById('btn-upload-proof').disabled = false;
-  showToast('Siap upload', 'info');
-}
-
-async function handleUploadProof() {
-  if (!currentTransactionId) return showToast('Buat pesanan dulu!', 'error');
-  if (!selectedPaymentProofFile) return showToast('Pilih bukti!', 'error');
-  const btn = document.getElementById('btn-upload-proof');
-  btn.disabled = true; btn.innerText = 'Mengirim...';
-  try {
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64 = reader.result;
-      const res = await fetch('/api/transaction/upload-proof', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loggedInUsername, transactionId: currentTransactionId, proofImage: base64, fileName: selectedPaymentProofFile.name }) });
-      const data = await res.json();
-      if (data.success) {
-        showToast('Bukti terkirim!', 'success');
-        document.getElementById('payment-proof-section').classList.add('hide');
-        document.getElementById('transaction-status-box').classList.remove('hide');
-        document.getElementById('transaction-status-content').innerHTML = '<div style="display:flex; align-items:center; gap:7px;"><span class="badge badge-info">Diproses</span><span style="font-size:11px; color:var(--text-1);">Menunggu verifikasi</span></div>';
-        selectedPaymentProofFile = null;
-        document.getElementById('payment-proof-file').value = '';
-        document.getElementById('proof-file-info').innerText = 'Klik untuk upload';
-        loadUserTransactions();
-      } else showToast(data.message || 'Gagal', 'error');
-      btn.disabled = false; btn.innerText = 'Kirim Bukti';
-    };
-    reader.readAsDataURL(selectedPaymentProofFile);
-  } catch(e) { showToast('Gagal', 'error'); btn.disabled = false; btn.innerText = 'Kirim Bukti'; }
+  startQrisPayment(id);
 }
 
 async function loadUserTransactions() {
@@ -3867,57 +3758,85 @@ function startQrisCountdown(expiresAt) {
   if (qrisExpiryTimer) { clearInterval(qrisExpiryTimer); qrisExpiryTimer = null; }
   var el = document.getElementById('qris-expiry-text');
   if (!el) return;
-  if (!expiresAt) { el.innerText = ''; return; }
+  if (!expiresAt) { el.innerText = '--:--'; return; }
   var tick = function() {
     var left = expiresAt - Date.now();
     if (left <= 0) {
-      el.innerText = 'Link kedaluwarsa. Tekan Buat Link Baru.';
+      el.innerText = '00:00';
+      setQrisBadge('failed');
+      showQrisOverlay('QR kedaluwarsa. Tekan Buat QR Baru.');
+      setQrisMessage('QR sudah kedaluwarsa. Tekan Buat QR Baru.', 'var(--err)');
       if (qrisExpiryTimer) { clearInterval(qrisExpiryTimer); qrisExpiryTimer = null; }
       return;
     }
-    var m = Math.floor(left / 60000);
-    var s = Math.floor((left % 60000) / 1000);
-    el.innerText = 'Berlaku ' + m + ':' + (s < 10 ? '0' : '') + s;
+    el.innerText = formatQrisTime(left);
   };
   tick();
   qrisExpiryTimer = setInterval(tick, 1000);
 }
 
-function highlightPayMethod(method) {
-  var qrBtn = document.getElementById('pay-method-btn-qr');
-  var danaBtn = document.getElementById('pay-method-btn-dana');
-  if (qrBtn) qrBtn.style.outline = method === 'qr' ? '2px solid var(--ok)' : 'none';
-  if (danaBtn) danaBtn.style.outline = method === 'dana' ? '2px solid var(--info)' : 'none';
+
+function formatQrisTime(ms) {
+  var m = Math.floor(ms / 60000);
+  var sec = Math.floor((ms % 60000) / 1000);
+  return (m < 10 ? '0' : '') + m + ':' + (sec < 10 ? '0' : '') + sec;
 }
 
-function resetPayMethod() {
-  stopQrisTimers();
-  qrisReqSeq++;
-  qrisTrxId = null;
-  var qrSec = document.getElementById('qris-section');
-  var danaWrap = document.getElementById('dana-method-wrap');
-  if (qrSec) qrSec.classList.add('hide');
-  if (danaWrap) danaWrap.classList.add('hide');
-  highlightPayMethod(null);
+function resetQrisDisplay() {
+  var img = document.getElementById('qris-qr-img');
+  var cv = document.getElementById('qris-qr-canvas');
+  var ld = document.getElementById('qris-qr-loading');
+  var ov = document.getElementById('qris-qr-overlay');
+  if (img) { img.removeAttribute('src'); img.classList.add('hide'); }
+  if (cv) { cv.innerHTML = ''; cv.classList.add('hide'); }
+  if (ld) { ld.innerText = 'Membuat QR...'; ld.classList.remove('hide'); }
+  if (ov) { ov.innerText = ''; ov.classList.add('hide'); }
 }
 
-function choosePayMethod(method) {
-  var vipId = document.getElementById('selected-vip-id').value;
-  if (!vipId) return showToast('Pilih layanan dulu!', 'error');
-  var qrSec = document.getElementById('qris-section');
-  var danaWrap = document.getElementById('dana-method-wrap');
-  highlightPayMethod(method);
-  if (method === 'qr') {
-    danaWrap.classList.add('hide');
-    qrSec.classList.remove('hide');
-    startQrisPayment(vipId);
-  } else {
-    stopQrisTimers();
-    qrisReqSeq++;
-    qrisTrxId = null;
-    qrSec.classList.add('hide');
-    danaWrap.classList.remove('hide');
+function renderQrisQr(data) {
+  var img = document.getElementById('qris-qr-img');
+  var cv = document.getElementById('qris-qr-canvas');
+  var ld = document.getElementById('qris-qr-loading');
+  var qrText = data.qrString || data.checkoutUrl || '';
+  if (data.qrImage) {
+    img.onerror = function() {
+      img.classList.add('hide');
+      drawQrisCanvas(qrText, cv, ld);
+    };
+    img.src = data.qrImage;
+    img.classList.remove('hide');
+    cv.classList.add('hide');
+    ld.classList.add('hide');
+    return;
   }
+  drawQrisCanvas(qrText, cv, ld);
+}
+
+function drawQrisCanvas(text, cv, ld) {
+  if (text && typeof QRCode !== 'undefined') {
+    try {
+      cv.innerHTML = '';
+      new QRCode(cv, { text: text, width: 216, height: 216, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+      cv.classList.remove('hide');
+      ld.classList.add('hide');
+      return;
+    } catch (e) {}
+  }
+  ld.innerText = 'QR gagal dimuat. Tekan Buat QR Baru.';
+  ld.classList.remove('hide');
+}
+
+function showQrisOverlay(text) {
+  var ov = document.getElementById('qris-qr-overlay');
+  if (!ov) return;
+  ov.innerText = text;
+  ov.classList.remove('hide');
+}
+
+function copyQrisCode() {
+  var code = document.getElementById('qris-invoice-id').innerText;
+  if (!code || code === '-') return showToast('Kode belum tersedia', 'error');
+  navigator.clipboard.writeText(code).then(function() { showToast('Kode pembayaran tersalin!', 'success'); }).catch(function() { showToast('Gagal menyalin', 'error'); });
 }
 
 async function startQrisPayment(vipId) {
@@ -3927,31 +3846,38 @@ async function startQrisPayment(vipId) {
   stopQrisTimers();
   qrisTrxId = null;
   setQrisBadge('pending');
+  resetQrisDisplay();
   var link = document.getElementById('qris-checkout-link');
   link.classList.add('hide');
-  setQrisMessage('Membuat link pembayaran...', 'var(--text-1)');
-  document.getElementById('qris-expiry-text').innerText = '';
+  setQrisMessage('Membuat QR pembayaran...', 'var(--text-1)');
+  document.getElementById('qris-expiry-text').innerText = '--:--';
   document.getElementById('qris-invoice-id').innerText = '-';
+  document.getElementById('qris-trx-id').innerText = '-';
+  document.getElementById('qris-amount-display').innerText = 'Rp ' + Number(document.getElementById('selected-vip-price').value || 0).toLocaleString('id-ID');
   try {
     var res = await fetch('/api/qris/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: loggedInUsername, vipId: vipId }) });
     var data = await res.json();
     if (mySeq !== qrisReqSeq) return;
     if (!data.success) {
-      setQrisMessage(data.message || 'Gagal membuat link pembayaran', 'var(--err)');
-      showToast(data.message || 'Gagal membuat link pembayaran', 'error');
+      document.getElementById('qris-qr-loading').innerText = 'Gagal membuat QR';
+      setQrisMessage(data.message || 'Gagal membuat QR pembayaran', 'var(--err)');
+      showToast(data.message || 'Gagal membuat QR pembayaran', 'error');
       return;
     }
     qrisTrxId = data.transactionId;
     document.getElementById('qris-amount-display').innerText = 'Rp ' + Number(data.amount).toLocaleString('id-ID');
     document.getElementById('qris-invoice-id').innerText = data.invoiceId || '-';
+    document.getElementById('qris-trx-id').innerText = data.transactionId || '-';
+    renderQrisQr(data);
     if (data.checkoutUrl) { link.href = data.checkoutUrl; link.classList.remove('hide'); }
-    setQrisMessage('Klik tombol di atas untuk membayar lewat QR. Setelah pembayaran terdeteksi, akun otomatis menjadi VIP, tidak perlu konfirmasi lagi.', 'var(--text-1)');
+    setQrisMessage('Scan QR di atas dengan aplikasi e-wallet / mobile banking dan bayar sesuai jumlah. Setelah pembayaran terdeteksi, akun otomatis menjadi VIP.', 'var(--text-1)');
     startQrisCountdown(data.expiresAt);
-    qrisPollTimer = setInterval(checkQrisStatus, 6000);
-    showToast('Link pembayaran siap.', 'success');
+    qrisPollTimer = setInterval(checkQrisStatus, 5000);
+    showToast('QR pembayaran siap.', 'success');
     loadUserTransactions();
   } catch (e) {
     if (mySeq !== qrisReqSeq) return;
+    document.getElementById('qris-qr-loading').innerText = 'Gagal membuat QR';
     setQrisMessage('Kesalahan koneksi', 'var(--err)');
     showToast('Kesalahan koneksi', 'error');
   }
@@ -3978,7 +3904,8 @@ function onQrisPaid(data) {
   qrisTrxId = null;
   setQrisBadge('paid');
   document.getElementById('qris-checkout-link').classList.add('hide');
-  document.getElementById('qris-expiry-text').innerText = '';
+  document.getElementById('qris-expiry-text').innerText = '--:--';
+  showQrisOverlay('✅ Pembayaran berhasil!');
   setQrisMessage('✅ Pembayaran terdeteksi! Akun kamu sekarang VIP.', 'var(--ok)');
   applyVipSessionUpdate(data.session);
   showToast(data.message || 'Pembayaran berhasil! Akun VIP aktif.', 'success', 5000);
@@ -3990,10 +3917,13 @@ function onQrisFailed(data) {
   qrisTrxId = null;
   setQrisBadge('failed');
   document.getElementById('qris-checkout-link').classList.add('hide');
-  setQrisMessage(data.message || 'Link kedaluwarsa / dibatalkan. Tekan Buat Link Baru.', 'var(--err)');
-  showToast(data.message || 'Link pembayaran kedaluwarsa', 'error');
+  document.getElementById('qris-expiry-text').innerText = '00:00';
+  showQrisOverlay('QR kedaluwarsa / dibatalkan. Tekan Buat QR Baru.');
+  setQrisMessage(data.message || 'QR kedaluwarsa / dibatalkan. Tekan Buat QR Baru.', 'var(--err)');
+  showToast(data.message || 'QR pembayaran kedaluwarsa', 'error');
   loadUserTransactions();
 }
+
 
 async function checkQrisStatus() {
   if (!qrisTrxId || qrisCheckBusy) return;
@@ -4012,14 +3942,6 @@ async function checkQrisStatus() {
 }
 
 document.addEventListener('visibilitychange', function() { if (!document.hidden) checkQrisStatus(); });
-
-// Pilih produk VIP -> tampil pilihan metode (QR / DANA). Fungsi lama tetap dipanggil apa adanya
-var __origSelectVipItem = selectVipItem;
-selectVipItem = function(itemId) {
-  __origSelectVipItem(itemId);
-  qrisVipId = itemId;
-  resetPayMethod();
-};
 
 async function handleSubmitFeatureRequest() {
   const title = document.getElementById('feature-request-title').value.trim();
@@ -5434,26 +5356,8 @@ const server = http.createServer(async (req, res) => {
       });
       res.end(fileResp.body);
 
-    } else if (parsedUrl.pathname === '/api/transaction/create' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { username, vipId, vipName, vipPrice, vipDays } = JSON.parse(body);
-      const cleanUser = username ? username.toLowerCase() : '';
-      const userObj = await getUserFromDb(cleanUser);
-      if (!userObj) return jsonResponse(res, 403, { success: false, message: 'User tidak valid!' });
-      const transactionId = 'TRX-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-      await saveTransactionToDb(transactionId, { transactionId, username: cleanUser, vipId, vipName, vipPrice: parseInt(vipPrice), vipDays: parseInt(vipDays), status: 'pending', proofImage: null, proofFileName: null, createdAt: Date.now(), updatedAt: Date.now(), adminNote: '' });
-      jsonResponse(res, 200, { success: true, transactionId, message: 'Pesanan dibuat! Transfer via DANA & upload bukti.' });
-
-    } else if (parsedUrl.pathname === '/api/transaction/upload-proof' && req.method === 'POST') {
-      const body = await readBody(req);
-      const { username, transactionId, proofImage, fileName } = JSON.parse(body);
-      const cleanUser = username ? username.toLowerCase() : '';
-      const trx = await getTransactionFromDb(transactionId);
-      if (!trx) return jsonResponse(res, 404, { success: false, message: 'Transaksi tidak ditemukan!' });
-      if (trx.username !== cleanUser) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
-      trx.proofImage = proofImage; trx.proofFileName = fileName; trx.status = 'process'; trx.updatedAt = Date.now();
-      await saveTransactionToDb(transactionId, trx);
-      jsonResponse(res, 200, { success: true, message: 'Bukti terkirim!' });
+    } else if ((parsedUrl.pathname === '/api/transaction/create' || parsedUrl.pathname === '/api/transaction/upload-proof') && req.method === 'POST') {
+      jsonResponse(res, 410, { success: false, message: 'Pembayaran manual sudah dihapus. Gunakan pembayaran QR.' });
 
     } else if (parsedUrl.pathname === '/api/qris/create' && req.method === 'POST') {
       const body = await readBody(req);
@@ -5489,7 +5393,7 @@ const server = http.createServer(async (req, res) => {
         return jsonResponse(res, 502, { success: false, message: 'Gagal membuat QR: ' + apiErr.message });
       }
       if (!invoice.id) return jsonResponse(res, 502, { success: false, message: 'Respons API pembayaran tidak berisi ID invoice.' });
-      if (!invoice.checkoutUrl) return jsonResponse(res, 502, { success: false, message: 'Respons API pembayaran tidak berisi link pembayaran.' });
+      if (!invoice.checkoutUrl && !invoice.qrImage && !invoice.qrString) return jsonResponse(res, 502, { success: false, message: 'Respons API pembayaran tidak berisi QR maupun link pembayaran.' });
       const newTrx = {
         transactionId, username: cleanUser, vipId, vipName: item.name, vipPrice: price, vipDays: days,
         status: 'pending', method: 'qris', invoiceId: invoice.id,
@@ -6195,7 +6099,7 @@ server.listen(PORT, () => {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
   console.log('║  🚀 AM Premium Banggus v7.3                                  ║');
   console.log('║  📡 http://localhost:' + PORT + '                                    ║');
-  console.log('║  💳 DANA Admin: ' + DANA_ADMIN_NUMBER + '                     ║');
+  console.log('║  💳 Pembayaran: QR Gateway (otomatis)                        ║');
   console.log('║  ──────────────────────────────────────────────────────────  ║');
   console.log('║  ✨ FITUR AKTIF:                                             ║');
   console.log('║  🎨 Alight Motion Premium                                    ║');
