@@ -290,6 +290,74 @@ function qrPick(obj, keys) {
   return null;
 }
 
+// Cari data QR di mana pun di dalam respons API (qr string QRIS / gambar QR)
+function qrDeepFind(node, out, depth) {
+  out = out || { str: null, img: null };
+  depth = depth || 0;
+  if (node === null || node === undefined || depth > 6) return out;
+  if (typeof node === 'string') {
+    const s = node.trim();
+    if (!out.str && /^000201/.test(s) && s.length >= 60 && !/[\s<>"]/.test(s.replace(/ /g, ''))) out.str = s;
+    else if (!out.img && /^data:image\//i.test(s)) out.img = s;
+    return out;
+  }
+  if (Array.isArray(node)) { node.forEach(n => qrDeepFind(n, out, depth + 1)); return out; }
+  if (typeof node === 'object') {
+    Object.keys(node).forEach(k => {
+      const v = node[k];
+      if (!out.img && typeof v === 'string' && /qr.*(image|img|url|png)|image.*qr/i.test(k) && /^https?:\/\/\S+$/i.test(v.trim())) out.img = v.trim();
+      qrDeepFind(v, out, depth + 1);
+    });
+  }
+  return out;
+}
+
+// Cadangan: baca halaman checkout dari gateway di sisi server, lalu ambil QR-nya (user tidak perlu membuka link)
+async function qrScrapeCheckout(url) {
+  try {
+    const r = await httpRequestBuffer(url, { method: 'GET', headers: { 'Accept': 'application/json,text/html;q=0.9,*/*;q=0.5', 'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36' }, timeout: 12000 }, 3);
+    if (r.status < 200 || r.status >= 300) return null;
+    const text = r.body.toString('utf8');
+    const out = { str: null, img: null };
+    let j = null;
+    try { j = JSON.parse(text); } catch (e) { j = null; }
+    if (j) qrDeepFind(j, out);
+    if (!out.str) { const m = text.match(/000201[^"'<>\\]{40,700}?6304[0-9A-Fa-f]{4}/); if (m) out.str = m[0]; }
+    if (!out.img && !out.str) { const im = text.match(/data:image\/(?:png|jpeg|svg\+xml);base64,[A-Za-z0-9+\/=]{200,}/); if (im) out.img = im[0]; }
+    return (out.str || out.img) ? out : null;
+  } catch (e) { return null; }
+}
+
+// Ambil QR secara real-time dari gateway: ulangi baca invoice sampai QR tersedia
+async function qrEnrichInvoice(inv) {
+  const has = () => !!(inv.qrImage || inv.qrString);
+  if (has() || !inv.id) return inv;
+  const merge = (n) => {
+    if (!n) return;
+    if (!inv.qrImage && n.qrImage) inv.qrImage = n.qrImage;
+    if (!inv.qrString && n.qrString) inv.qrString = n.qrString;
+    if (!inv.checkoutUrl && n.checkoutUrl) inv.checkoutUrl = n.checkoutUrl;
+    if (!inv.expiresAt && n.expiresAt) inv.expiresAt = n.expiresAt;
+    if (!inv.amount && n.amount) inv.amount = n.amount;
+  };
+  const enc = encodeURIComponent(inv.id);
+  for (let i = 0; i < 4 && !has(); i++) {
+    if (i > 0) await new Promise(r => setTimeout(r, 1200));
+    try { merge(normalizeQrInvoice(await qrPayRequest('GET', '/v1/invoices/' + enc))); } catch (e) {}
+  }
+  if (!has()) {
+    for (const sub of ['/qris', '/qr']) {
+      try { merge(normalizeQrInvoice(await qrPayRequest('GET', '/v1/invoices/' + enc + sub))); } catch (e) {}
+      if (has()) break;
+    }
+  }
+  if (!has() && inv.checkoutUrl) {
+    const sc = await qrScrapeCheckout(inv.checkoutUrl);
+    if (sc) { if (sc.str) inv.qrString = sc.str; if (sc.img) inv.qrImage = sc.img; }
+  }
+  return inv;
+}
+
 function normalizeQrInvoice(raw) {
   const d = (raw && raw.data && typeof raw.data === 'object' && !Array.isArray(raw.data)) ? raw.data : (raw || {});
   const nested = (d.qris && typeof d.qris === 'object') ? d.qris : ((d.qr && typeof d.qr === 'object') ? d.qr : {});
@@ -309,13 +377,14 @@ function normalizeQrInvoice(raw) {
     if (typeof expiresAt === 'number') expiresAt = expiresAt < 1e12 ? expiresAt * 1000 : expiresAt;
     else { const t = Date.parse(expiresAt); expiresAt = isNaN(t) ? null : t; }
   }
+  const deepQr = qrDeepFind(raw);
   return {
     id: id !== null ? String(id) : null,
     status,
     isPaidFlag,
     amount: isNaN(amountRaw) ? null : amountRaw,
-    qrImage: typeof qrImage === 'string' ? qrImage : null,
-    qrString: typeof qrString === 'string' ? qrString : null,
+    qrImage: typeof qrImage === 'string' ? qrImage : deepQr.img,
+    qrString: typeof qrString === 'string' ? qrString : deepQr.str,
     checkoutUrl: typeof checkoutUrl === 'string' && /^https?:\/\//i.test(checkoutUrl) ? checkoutUrl : null,
     expiresAt
   };
@@ -3797,7 +3866,7 @@ function renderQrisQr(data) {
   var img = document.getElementById('qris-qr-img');
   var cv = document.getElementById('qris-qr-canvas');
   var ld = document.getElementById('qris-qr-loading');
-  var qrText = data.qrString || data.checkoutUrl || '';
+  var qrText = data.qrString || '';
   if (data.qrImage) {
     img.onerror = function() {
       img.classList.add('hide');
@@ -3869,7 +3938,6 @@ async function startQrisPayment(vipId) {
     document.getElementById('qris-invoice-id').innerText = data.invoiceId || '-';
     document.getElementById('qris-trx-id').innerText = data.transactionId || '-';
     renderQrisQr(data);
-    if (data.checkoutUrl) { link.href = data.checkoutUrl; link.classList.remove('hide'); }
     setQrisMessage('Scan QR di atas dengan aplikasi e-wallet / mobile banking dan bayar sesuai jumlah. Setelah pembayaran terdeteksi, akun otomatis menjadi VIP.', 'var(--text-1)');
     startQrisCountdown(data.expiresAt);
     qrisPollTimer = setInterval(checkQrisStatus, 5000);
@@ -5373,7 +5441,7 @@ const server = http.createServer(async (req, res) => {
       if (!price || price < 1 || !days || days < 1) return jsonResponse(res, 400, { success: false, message: 'Data produk VIP tidak valid!' });
       const nowTs = Date.now();
       const allTrxQr = await getTransactionsFromDb();
-      const reusable = Object.values(allTrxQr).find(t => t.username === cleanUser && t.method === 'qris' && t.vipId === vipId && t.status === 'pending' && t.vipPrice === price && (t.qrExpiresAt ? t.qrExpiresAt > nowTs + 60000 : (nowTs - t.createdAt) < QR_DEFAULT_VALID_MS - 60000));
+      const reusable = Object.values(allTrxQr).find(t => t.username === cleanUser && t.method === 'qris' && t.vipId === vipId && t.status === 'pending' && (t.qrString || t.qrImage) && t.vipPrice === price && (t.qrExpiresAt ? t.qrExpiresAt > nowTs + 60000 : (nowTs - t.createdAt) < QR_DEFAULT_VALID_MS - 60000));
       if (reusable) return jsonResponse(res, 200, Object.assign({ success: true, reused: true }, qrTrxClientView(reusable)));
       const transactionId = 'TRX-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
       let invoice;
@@ -5393,7 +5461,8 @@ const server = http.createServer(async (req, res) => {
         return jsonResponse(res, 502, { success: false, message: 'Gagal membuat QR: ' + apiErr.message });
       }
       if (!invoice.id) return jsonResponse(res, 502, { success: false, message: 'Respons API pembayaran tidak berisi ID invoice.' });
-      if (!invoice.checkoutUrl && !invoice.qrImage && !invoice.qrString) return jsonResponse(res, 502, { success: false, message: 'Respons API pembayaran tidak berisi QR maupun link pembayaran.' });
+      invoice = await qrEnrichInvoice(invoice);
+      if (!invoice.qrImage && !invoice.qrString) return jsonResponse(res, 502, { success: false, message: 'QR belum tersedia dari penyedia pembayaran. Silakan coba lagi.' });
       const newTrx = {
         transactionId, username: cleanUser, vipId, vipName: item.name, vipPrice: price, vipDays: days,
         status: 'pending', method: 'qris', invoiceId: invoice.id,
