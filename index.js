@@ -1195,6 +1195,8 @@ const FEATURE_ROUTES = [
     api: ['/api/announcements'] },
   { id: 'request', name: 'Request Fitur', path: '/request-fitur', aliases: ['/request', '/feature-request'],
     api: ['/api/feature-request/submit', '/api/feature-request/my'] },
+  { id: 'contact', name: 'Hubungi Kami', path: '/hubungi-kami', aliases: ['/contact', '/kontak', '/hubungi'],
+    api: [] },
   { id: 'admin', name: 'Panel Admin', path: '/admin', aliases: ['/panel-admin'], adminOnly: true,
     api: ['/api/admin/*'] }
 ];
@@ -1656,6 +1658,7 @@ const htmlTemplate = `<!DOCTYPE html>
     <div class="nav-section-label">Lainnya</div>
     <button onclick="switchView('announcement')" data-nav="announcement" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>Pengumuman</button>
     <button onclick="switchView('request')" data-nav="request" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>Request Fitur</button>
+    <button onclick="switchView('contact')" data-nav="contact" class="nav-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>Hubungi Kami</button>
     <button id="nav-admin-btn" onclick="switchView('admin')" data-nav="admin" class="nav-link hide"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Panel Admin</button>
     <div style="margin-top:auto; padding-top:14px; border-top:1px solid var(--line-2);">
       <div style="display:flex; align-items:center; gap:10px; padding:9px; background:var(--bg-2); border-radius:10px; border:1px solid var(--line-2); margin-bottom:9px;">
@@ -2116,7 +2119,7 @@ const htmlTemplate = `<!DOCTYPE html>
               <div style="font-size:9px; color:var(--text-2); margin-top:5px;">Kode Pesanan: <span id="qris-trx-id" class="mono">-</span></div>
             </div>
             <div id="qris-result-text" style="text-align:center; font-size:11px; color:var(--text-1); line-height:1.5;">-</div>
-            <button onclick="confirmQrisPaid()" id="btn-qris-paid" class="btn btn-ok hide">Saya Sudah Bayar</button>
+            <button onclick="confirmQrisPaid()" id="btn-qris-paid" class="btn btn-ok hide">✅ Saya Sudah Bayar</button>
             <button onclick="reloadQrisPayment()" id="btn-qris-reload" class="btn btn-ghost btn-xs hide">↻ Buat QR Baru</button>
           </div>
         </div>
@@ -2368,6 +2371,24 @@ const htmlTemplate = `<!DOCTYPE html>
         <div id="admin-feature-requests-list" style="display:flex; flex-direction:column; gap:7px; max-height:250px; overflow-y:auto; font-size:11px;">
           <p style="font-size:11px; color:var(--text-2); text-align:center; padding:6px; font-style:italic;">Memuat...</p>
         </div>
+      </div>
+    </div>
+
+    <div id="section-contact" class="hide card" style="display:flex; flex-direction:column; gap:14px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid var(--line);">
+        <div class="section-head" style="margin:0; color:var(--ok);">Hubungi Kami</div>
+        <button onclick="switchView('generator')" class="btn btn-ghost btn-xs">← Kembali</button>
+      </div>
+      <p style="font-size:12px; color:var(--text-1); margin:0;">Butuh bantuan atau ingin order? Hubungi admin lewat tombol di bawah ini.</p>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <a href="https://wa.me/+6283117916161" target="_blank" rel="noopener noreferrer" class="btn btn-ok" style="text-decoration:none;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+          WHATSAP ADMIN
+        </a>
+        <a href="https://www.tiktok.com/@banggus.am.free?_r=1&amp;_t=ZS-9BaeozlKwnU" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="text-decoration:none;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"/></svg>
+          TIKTOK ADMIN
+        </a>
       </div>
     </div>
 
@@ -2728,7 +2749,7 @@ function switchView(viewName) {
   document.body.classList.toggle('chat-wide', viewName === 'chat');
   document.querySelectorAll('[data-nav]').forEach(el => { el.classList.toggle('active', el.dataset.nav === viewName); });
   toggleMenu();
-  ['terminal-view','section-profile','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-hdfoto','section-apk','section-orders'].forEach(id => { document.getElementById(id).classList.add('hide'); });
+  ['terminal-view','section-profile','section-announcement','section-chat','section-admin','section-request','section-vipshop','section-netflix','section-hdfoto','section-apk','section-orders','section-contact'].forEach(id => { document.getElementById(id).classList.add('hide'); });
   if (viewName === 'generator') document.getElementById('terminal-view').classList.remove('hide');
   else if (viewName === 'orders') { document.getElementById('section-orders').classList.remove('hide'); loadMyOrders(); }
   else if (viewName === 'netflix') { document.getElementById('section-netflix').classList.remove('hide'); loadNetflixHistory(); updateNetflixQuotaDisplay(); }
@@ -2740,6 +2761,7 @@ function switchView(viewName) {
   }
   else if (viewName === 'profile') { document.getElementById('section-profile').classList.remove('hide'); loadVerifiedEmails(); }
   else if (viewName === 'announcement') { document.getElementById('section-announcement').classList.remove('hide'); loadUserAnnouncements(); }
+  else if (viewName === 'contact') { document.getElementById('section-contact').classList.remove('hide'); }
   else if (viewName === 'request') { document.getElementById('section-request').classList.remove('hide'); loadUserFeatureRequests(); }
   else if (viewName === 'chat') { document.getElementById('section-chat').classList.remove('hide'); loadGlobalChat(true); unreadChatCount = 0; updateChatBadge(); }
   else if (viewName === 'admin') {
@@ -3798,7 +3820,7 @@ async function loadUserTransactions() {
         const statusBadge = t.status === 'success' ? 'badge-ok' : t.status === 'failed' ? 'badge-err' : t.status === 'process' ? 'badge-info' : 'badge-warn';
         const statusText = t.status === 'success' ? '✓ Sukses' : t.status === 'failed' ? '✗ Gagal' : t.status === 'process' ? '⚙ Diproses' : '⏳ Menunggu';
         const priceFormatted = 'Rp ' + Number(t.vipPrice).toLocaleString('id-ID');
-        return '<div class="hist-item"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11.5px; font-weight:700;">' + escapeHtml(t.vipName) + '</div><div class="mono" style="font-size:9px; color:var(--text-2);">' + escapeHtml(t.transactionId) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; margin-top:5px;"><span style="color:var(--warn); font-weight:700;">' + priceFormatted + '</span><span style="color:var(--text-2);">' + new Date(t.createdAt).toLocaleDateString('id-ID') + '</span></div>' + (t.adminNote ? '<div style="font-size:10px; color:var(--warn); margin-top:5px; padding:5px 7px; background:var(--warn-soft); border-radius:5px;">💬 ' + escapeHtml(t.adminNote) + '</div>' : '') + '</div>';
+        return '<div class="hist-item"><div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px;"><div style="flex:1; min-width:0;"><div style="font-size:11.5px; font-weight:700;">' + escapeHtml(t.vipName) + '</div><div class="mono" style="font-size:9px; color:var(--text-2);">' + escapeHtml(t.transactionId) + '</div></div><span class="badge ' + statusBadge + '">' + statusText + '</span></div><div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; margin-top:5px;"><span style="color:var(--warn); font-weight:700;">' + priceFormatted + '</span><span style="color:var(--text-2);">' + new Date(t.createdAt).toLocaleDateString('id-ID') + '</span></div>' + (t.adminNote ? '<div style="font-size:10px; color:var(--warn); margin-top:5px; padding:5px 7px; background:var(--warn-soft); border-radius:5px;">💬 ' + escapeHtml(t.adminNote) + '</div>' : '') + (t.qrActive ? '<button onclick="openQrisFromHistory(\\'' + escapeHtml(t.transactionId) + '\\')" class="btn btn-warn btn-xs" style="width:100%; margin-top:7px;">💳 Lihat QR & Bayar (masih aktif)</button>' : '') + '</div>';
       }).join('');
     } else container.innerHTML = '<p style="font-size:11px; color:var(--text-2); text-align:center; padding:8px; font-style:italic;">Belum ada</p>';
   } catch(e) { container.innerHTML = '<p style="font-size:11px; color:var(--err); text-align:center; padding:8px;">Gagal</p>'; }
@@ -3813,6 +3835,7 @@ let qrisCheckBusy = false;
 let qrisReqSeq = 0;
 let qrisCreating = false;
 let qrisManualBusy = false;
+let qrisOpening = false;
 
 function setQrisBadge(type) {
   var el = document.getElementById('qris-status-badge');
@@ -4001,7 +4024,7 @@ async function startQrisPayment(vipId) {
   } finally {
     if (mySeq === qrisReqSeq) {
       qrisCreating = false;
-      if (showBtn) { showBtn.disabled = false; showBtn.innerText = ' Tampilkan Kode Pembayaran'; }
+      if (showBtn) { showBtn.disabled = false; showBtn.innerText = '💳 Tampilkan Kode Pembayaran'; }
     }
   }
 }
@@ -4042,6 +4065,46 @@ async function confirmQrisPaid() {
   } finally {
     qrisManualBusy = false;
     if (btn) { btn.disabled = false; btn.innerText = '✅ Saya Sudah Bayar'; }
+  }
+}
+
+async function openQrisFromHistory(trxId) {
+  if (!loggedInUsername || !trxId || qrisOpening || qrisCreating) return;
+  qrisOpening = true;
+  var mySeq = ++qrisReqSeq;
+  try {
+    var res = await fetch('/api/qris/open?username=' + encodeURIComponent(loggedInUsername) + '&transactionId=' + encodeURIComponent(trxId));
+    var data = await res.json();
+    if (mySeq !== qrisReqSeq) return;
+    if (!data.success) { showToast(data.message || 'Gagal membuka kode pembayaran', 'error'); loadUserTransactions(); return; }
+    if (data.status === 'paid') { showToast('Pembayaran ini sudah lunas.', 'success'); loadUserTransactions(); return; }
+    stopQrisTimers();
+    qrisVipId = data.vipId;
+    document.getElementById('selected-vip-id').value = data.vipId || '';
+    document.getElementById('selected-vip-price').value = data.vipPrice || '';
+    document.getElementById('selected-vip-days').value = data.vipDays || '';
+    document.getElementById('selected-vip-name').value = data.vipName || '';
+    document.getElementById('selected-vip-display').innerText = (data.vipName || '-') + ' (' + (data.vipDays || 0) + ' hari)';
+    document.getElementById('selected-vip-price-display').innerText = 'Rp ' + Number(data.vipPrice || data.amount || 0).toLocaleString('id-ID');
+    document.getElementById('vip-purchase-form').classList.remove('hide');
+    setQrisBadge('pending');
+    resetQrisDisplay();
+    showQrisStartBox(false);
+    qrisTrxId = data.transactionId;
+    document.getElementById('qris-amount-display').innerText = 'Rp ' + Number(data.amount).toLocaleString('id-ID');
+    document.getElementById('qris-invoice-id').innerText = data.invoiceId || '-';
+    document.getElementById('qris-trx-id').innerText = data.transactionId || '-';
+    renderQrisQr(data);
+    setQrisButtons('active');
+    setQrisMessage('Ini kode pembayaran dari riwayat kamu (tanpa QR baru). Scan dan bayar sesuai jumlah, lalu tekan Saya Sudah Bayar.', 'var(--text-1)');
+    startQrisCountdown(data.expiresAt);
+    qrisPollTimer = setInterval(checkQrisStatus, 5000);
+    document.getElementById('qris-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    showToast('Kode pembayaran sebelumnya ditampilkan.', 'success');
+  } catch (e) {
+    showToast('Kesalahan koneksi', 'error');
+  } finally {
+    qrisOpening = false;
   }
 }
 
@@ -5620,12 +5683,36 @@ const server = http.createServer(async (req, res) => {
         jsonResponse(res, 200, { success: true, status: 'pending', warning: apiErr.message });
       }
 
+    } else if (parsedUrl.pathname === '/api/qris/open' && req.method === 'GET') {
+      // Buka kembali QR dari riwayat (tanpa membuat invoice baru)
+      const username = parsedUrl.searchParams.get('username');
+      const transactionId = parsedUrl.searchParams.get('transactionId');
+      const cleanUser = username ? username.toLowerCase() : '';
+      const trx = transactionId ? await getTransactionFromDb(transactionId) : null;
+      if (!trx || trx.method !== 'qris') return jsonResponse(res, 404, { success: false, message: 'Transaksi QR tidak ditemukan!' });
+      if (trx.username !== cleanUser) return jsonResponse(res, 403, { success: false, message: 'Akses ditolak!' });
+      if (trx.status === 'success') return jsonResponse(res, 200, { success: true, status: 'paid' });
+      if (trx.status !== 'pending') return jsonResponse(res, 200, { success: false, message: 'Transaksi ini sudah tidak aktif. Pilih produk lagi untuk membuat QR baru.' });
+      const expAtOpen = trx.qrExpiresAt || (trx.createdAt + QR_DEFAULT_VALID_MS);
+      if (expAtOpen <= Date.now()) return jsonResponse(res, 200, { success: false, message: 'QR sudah kedaluwarsa. Pilih produk lagi untuk membuat QR baru.' });
+      if (!trx.qrString && !trx.qrImage) return jsonResponse(res, 200, { success: false, message: 'Data QR tidak tersedia. Pilih produk lagi untuk membuat QR baru.' });
+      qrPendingIds.add(trx.transactionId);
+      jsonResponse(res, 200, Object.assign({ success: true, status: 'pending', reused: true, vipId: trx.vipId, vipPrice: trx.vipPrice }, qrTrxClientView(trx)));
+
     } else if (parsedUrl.pathname === '/api/transaction/my' && req.method === 'GET') {
       const username = parsedUrl.searchParams.get('username');
       if (!username) return jsonResponse(res, 400, { success: false, message: 'Username diperlukan' });
       const cleanUser = username.toLowerCase();
       const allTrx = await getTransactionsFromDb();
-      const myTrx = Object.values(allTrx).filter(t => t.username === cleanUser).sort((a, b) => b.createdAt - a.createdAt);
+      const nowMy = Date.now();
+      const myTrx = Object.values(allTrx).filter(t => t.username === cleanUser).sort((a, b) => b.createdAt - a.createdAt).map(t => {
+        const c = Object.assign({}, t);
+        const expAt = t.qrExpiresAt || (t.createdAt + QR_DEFAULT_VALID_MS);
+        c.qrActive = !!(t.method === 'qris' && t.status === 'pending' && (t.qrString || t.qrImage) && expAt > nowMy);
+        c.qrExpiresAt = expAt;
+        delete c.checkoutUrl; delete c.qrString; delete c.qrImage;
+        return c;
+      });
       jsonResponse(res, 200, { success: true, transactions: myTrx });
 
     } else if (parsedUrl.pathname === '/api/admin/transactions' && req.method === 'GET') {
