@@ -1264,7 +1264,11 @@ function amRequest(method, apiPath, query, bodyObj) {
 function amCheck(r) {
   const d = r.data;
   if (r.httpStatus >= 400 || !d || d.status === false) {
-    const msg = (d && d.data && d.data.message) || (d && d.message) || ('HTTP ' + r.httpStatus);
+    // API Nexadev mengembalikan pesan error di field "result" (string), beda dari API lama.
+    const msg = (d && typeof d.result === 'string' && d.result)
+      || (d && d.data && d.data.message)
+      || (d && d.message)
+      || ('HTTP ' + r.httpStatus + (d ? ' - ' + JSON.stringify(d).substring(0, 200) : ' - respons kosong'));
     console.error('[AM API]', r.httpStatus, JSON.stringify(d).substring(0, 300));
     throw new Error(msg);
   }
@@ -1272,8 +1276,16 @@ function amCheck(r) {
 }
 
 // ====== NEXADEV API (magic link & verifikasi) ======
-// Simpan API key sebenarnya di environment variable NEXADEV_API_KEY, jangan hardcode di produksi.
+// WAJIB diisi API key asli dari NexaDev. 'YOUR_KEY' hanyalah placeholder dan akan DITOLAK oleh server
+// (ditandai respons: {"status":false,"result":"API key tidak valid."}).
+// Cara isi paling aman: set environment variable NEXADEV_API_KEY, contoh di Linux/terminal:
+//   export NEXADEV_API_KEY=isi_key_asli_disini
+// atau, kalau tidak bisa set env var, ganti langsung string 'YOUR_KEY' di bawah ini dengan key asli.
 const NEXADEV_API_KEY = process.env.NEXADEV_API_KEY || 'YOUR_KEY';
+if (NEXADEV_API_KEY === 'YOUR_KEY') {
+  console.warn('\n⚠️  [NEXADEV] API key belum di-set! Fitur magic link & verifikasi AM akan GAGAL (API key tidak valid).');
+  console.warn('⚠️  Set environment variable NEXADEV_API_KEY dengan key asli dari NexaDev.\n');
+}
 const NEXADEV_BASE = 'https://api.nexadev.my.id/am';
 
 function nexaRequest(apiPath, query) {
