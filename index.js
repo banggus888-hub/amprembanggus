@@ -1271,15 +1271,43 @@ function amCheck(r) {
   return d;
 }
 
+// ====== NEXADEV API (magic link & verifikasi) ======
+// Simpan API key sebenarnya di environment variable NEXADEV_API_KEY, jangan hardcode di produksi.
+const NEXADEV_API_KEY = process.env.NEXADEV_API_KEY || 'YOUR_KEY';
+const NEXADEV_BASE = 'https://api.nexadev.my.id/am';
+
+function nexaRequest(apiPath, query) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(NEXADEV_BASE + apiPath);
+    u.searchParams.set('key', NEXADEV_API_KEY);
+    if (query) Object.keys(query).forEach(k => u.searchParams.set(k, query[k]));
+    https.get(u, { timeout: 60000 }, (res) => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        let data;
+        try { data = JSON.parse(text); } catch (e) { data = { status: false, data: { message: text.substring(0, 200) } }; }
+        resolve({ httpStatus: res.statusCode, data });
+      });
+    }).on('timeout', function () { this.destroy(new Error('Timeout menghubungi API Nexadev')); })
+      .on('error', reject);
+  });
+}
+
 const am = {
   async magiclink(email) {
     if (!email || !email.includes("@") || !email.includes(".")) throw new Error("Invalid email.");
     email = String(email).trim();
-    const r = await amRequest('GET', '/api/alightmotion/v5/magiclink', { email }, {});
+    // GET https://api.nexadev.my.id/am/send/?key=YOUR_KEY&email=...
+    const r = await nexaRequest('/send/', { email });
     return amCheck(r);
   },
   async verif(email, url) {
-    const r = await amRequest('POST', '/api/alightmotion/v5/premium', null, { email, url });
+    if (!email || !url) throw new Error("Email dan url wajib diisi.");
+    email = String(email).trim();
+    // GET https://api.nexadev.my.id/am/verif/?key=YOUR_KEY&email=...&link=...
+    const r = await nexaRequest('/verif/', { email, link: url });
     return amCheck(r);
   }
 };
