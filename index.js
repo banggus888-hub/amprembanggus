@@ -757,7 +757,20 @@ setTimeout(sweepExpiredBonusQuotas, 15 * 1000);
 setInterval(sweepExpiredBonusQuotas, 10 * 60 * 1000);
 
 // ====== HD FOTO (UPSCALE) - tanpa dependensi tambahan ======
-const UPSCALE_ENDPOINT = config.base + '/api/imgbb/upscale-image';
+const UPSCALE_ENDPOINT = 'https://api.nexadev.my.id/api/upscale1';
+const UPSCALE_RESOLUSI = 4;
+
+// Penyimpanan sementara agar gambar upload user punya URL publik (API upscale butuh parameter ?url=)
+const hdTempImages = new Map();
+function hdTempStore(buffer, contentType) {
+  const token = crypto.randomBytes(16).toString('hex');
+  hdTempImages.set(token, { buffer, contentType, exp: Date.now() + 5 * 60 * 1000 });
+  return token;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of hdTempImages) if (v.exp < now) hdTempImages.delete(k);
+}, 60 * 1000).unref();
 const HD_MAX_BYTES = 10 * 1024 * 1024;
 
 function httpRequestBuffer(urlStr, options, redirectsLeft) {
@@ -804,42 +817,26 @@ function sniffImageType(buf) {
 }
 
 async function upscaleImage(input, meta) {
+  let tempToken = null;
   try {
     meta = meta || {};
-    let buffer;
-    let contentType = meta.contentType || 'image/jpeg';
-    let filename = meta.filename || 'image.jpg';
+    let imageUrl;
 
     if (Buffer.isBuffer(input)) {
-      buffer = input;
+      if (!meta.publicBase) throw new Error('Base URL publik server tidak tersedia.');
+      tempToken = hdTempStore(input, meta.contentType || sniffImageType(input) || 'image/jpeg');
+      imageUrl = String(meta.publicBase).replace(/\/+$/, '') + '/hd-tmp/' + tempToken;
     } else if (typeof input === 'string') {
-      const dl = await httpRequestBuffer(input, { method: 'GET' }, 3);
-      if (dl.status < 200 || dl.status >= 300) throw new Error('Gagal mengunduh gambar (HTTP ' + dl.status + ')');
-      buffer = dl.body;
-      contentType = String(dl.headers['content-type'] || 'image/jpeg').split(';')[0];
+      if (!/^https?:\/\//i.test(input)) throw new Error('URL gambar tidak valid.');
+      imageUrl = input;
     } else {
       throw new Error('Input harus berupa URL (string) atau Buffer.');
     }
 
-    const boundary = '----HDFoto' + crypto.randomBytes(12).toString('hex');
-    const head = Buffer.from(
-      '--' + boundary + '\r\n' +
-      'Content-Disposition: form-data; name="file"; filename="' + filename + '"\r\n' +
-      'Content-Type: ' + contentType + '\r\n\r\n'
-    );
-    const tail = Buffer.from('\r\n--' + boundary + '--\r\n');
-    const body = Buffer.concat([head, buffer, tail]);
+    const resolusi = meta.resolusi || UPSCALE_RESOLUSI;
+    const apiUrl = UPSCALE_ENDPOINT + '?url=' + encodeURIComponent(imageUrl) + '&resolusi=' + encodeURIComponent(resolusi);
 
-    const resp = await httpRequestBuffer(UPSCALE_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'multipart/form-data; boundary=' + boundary,
-        'Content-Length': body.length,
-        'X-apikey': config.kyzznekooApiKey
-      },
-      body,
-      timeout: 120000
-    }, 0);
+    const resp = await httpRequestBuffer(apiUrl, { method: 'GET', headers: { 'Accept': '*/*' }, timeout: 180000 }, 3);
 
     if (resp.status < 200 || resp.status >= 300) {
       throw new Error('Server upscale error (HTTP ' + resp.status + '): ' + resp.body.toString('utf8').substring(0, 200));
@@ -851,19 +848,30 @@ async function upscaleImage(input, meta) {
       return { buffer: resp.body, contentType: ct.indexOf('image/') === 0 ? ct : sniffed };
     }
 
-    try {
-      const j = JSON.parse(resp.body.toString('utf8'));
-      const cand = j.url || (j.result && (j.result.url || j.result)) || (j.data && (j.data.url || j.data));
+    let j;
+    try { j = JSON.parse(resp.body.toString('utf8')); } catch (e) { j = null; }
+    if (j) {
+      const pick = (o) => {
+        if (!o) return null;
+        if (typeof o === 'string') return o;
+        return o.url || o.result || o.image || o.output || o.download || o.link || null;
+      };
+      let cand = pick(j.result) || pick(j.data) || pick(j);
+      if (cand && typeof cand === 'object') cand = pick(cand);
       if (typeof cand === 'string' && /^https?:\/\//i.test(cand)) {
         const dl2 = await httpRequestBuffer(cand, { method: 'GET' }, 3);
         const t2 = sniffImageType(dl2.body);
         if (dl2.status >= 200 && dl2.status < 300 && t2) return { buffer: dl2.body, contentType: t2 };
       }
-    } catch (e) { }
+      const msg = j.message || j.error || (j.result && j.result.message);
+      if (msg && typeof msg === 'string') throw new Error('Upscale gagal: ' + msg.substring(0, 150));
+    }
 
     throw new Error('Respon upscale tidak valid');
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
+  } finally {
+    if (tempToken) setTimeout(() => hdTempImages.delete(tempToken), 10 * 1000).unref();
   }
 }
 
@@ -5436,6 +5444,13 @@ const server = http.createServer(async (req, res) => {
       });
       res.end(htmlTemplate);
 
+    } else if (parsedUrl.pathname.indexOf('/hd-tmp/') === 0 && req.method === 'GET') {
+      const tok = parsedUrl.pathname.slice('/hd-tmp/'.length);
+      const item = /^[a-f0-9]{32}$/.test(tok) ? hdTempImages.get(tok) : null;
+      if (!item || item.exp < Date.now()) { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('Not found'); }
+      res.writeHead(200, { 'Content-Type': item.contentType, 'Content-Length': item.buffer.length, 'Cache-Control': 'no-store' });
+      res.end(item.buffer);
+
     } else if (parsedUrl.pathname === '/sw.js' && req.method === 'GET') {
       res.writeHead(200, {
         'Content-Type': 'application/javascript; charset=utf-8',
@@ -5722,7 +5737,9 @@ const server = http.createServer(async (req, res) => {
       let upResult;
       try {
         const ext = imgMime === 'image/png' ? 'png' : imgMime === 'image/webp' ? 'webp' : 'jpg';
-        upResult = await upscaleImage(imgBuffer, { contentType: imgMime, filename: 'image.' + ext });
+        const hdProto = (req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
+        const hdBase = process.env.PUBLIC_URL || (hdProto + '://' + req.headers.host);
+        upResult = await upscaleImage(imgBuffer, { contentType: imgMime, filename: 'image.' + ext, publicBase: hdBase, resolusi: UPSCALE_RESOLUSI });
       } catch (upErr) {
         let refilled = false;
         if (!userObj.isAdmin && !isVipActive) refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
