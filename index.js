@@ -1264,18 +1264,6 @@ const htmlTemplate = `<!DOCTYPE html>
   .inp:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
   .inp::placeholder { color:var(--text-2); }
   .inp.mono { font-family:'IBM Plex Mono',monospace; font-size:12.5px; }
-  /* ===== Kartu Verifikasi (gaya Send Request) ===== */
-  .vf-card { background:#2d2c29; border:1px solid rgba(255,255,255,0.06); border-radius:22px; padding:22px 24px 24px; display:flex; flex-direction:column; gap:18px; }
-  .vf-title { font-size:11px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#b9a89b; }
-  .vf-field { display:flex; flex-direction:column; gap:10px; }
-  .vf-label { font-size:16px; font-weight:700; color:#fff; letter-spacing:0.01em; }
-  .vf-inp { width:100%; box-sizing:border-box; padding:17px 22px; background:#171614; border:1px solid rgba(255,255,255,0.07); border-radius:18px; color:#f3ece6; font-size:16px; font-family:inherit; outline:none; transition:border-color .15s, box-shadow .15s; }
-  .vf-inp::placeholder { color:#8d857e; }
-  .vf-inp:focus { border-color:#9b6a4f; box-shadow:0 0 0 3px rgba(155,106,79,0.25); }
-  .vf-btn { width:100%; display:flex; align-items:center; justify-content:center; gap:12px; padding:18px 22px; margin-top:2px; background:#8b5e45; color:#1c1815; border:none; border-radius:999px; font-size:18px; font-weight:600; font-family:inherit; cursor:pointer; transition:filter .15s, transform .1s; }
-  .vf-btn:hover:not(:disabled) { filter:brightness(1.08); }
-  .vf-btn:active:not(:disabled) { transform:scale(0.985); }
-  .vf-btn:disabled { opacity:.6; cursor:not-allowed; }
   label.field-label { display:block; font-size:11px; font-weight:600; color:var(--text-1); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px; }
   .btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:11px 16px; border-radius:10px; font-size:13px; font-weight:600; font-family:inherit; border:none; cursor:pointer; transition:transform 0.1s, box-shadow 0.15s, background 0.15s, border-color 0.15s; width:100%; color:white; background:var(--accent); }
   .btn:hover:not(:disabled) { background:var(--accent-2); }
@@ -1779,20 +1767,13 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
         <button id="btn-send" onclick="handleSendEmail()" class="btn"><span id="send-text">Kirim Magic Link</span></button>
       </div>
-      <div class="vf-card">
-        <div class="vf-title">Verifikasi Magic URL</div>
-        <div class="vf-field">
-          <label class="vf-label" for="verif-email">email</label>
-          <input type="email" id="verif-email" class="vf-inp" placeholder="Enter email..." autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div class="card" style="display:flex; flex-direction:column; gap:14px;">
+        <div>
+          <div class="section-head"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>Verifikasi Magic Link</div>
+          <input type="email" id="verif-email" placeholder="target@gmail.com" class="inp" autocomplete="off" autocapitalize="off" spellcheck="false">
         </div>
-        <div class="vf-field">
-          <label class="vf-label" for="magic-url">link</label>
-          <input type="text" id="magic-url" class="vf-inp" placeholder="Enter link..." autocomplete="off" autocapitalize="off" spellcheck="false">
-        </div>
-        <button id="btn-verif" onclick="handleActivate()" class="vf-btn">
-          <svg width="18" height="18" viewBox="0 0 512 512" fill="currentColor"><path d="M476 3.2L12.5 270.6c-18.1 10.4-15.8 35.6 2.2 43.2L121 358.4l287.3-253.2c5.5-4.9 13.3 2.6 8.6 8.3L176 407v80.5c0 23.6 28.5 32.9 42.5 15.8L282 426l124.6 52.2c14.2 6 30.4-2.9 33-18.2l72-432C515 7.8 493.3-6.8 476 3.2z"/></svg>
-          <span id="verif-text">Send Request</span>
-        </button>
+        <input type="text" id="magic-url" placeholder="Tempel link magic di sini..." class="inp" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button id="btn-verif" onclick="handleActivate()" class="btn"><span id="verif-text">Verifikasi Sekarang</span></button>
       </div>
       <div class="card" style="display:flex; flex-direction:column; gap:12px;">
         <div class="section-head" style="color:var(--info);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 12v10H4V12"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>Klaim Kode Redeem</div>
@@ -5143,7 +5124,7 @@ async function handleActivate() {
   const btnText = document.getElementById('verif-text');
   const resultBox = document.getElementById('result-box');
   const resultText = document.getElementById('result-text');
-  btn.disabled = true; btnText.innerText = 'Sending...';
+  btn.disabled = true; btnText.innerText = 'Memverifikasi...';
   resultBox.classList.remove('hide'); resultText.innerText = '⏳ Memverifikasi...';
   try {
     const res = await fetch('/api/verif', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, url: magicUrl, username: loggedInUsername }) });
@@ -5156,7 +5137,7 @@ async function handleActivate() {
     currentResultText = 'Error: ' + err.message;
     resultText.innerText = currentResultText;
     showToast('Gagal verifikasi', 'error');
-  } finally { btn.disabled = false; btnText.innerText = 'Send Request'; }
+  } finally { btn.disabled = false; btnText.innerText = 'Verifikasi Sekarang'; }
 }
 
 function copyResult() {
