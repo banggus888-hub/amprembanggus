@@ -1217,25 +1217,23 @@ setInterval(async () => {
   } catch (e) { console.error('[ONLINE CLEANUP]', e.message); }
 }, ONLINE_CLEANUP_INTERVAL);
 
-// ====== ALIGHT MOTION API (vamxapi) ======
-// API key sebaiknya disimpan di environment variable VAMX_API_KEY (nilai di bawah hanya cadangan)
-const VAMX_BASE_URL = (process.env.VAMX_BASE_URL || 'https://vamxapi.my.id').replace(/\/+$/, '');
-const VAMX_API_KEY = process.env.VAMX_API_KEY || 'vamx_live_ab16f112429f94a1c2bab79257b8a0d7';
-const AM_SEND_LINK_PATH = '/api/v1/apk/alightmotion/send-link';
-const AM_VERIFY_LINK_PATH = '/api/v1/apk/alightmotion/verify-link';
+// ====== ALIGHT MOTION API ======
+const AM_UA = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36';
 
-// POST JSON ke vamxapi (setara curl -X POST ... -H x-api-key ... -d '{...}')
-function amRequest(apiPath, bodyObj) {
+// Request manual (https bawaan Node) supaya GET bisa membawa body '{}' persis seperti curl
+function amRequest(method, apiPath, query, bodyObj) {
   return new Promise((resolve, reject) => {
-    const u = new URL(VAMX_BASE_URL + apiPath);
+    const u = new URL(config.base + apiPath);
+    if (query) Object.keys(query).forEach(k => u.searchParams.set(k, query[k]));
     const payload = Buffer.from(JSON.stringify(bodyObj || {}));
     const req = https.request({
       protocol: u.protocol, hostname: u.hostname, port: u.port || 443,
-      path: u.pathname + u.search, method: 'POST',
+      path: u.pathname + u.search, method,
       headers: {
-        'x-api-key': VAMX_API_KEY,
+        'User-Agent': AM_UA,
         'Content-Type': 'application/json',
-        'Content-Length': payload.length
+        'Content-Length': payload.length,
+        'X-apikey': config.kyzznekooApiKey
       },
       timeout: 60000
     }, (res) => {
@@ -1244,7 +1242,7 @@ function amRequest(apiPath, bodyObj) {
       res.on('end', () => {
         const text = Buffer.concat(chunks).toString('utf8');
         let data;
-        try { data = JSON.parse(text); } catch (e) { data = { success: false, message: text.substring(0, 200) }; }
+        try { data = JSON.parse(text); } catch (e) { data = { status: false, data: { message: text.substring(0, 200) } }; }
         resolve({ httpStatus: res.statusCode, data });
       });
     });
@@ -1257,11 +1255,10 @@ function amRequest(apiPath, bodyObj) {
 
 function amCheck(r) {
   const d = r.data;
-  const failed = r.httpStatus >= 400 || !d || d.success === false || d.status === false || d.status === 'error';
-  if (failed) {
-    const msg = (d && d.message) || (d && d.error) || (d && d.data && d.data.message) || ('HTTP ' + r.httpStatus);
+  if (r.httpStatus >= 400 || !d || d.status === false) {
+    const msg = (d && d.data && d.data.message) || (d && d.message) || ('HTTP ' + r.httpStatus);
     console.error('[AM API]', r.httpStatus, JSON.stringify(d).substring(0, 300));
-    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    throw new Error(msg);
   }
   return d;
 }
@@ -1270,12 +1267,11 @@ const am = {
   async magiclink(email) {
     if (!email || !email.includes("@") || !email.includes(".")) throw new Error("Invalid email.");
     email = String(email).trim();
-    const r = await amRequest(AM_SEND_LINK_PATH, { email });
+    const r = await amRequest('GET', '/api/alightmotion/v5/magiclink', { email }, {});
     return amCheck(r);
   },
   async verif(email, url) {
-    email = String(email || '').trim();
-    const r = await amRequest(AM_VERIFY_LINK_PATH, { email, magicLink: String(url || '').trim() });
+    const r = await amRequest('POST', '/api/alightmotion/v5/premium', null, { email, url });
     return amCheck(r);
   }
 };
