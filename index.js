@@ -12,7 +12,7 @@ const { getDatabase, ref, get, set, child, remove } = require('firebase/database
 // ====== KONFIGURASI ======
 const config = {
   base: 'https://app.kyzznekoo.my.id',
-  kyzznekooApiKey: 'sk_xof_c55534e72b71ed35f19e214cdd8d4717'
+  kyzznekooApiKey: 'sk_xof_a0b3eb00b5fe84548b33e1a0af8620e9'
 };
 
 const firebaseConfig = {
@@ -446,6 +446,7 @@ async function activateVipFromTransaction(transactionId) {
     trx.updatedAt = now;
     trx.adminNote = trx.adminNote || 'Dikonfirmasi otomatis via pembayaran QR';
     await saveTransactionToDb(transactionId, trx);
+    pushInBackground({ title: '⭐ VIP Aktif!', body: 'Pembayaran diterima. ' + (trx.vipName || 'VIP') + ' aktif ' + trx.vipDays + ' hari.', tag: 'vip-' + transactionId, type: 'vip', url: '/' }, { onlyUsers: [String(trx.username).toLowerCase()] });
     return { activated: true, trx, user: targetUser };
   } finally {
     qrActivationLocks.delete(transactionId);
@@ -514,6 +515,194 @@ async function getNotificationSubscribersFromDb() {
 async function saveNotificationSubscriberToDb(username, data) { await set(ref(db, `notificationSubscribers/${username}`), data); }
 async function removeNotificationSubscriberFromDb(username) { await set(ref(db, `notificationSubscribers/${username}`), null); }
 
+// ====== WEB PUSH (VAPID) - NOTIFIKASI REAL-TIME (BARU) ======
+// Kunci VAPID sebaiknya disimpan di environment variable VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY (nilai di bawah hanya cadangan)
+const VAPID_PUBLIC_KEY = String(process.env.VAPID_PUBLIC_KEY || 'BPi2IjFozUh4FJQ6_X6ZHN5BzWePZiuCBE-VrccqOfq5QSqcvbDEdFTCTYBWc-YVB3ibZCkaUUXBLgTG-vpN4yU').trim();
+const VAPID_PRIVATE_KEY = String(process.env.VAPID_PRIVATE_KEY || 'Kt1J628d87Qy5oV_AecNiTiTHTZNbNP8lG2AwQl9AGs').trim();
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || config.base;
+const PUSH_SEND_TIMEOUT = 15 * 1000;
+const PUSH_CONCURRENCY = 20;
+const PUSH_ALLOWED_HOST_SUFFIXES = ['.googleapis.com', '.mozilla.com', '.windows.com', '.apple.com'];
+
+function b64uEncode(buf) { return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function b64uDecode(str) { str = String(str || '').replace(/-/g, '+').replace(/_/g, '/'); while (str.length % 4) str += '='; return Buffer.from(str, 'base64'); }
+
+let vapidPrivateKeyObj = null;
+let pushEnabled = false;
+try {
+  const vapidPub = b64uDecode(VAPID_PUBLIC_KEY);
+  const vapidPriv = b64uDecode(VAPID_PRIVATE_KEY);
+  if (vapidPub.length !== 65 || vapidPub[0] !== 4 || vapidPriv.length !== 32) throw new Error('format kunci VAPID tidak valid');
+  const vapidCheck = crypto.createECDH('prime256v1');
+  vapidCheck.setPrivateKey(vapidPriv);
+  if (!vapidCheck.getPublicKey().equals(vapidPub)) throw new Error('public key tidak cocok dengan private key');
+  vapidPrivateKeyObj = crypto.createPrivateKey({ key: { kty: 'EC', crv: 'P-256', d: b64uEncode(vapidPriv), x: b64uEncode(vapidPub.subarray(1, 33)), y: b64uEncode(vapidPub.subarray(33, 65)) }, format: 'jwk' });
+  pushEnabled = true;
+} catch (e) { console.error('[PUSH] Web Push dinonaktifkan:', e.message); }
+
+function pushHkdf(salt, ikm, info, len) {
+  const prk = crypto.createHmac('sha256', salt).update(ikm).digest();
+  return crypto.createHmac('sha256', prk).update(Buffer.concat([info, Buffer.from([1])])).digest().subarray(0, len);
+}
+
+// Enkripsi payload sesuai RFC 8291 (aes128gcm)
+function encryptPushPayload(subscription, payloadBuf) {
+  const uaPublic = b64uDecode(subscription.keys.p256dh);
+  const authSecret = b64uDecode(subscription.keys.auth);
+  const ecdh = crypto.createECDH('prime256v1');
+  ecdh.generateKeys();
+  const asPublic = ecdh.getPublicKey();
+  const shared = ecdh.computeSecret(uaPublic);
+  const salt = crypto.randomBytes(16);
+  const keyInfo = Buffer.concat([Buffer.from('WebPush: info\0'), uaPublic, asPublic]);
+  const ikm = pushHkdf(authSecret, shared, keyInfo, 32);
+  const cek = pushHkdf(salt, ikm, Buffer.from('Content-Encoding: aes128gcm\0'), 16);
+  const nonce = pushHkdf(salt, ikm, Buffer.from('Content-Encoding: nonce\0'), 12);
+  const cipher = crypto.createCipheriv('aes-128-gcm', cek, nonce);
+  const encrypted = Buffer.concat([cipher.update(Buffer.concat([payloadBuf, Buffer.from([2])])), cipher.final(), cipher.getAuthTag()]);
+  const header = Buffer.alloc(21);
+  salt.copy(header, 0);
+  header.writeUInt32BE(4096, 16);
+  header.writeUInt8(65, 20);
+  return Buffer.concat([header, asPublic, encrypted]);
+}
+
+function buildVapidAuthHeader(endpointUrl) {
+  const aud = new URL(endpointUrl).origin;
+  const h = b64uEncode(JSON.stringify({ typ: 'JWT', alg: 'ES256' }));
+  const p = b64uEncode(JSON.stringify({ aud, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: VAPID_SUBJECT }));
+  const sig = crypto.sign('sha256', Buffer.from(h + '.' + p), { key: vapidPrivateKeyObj, dsaEncoding: 'ieee-p1363' });
+  return 'vapid t=' + h + '.' + p + '.' + b64uEncode(sig) + ', k=' + VAPID_PUBLIC_KEY;
+}
+
+// Hanya endpoint dari layanan push resmi browser yang diizinkan (anti penyalahgunaan server)
+function isAllowedPushEndpoint(endpoint) {
+  try {
+    const u = new URL(String(endpoint));
+    if (u.protocol !== 'https:') return false;
+    const host = u.hostname.toLowerCase();
+    return PUSH_ALLOWED_HOST_SUFFIXES.some(sfx => host.endsWith(sfx));
+  } catch (e) { return false; }
+}
+
+function sendWebPush(subscription, payloadObj, opts) {
+  opts = opts || {};
+  return new Promise((resolve) => {
+    try {
+      const target = new URL(subscription.endpoint);
+      const body = encryptPushPayload(subscription, Buffer.from(JSON.stringify(payloadObj)));
+      const headers = {
+        'Authorization': buildVapidAuthHeader(subscription.endpoint),
+        'Content-Encoding': 'aes128gcm',
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': body.length,
+        'TTL': String(typeof opts.ttl === 'number' ? opts.ttl : 86400),
+        'Urgency': opts.urgency || 'high'
+      };
+      const reqPush = https.request(target, { method: 'POST', headers, timeout: PUSH_SEND_TIMEOUT }, (resp) => {
+        let raw = '';
+        resp.on('data', (c) => { if (raw.length < 500) raw += c; });
+        resp.on('end', () => resolve({ ok: resp.statusCode >= 200 && resp.statusCode < 300, status: resp.statusCode, body: raw }));
+      });
+      reqPush.on('timeout', () => reqPush.destroy(new Error('Timeout push service')));
+      reqPush.on('error', (e) => resolve({ ok: false, status: 0, error: e.message }));
+      reqPush.write(body);
+      reqPush.end();
+    } catch (e) { resolve({ ok: false, status: 0, error: e.message }); }
+  });
+}
+
+function pushSubKey(endpoint) { return crypto.createHash('sha256').update(String(endpoint)).digest('hex').substring(0, 40); }
+async function getAllPushSubscriptionsFromDb() {
+  const snapshot = await get(child(ref(db), `pushSubscriptions`));
+  return snapshot.exists() ? snapshot.val() : {};
+}
+async function savePushSubscriptionToDb(username, key, data) { await set(ref(db, `pushSubscriptions/${username}/${key}`), data); }
+async function removePushSubscriptionFromDb(username, key) { await set(ref(db, `pushSubscriptions/${username}/${key}`), null); }
+
+// Kirim notifikasi push ke semua perangkat yang berlangganan.
+// opts: { category: 'announcements'|'chat'|'status', onlyUsers: [..], excludeUsers: [..], ttl, urgency }
+async function sendPushNotification(payload, opts) {
+  opts = opts || {};
+  if (!pushEnabled) return { sent: 0, failed: 0, removed: 0 };
+  const all = await getAllPushSubscriptionsFromDb();
+  const jobs = [];
+  for (const [uname, subs] of Object.entries(all || {})) {
+    if (opts.onlyUsers && opts.onlyUsers.indexOf(uname) === -1) continue;
+    if (opts.excludeUsers && opts.excludeUsers.indexOf(uname) !== -1) continue;
+    for (const [key, sub] of Object.entries(subs || {})) {
+      if (!sub || !sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) continue;
+      if (opts.category === 'announcements' && sub.enableAnnouncements === false) continue;
+      if (opts.category === 'chat' && sub.enableChat === false) continue;
+      if (opts.category === 'status' && sub.enableStatus === false) continue;
+      jobs.push({ uname, key, sub });
+    }
+  }
+  const stats = { sent: 0, failed: 0, removed: 0 };
+  for (let i = 0; i < jobs.length; i += PUSH_CONCURRENCY) {
+    const batch = jobs.slice(i, i + PUSH_CONCURRENCY);
+    await Promise.all(batch.map(async (j) => {
+      const r = await sendWebPush(j.sub, payload, opts);
+      if (r.ok) stats.sent++;
+      else if (r.status === 404 || r.status === 410) { stats.removed++; try { await removePushSubscriptionFromDb(j.uname, j.key); } catch (e) {} }
+      else { stats.failed++; console.error('[PUSH] gagal kirim ke ' + j.uname + ' (' + (r.status || r.error) + ')'); }
+    }));
+  }
+  return stats;
+}
+// Kirim di latar belakang (tidak menahan respons API & tidak pernah melempar error)
+function pushInBackground(payload, opts) {
+  sendPushNotification(payload, opts).catch((e) => console.error('[PUSH] Error:', e && e.message));
+}
+
+// Service Worker (disajikan di /sw.js agar bisa menerima push walau tab/browser ditutup)
+const SERVICE_WORKER_JS = `
+self.addEventListener('install', function() { self.skipWaiting(); });
+self.addEventListener('activate', function(event) { event.waitUntil(self.clients.claim()); });
+
+self.addEventListener('push', function(event) {
+  var data = { title: 'AM PREMIUM', body: 'Notifikasi baru' };
+  try { if (event.data) data = Object.assign(data, event.data.json()); } catch (e) { try { data.body = event.data.text(); } catch (e2) {} }
+  var ua = self.navigator.userAgent || '';
+  var isAppleWebKit = ua.indexOf('Safari') !== -1 && ua.indexOf('Chrome') === -1 && ua.indexOf('Android') === -1 && ua.indexOf('Edg') === -1 && ua.indexOf('Firefox') === -1;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(list) {
+      var visible = false;
+      list.forEach(function(c) {
+        if (c.visibilityState === 'visible') visible = true;
+        try { c.postMessage({ type: 'push', kind: data.type || '', tag: data.tag || '' }); } catch (e) {}
+      });
+      // Tab sedang dibuka: tidak perlu mengganggu (kecuali pesan penting / Safari yang wajib menampilkan notifikasi)
+      if (visible && !data.force && !isAppleWebKit) return;
+      var options = {
+        body: data.body || '',
+        tag: data.tag || 'am-premium',
+        data: { url: data.url || '/' },
+        vibrate: [100, 50, 100],
+        requireInteraction: !!data.requireInteraction
+      };
+      if (data.icon) options.icon = data.icon;
+      if (data.badge) options.badge = data.badge;
+      return self.registration.showNotification(data.title || 'AM PREMIUM', options);
+    })
+  );
+});
+
+self.addEventListener('notificationclick', function(event) {
+  event.notification.close();
+  var target = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(list) {
+      for (var i = 0; i < list.length; i++) {
+        var c = list[i];
+        if (c.url.indexOf(self.location.origin) !== -1 && 'focus' in c) return c.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(target);
+    })
+  );
+});
+`;
+
 // ====== BONUS QUOTA EXPIRY ======
 async function checkAndExpireBonusQuota(username) {
   try {
@@ -568,7 +757,20 @@ setTimeout(sweepExpiredBonusQuotas, 15 * 1000);
 setInterval(sweepExpiredBonusQuotas, 10 * 60 * 1000);
 
 // ====== HD FOTO (UPSCALE) - tanpa dependensi tambahan ======
-const UPSCALE_ENDPOINT = config.base + '/api/imgbb/upscale-image';
+const UPSCALE_ENDPOINT = 'https://api.nexadev.my.id/api/upscale1';
+const UPSCALE_RESOLUSI = 4;
+
+// Penyimpanan sementara agar gambar upload user punya URL publik (API upscale butuh parameter ?url=)
+const hdTempImages = new Map();
+function hdTempStore(buffer, contentType) {
+  const token = crypto.randomBytes(16).toString('hex');
+  hdTempImages.set(token, { buffer, contentType, exp: Date.now() + 5 * 60 * 1000 });
+  return token;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of hdTempImages) if (v.exp < now) hdTempImages.delete(k);
+}, 60 * 1000).unref();
 const HD_MAX_BYTES = 10 * 1024 * 1024;
 
 function httpRequestBuffer(urlStr, options, redirectsLeft) {
@@ -615,42 +817,26 @@ function sniffImageType(buf) {
 }
 
 async function upscaleImage(input, meta) {
+  let tempToken = null;
   try {
     meta = meta || {};
-    let buffer;
-    let contentType = meta.contentType || 'image/jpeg';
-    let filename = meta.filename || 'image.jpg';
+    let imageUrl;
 
     if (Buffer.isBuffer(input)) {
-      buffer = input;
+      if (!meta.publicBase) throw new Error('Base URL publik server tidak tersedia.');
+      tempToken = hdTempStore(input, meta.contentType || sniffImageType(input) || 'image/jpeg');
+      imageUrl = String(meta.publicBase).replace(/\/+$/, '') + '/hd-tmp/' + tempToken;
     } else if (typeof input === 'string') {
-      const dl = await httpRequestBuffer(input, { method: 'GET' }, 3);
-      if (dl.status < 200 || dl.status >= 300) throw new Error('Gagal mengunduh gambar (HTTP ' + dl.status + ')');
-      buffer = dl.body;
-      contentType = String(dl.headers['content-type'] || 'image/jpeg').split(';')[0];
+      if (!/^https?:\/\//i.test(input)) throw new Error('URL gambar tidak valid.');
+      imageUrl = input;
     } else {
       throw new Error('Input harus berupa URL (string) atau Buffer.');
     }
 
-    const boundary = '----HDFoto' + crypto.randomBytes(12).toString('hex');
-    const head = Buffer.from(
-      '--' + boundary + '\r\n' +
-      'Content-Disposition: form-data; name="file"; filename="' + filename + '"\r\n' +
-      'Content-Type: ' + contentType + '\r\n\r\n'
-    );
-    const tail = Buffer.from('\r\n--' + boundary + '--\r\n');
-    const body = Buffer.concat([head, buffer, tail]);
+    const resolusi = meta.resolusi || UPSCALE_RESOLUSI;
+    const apiUrl = UPSCALE_ENDPOINT + '?url=' + encodeURIComponent(imageUrl) + '&resolusi=' + encodeURIComponent(resolusi);
 
-    const resp = await httpRequestBuffer(UPSCALE_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'multipart/form-data; boundary=' + boundary,
-        'Content-Length': body.length,
-        'X-apikey': config.kyzznekooApiKey
-      },
-      body,
-      timeout: 120000
-    }, 0);
+    const resp = await httpRequestBuffer(apiUrl, { method: 'GET', headers: { 'Accept': '*/*' }, timeout: 180000 }, 3);
 
     if (resp.status < 200 || resp.status >= 300) {
       throw new Error('Server upscale error (HTTP ' + resp.status + '): ' + resp.body.toString('utf8').substring(0, 200));
@@ -662,19 +848,30 @@ async function upscaleImage(input, meta) {
       return { buffer: resp.body, contentType: ct.indexOf('image/') === 0 ? ct : sniffed };
     }
 
-    try {
-      const j = JSON.parse(resp.body.toString('utf8'));
-      const cand = j.url || (j.result && (j.result.url || j.result)) || (j.data && (j.data.url || j.data));
+    let j;
+    try { j = JSON.parse(resp.body.toString('utf8')); } catch (e) { j = null; }
+    if (j) {
+      const pick = (o) => {
+        if (!o) return null;
+        if (typeof o === 'string') return o;
+        return o.url || o.result || o.image || o.output || o.download || o.link || null;
+      };
+      let cand = pick(j.result) || pick(j.data) || pick(j);
+      if (cand && typeof cand === 'object') cand = pick(cand);
       if (typeof cand === 'string' && /^https?:\/\//i.test(cand)) {
         const dl2 = await httpRequestBuffer(cand, { method: 'GET' }, 3);
         const t2 = sniffImageType(dl2.body);
         if (dl2.status >= 200 && dl2.status < 300 && t2) return { buffer: dl2.body, contentType: t2 };
       }
-    } catch (e) { }
+      const msg = j.message || j.error || (j.result && j.result.message);
+      if (msg && typeof msg === 'string') throw new Error('Upscale gagal: ' + msg.substring(0, 150));
+    }
 
     throw new Error('Respon upscale tidak valid');
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
+  } finally {
+    if (tempToken) setTimeout(() => hdTempImages.delete(tempToken), 10 * 1000).unref();
   }
 }
 
@@ -1029,25 +1226,22 @@ setInterval(async () => {
 }, ONLINE_CLEANUP_INTERVAL);
 
 // ====== ALIGHT MOTION API ======
-const AM_UA = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Mobile Safari/537.36';
+const AM_UA = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36';
 
-// API Alight Motion (kyzznekoo): GET + header X-apikey
-// API key sebaiknya disimpan di environment variable AM_API_KEY (nilai di bawah hanya cadangan)
-const AM_BASE_URL = (process.env.AM_BASE_URL || 'https://api.kyzznekoo.my.id').replace(/\/+$/, '');
-const AM_API_KEY = process.env.AM_API_KEY || 'sk_xof_a0b3eb00b5fe84548b33e1a0af8620e9';
-
-function amRequest(apiPath, query) {
+// Request manual (https bawaan Node) supaya GET bisa membawa body '{}' persis seperti curl
+function amRequest(method, apiPath, query, bodyObj) {
   return new Promise((resolve, reject) => {
-    const u = new URL(AM_BASE_URL + apiPath);
+    const u = new URL(config.base + apiPath);
     if (query) Object.keys(query).forEach(k => u.searchParams.set(k, query[k]));
+    const payload = Buffer.from(JSON.stringify(bodyObj || {}));
     const req = https.request({
       protocol: u.protocol, hostname: u.hostname, port: u.port || 443,
-      path: u.pathname + u.search, method: 'GET',
+      path: u.pathname + u.search, method,
       headers: {
         'User-Agent': AM_UA,
-        'Accept': 'application/json',
         'Content-Type': 'application/json',
-        'X-apikey': AM_API_KEY
+        'Content-Length': payload.length,
+        'X-apikey': config.kyzznekooApiKey
       },
       timeout: 60000
     }, (res) => {
@@ -1056,21 +1250,21 @@ function amRequest(apiPath, query) {
       res.on('end', () => {
         const text = Buffer.concat(chunks).toString('utf8');
         let data;
-        try { data = JSON.parse(text); } catch (e) { data = { status: false, message: text.substring(0, 200) }; }
+        try { data = JSON.parse(text); } catch (e) { data = { status: false, data: { message: text.substring(0, 200) } }; }
         resolve({ httpStatus: res.statusCode, data });
       });
     });
     req.on('timeout', () => req.destroy(new Error('Timeout menghubungi API AM')));
     req.on('error', reject);
+    req.write(payload);
     req.end();
   });
 }
 
 function amCheck(r) {
   const d = r.data;
-  const failed = r.httpStatus >= 400 || !d || d.status === false || d.success === false || d.error;
-  if (failed) {
-    const msg = (d && ((d.data && d.data.message) || d.message || (typeof d.error === 'string' ? d.error : d.error && d.error.message))) || ('HTTP ' + r.httpStatus);
+  if (r.httpStatus >= 400 || !d || d.status === false) {
+    const msg = (d && d.data && d.data.message) || (d && d.message) || ('HTTP ' + r.httpStatus);
     console.error('[AM API]', r.httpStatus, JSON.stringify(d).substring(0, 300));
     throw new Error(msg);
   }
@@ -1079,16 +1273,13 @@ function amCheck(r) {
 
 const am = {
   async magiclink(email) {
-    email = String(email || '').trim();
-    if (!email || !email.includes('@') || !email.includes('.')) throw new Error('Invalid email.');
-    const r = await amRequest('/api/alightmotion/v1/send', { email });
+    if (!email || !email.includes("@") || !email.includes(".")) throw new Error("Invalid email.");
+    email = String(email).trim();
+    const r = await amRequest('GET', '/api/alightmotion/v5/magiclink', { email }, {});
     return amCheck(r);
   },
-  async verif(email, link) {
-    email = String(email || '').trim();
-    link = String(link || '').trim();
-    if (!email || !link) throw new Error('Email dan link wajib diisi.');
-    const r = await amRequest('/api/alightmotion/v1/verif', { email, link });
+  async verif(email, url) {
+    const r = await amRequest('POST', '/api/alightmotion/v5/premium', null, { email, url });
     return amCheck(r);
   }
 };
@@ -1767,14 +1958,12 @@ const htmlTemplate = `<!DOCTYPE html>
           <input type="email" id="target-email" placeholder="target@gmail.com" class="inp">
         </div>
         <button id="btn-send" onclick="handleSendEmail()" class="btn"><span id="send-text">Kirim Magic Link</span></button>
-      </div>
-      <div class="card" style="display:flex; flex-direction:column; gap:14px;">
+        <div class="divider"></div>
         <div>
-          <div class="section-head"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>Verifikasi Magic Link</div>
-          <input type="email" id="verif-email" placeholder="target@gmail.com" class="inp" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <div class="section-head" style="color:var(--ok);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>Verifikasi Magic URL</div>
+          <input type="text" id="magic-url" placeholder="https://alight-creative..." class="inp mono" style="font-size:11.5px;">
         </div>
-        <input type="text" id="magic-url" placeholder="Tempel link magic di sini..." class="inp" autocomplete="off" autocapitalize="off" spellcheck="false">
-        <button id="btn-verif" onclick="handleActivate()" class="btn"><span id="verif-text">Verifikasi Sekarang</span></button>
+        <button onclick="handleActivate()" class="btn btn-ok">Verifikasi Sekarang</button>
       </div>
       <div class="card" style="display:flex; flex-direction:column; gap:12px;">
         <div class="section-head" style="color:var(--info);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 12v10H4V12"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>Klaim Kode Redeem</div>
@@ -2532,8 +2721,8 @@ async function toggleNotifications() {
     // Toggle off (hanya state lokal, permission tetap granted)
     notificationsEnabled = !notificationsEnabled;
     localStorage.setItem('notifEnabled', notificationsEnabled ? '1' : '0');
-    if (notificationsEnabled) { showToast('Notifikasi diaktifkan kembali.', 'success'); startNotifPolling(); }
-    else { showToast('Notifikasi dinonaktifkan sementara.', 'info'); stopNotifPolling(); }
+    if (notificationsEnabled) { showToast('Notifikasi diaktifkan kembali.', 'success'); startNotifPolling(); registerNotificationToServer(); }
+    else { showToast('Notifikasi dinonaktifkan sementara.', 'info'); stopNotifPolling(); unsubscribeFromPush(); }
     updateNotifButton();
     return;
   }
@@ -2559,34 +2748,71 @@ async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return null;
   if (swRegistration) return swRegistration;
   try {
-    // Service Worker via Blob (tanpa file terpisah)
-    const swCode = \`
-      self.addEventListener('notificationclick', function(event) {
-        event.notification.close();
-        event.waitUntil(
-          clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-            for (var i = 0; i < clientList.length; i++) {
-              var client = clientList[i];
-              if (client.url.indexOf(self.location.origin) !== -1 && 'focus' in client) return client.focus();
-            }
-            if (clients.openWindow) return clients.openWindow('/');
-          })
-        );
-      });
-      self.addEventListener('push', function(event) {
-        var data = { title: 'AM PREMIUM', body: 'Notifikasi baru' };
-        try { if (event.data) data = event.data.json(); } catch(e) {}
-        event.waitUntil(self.registration.showNotification(data.title, {
-          body: data.body, icon: data.icon || '', badge: data.badge || '',
-          tag: data.tag || 'am-premium', data: data.url || '/', vibrate: [100,50,100]
-        }));
-      });
-    \`;
-    const blob = new Blob([swCode], { type: 'application/javascript' });
-    const swUrl = URL.createObjectURL(blob);
-    swRegistration = await navigator.serviceWorker.register(swUrl, { scope: '/' });
+    // Service Worker asli dari server (/sw.js) agar notifikasi push tetap masuk walau tab ditutup
+    swRegistration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    try { await navigator.serviceWorker.ready; } catch (e) {}
     return swRegistration;
   } catch (e) { console.warn('SW register failed:', e); return null; }
+}
+
+// ====== WEB PUSH (VAPID) - CLIENT ======
+async function subscribeToPush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+  if (!loggedInUsername || !('Notification' in window) || Notification.permission !== 'granted') return false;
+  try {
+    const reg = await registerServiceWorker();
+    if (!reg || !reg.pushManager) return false;
+    const keyRes = await fetch('/api/push/public-key');
+    const keyData = await keyRes.json();
+    if (!keyData.success || !keyData.publicKey) return false;
+    const wantKey = urlBase64ToUint8Array(keyData.publicKey);
+    let sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      const cur = (sub.options && sub.options.applicationServerKey) ? new Uint8Array(sub.options.applicationServerKey) : null;
+      let same = !!cur && cur.length === wantKey.length;
+      if (same) { for (let i = 0; i < cur.length; i++) { if (cur[i] !== wantKey[i]) { same = false; break; } } }
+      if (!same) { try { await sub.unsubscribe(); } catch (e) {} sub = null; }
+    }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: wantKey });
+    const res = await fetch('/api/push/subscribe', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loggedInUsername, token: localStorage.getItem('authToken') || '', subscription: sub.toJSON(), enableAnnouncements: true, enableChat: true, enableStatus: true })
+    });
+    const data = await res.json();
+    return !!data.success;
+  } catch (e) { console.warn('Push subscribe gagal:', e); return false; }
+}
+
+async function unsubscribeFromPush() {
+  try {
+    if (!('serviceWorker' in navigator)) return;
+    const reg = swRegistration || await navigator.serviceWorker.getRegistration('/');
+    const sub = (reg && reg.pushManager) ? await reg.pushManager.getSubscription() : null;
+    if (!sub) return;
+    const endpoint = sub.endpoint;
+    if (loggedInUsername) {
+      try {
+        await fetch('/api/push/unsubscribe', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: loggedInUsername, token: localStorage.getItem('authToken') || '', endpoint })
+        });
+      } catch (e) {}
+    }
+    try { await sub.unsubscribe(); } catch (e) {}
+  } catch (e) {}
+}
+
+// Pesan dari Service Worker saat push masuk: segarkan data di halaman secara real-time
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', function(ev) {
+    const d = ev.data || {};
+    if (d.type !== 'push') return;
+    try {
+      if (d.kind === 'chat') { if (currentView === 'chat') loadGlobalChat(true); else checkNewChatMessages(); }
+      else if (d.kind === 'announcement') { loadUserAnnouncements(true); }
+      else if (d.kind === 'status') { fetchServerStatus(true); }
+    } catch (e) {}
+  });
 }
 
 async function registerNotificationToServer() {
@@ -2597,6 +2823,7 @@ async function registerNotificationToServer() {
       body: JSON.stringify({ username: loggedInUsername, enableAnnouncements: true, enableChat: true, enableStatus: true })
     });
   } catch(e) {}
+  try { await subscribeToPush(); } catch(e) {}
 }
 
 async function showBrowserNotification(title, body, options = {}) {
@@ -5114,31 +5341,25 @@ async function handleSendEmail() {
 }
 
 async function handleActivate() {
-  const emailEl = document.getElementById('verif-email');
-  const urlEl = document.getElementById('magic-url');
-  let email = (emailEl.value || '').trim();
-  if (!email) { const te = document.getElementById('target-email'); email = te ? te.value.trim() : ''; if (email) emailEl.value = email; }
-  const magicUrl = (urlEl.value || '').trim();
-  if (!email || !magicUrl) return showToast('Email & link wajib!', 'error');
+  const email = document.getElementById('target-email').value;
+  const magicUrl = document.getElementById('magic-url').value;
+  if (!email || !magicUrl) return showToast('Email & URL wajib!', 'error');
   if (!guardServerOnline('Alight Motion Verifikasi')) return;
-  const btn = document.getElementById('btn-verif');
-  const btnText = document.getElementById('verif-text');
   const resultBox = document.getElementById('result-box');
   const resultText = document.getElementById('result-text');
-  btn.disabled = true; btnText.innerText = 'Memverifikasi...';
   resultBox.classList.remove('hide'); resultText.innerText = '⏳ Memverifikasi...';
   try {
     const res = await fetch('/api/verif', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, url: magicUrl, username: loggedInUsername }) });
     const data = await res.json();
     currentResultText = JSON.stringify(data, null, 2);
     resultText.innerText = currentResultText;
-    if (res.ok && !data.error && data.success !== false) showToast('Verifikasi selesai!', 'success');
-    else showToast(data.error || data.message || 'Gagal', 'error');
+    if (data.success || !data.error) showToast('Verifikasi selesai!', 'success');
+    else showToast(data.error || 'Gagal', 'error');
   } catch (err) {
     currentResultText = 'Error: ' + err.message;
     resultText.innerText = currentResultText;
     showToast('Gagal verifikasi', 'error');
-  } finally { btn.disabled = false; btnText.innerText = 'Verifikasi Sekarang'; }
+  }
 }
 
 function copyResult() {
@@ -5156,6 +5377,7 @@ async function handleLogout() {
   await markOffline();
   stopOnlineTracking();
   stopNotifPolling();
+  try { await unsubscribeFromPush(); } catch (e) {}
   if (quotaCountdownInterval) clearInterval(quotaCountdownInterval);
   if (globalCountdownInterval) clearInterval(globalCountdownInterval);
   if (chatRefreshInterval) clearInterval(chatRefreshInterval);
@@ -5221,6 +5443,65 @@ const server = http.createServer(async (req, res) => {
         'Content-Length': Buffer.byteLength(htmlTemplate)
       });
       res.end(htmlTemplate);
+
+    } else if (parsedUrl.pathname.indexOf('/hd-tmp/') === 0 && req.method === 'GET') {
+      const tok = parsedUrl.pathname.slice('/hd-tmp/'.length);
+      const item = /^[a-f0-9]{32}$/.test(tok) ? hdTempImages.get(tok) : null;
+      if (!item || item.exp < Date.now()) { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('Not found'); }
+      res.writeHead(200, { 'Content-Type': item.contentType, 'Content-Length': item.buffer.length, 'Cache-Control': 'no-store' });
+      res.end(item.buffer);
+
+    } else if (parsedUrl.pathname === '/sw.js' && req.method === 'GET') {
+      res.writeHead(200, {
+        'Content-Type': 'application/javascript; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        'Service-Worker-Allowed': '/',
+        'Content-Length': Buffer.byteLength(SERVICE_WORKER_JS)
+      });
+      res.end(SERVICE_WORKER_JS);
+
+    } else if (parsedUrl.pathname === '/api/push/public-key' && req.method === 'GET') {
+      jsonResponse(res, pushEnabled ? 200 : 503, { success: pushEnabled, publicKey: pushEnabled ? VAPID_PUBLIC_KEY : null });
+
+    } else if (parsedUrl.pathname === '/api/push/subscribe' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, token, subscription, enableAnnouncements, enableChat, enableStatus } = JSON.parse(body || '{}');
+      if (!pushEnabled) return jsonResponse(res, 503, { success: false, message: 'Web Push belum aktif di server' });
+      if (!username || !subscription || !subscription.endpoint || !subscription.keys || !subscription.keys.p256dh || !subscription.keys.auth) return jsonResponse(res, 400, { success: false, message: 'Data langganan tidak lengkap' });
+      if (!isAllowedPushEndpoint(subscription.endpoint)) return jsonResponse(res, 400, { success: false, message: 'Endpoint push tidak didukung' });
+      const cleanUser = String(username).toLowerCase();
+      if (/[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false, message: 'Username tidak valid' });
+      const pushUser = await getUserFromDb(cleanUser);
+      if (!pushUser) return jsonResponse(res, 404, { success: false, message: 'User tidak ditemukan' });
+      if (!(await validateSessionToken(cleanUser, token))) return jsonResponse(res, 401, { success: false, message: 'Sesi tidak valid, silakan login ulang' });
+      const subKey = pushSubKey(subscription.endpoint);
+      // Satu perangkat hanya milik satu akun: hapus langganan lama bila perangkat ini sebelumnya dipakai akun lain
+      try {
+        const allSubs = await getAllPushSubscriptionsFromDb();
+        for (const [otherUser, subs] of Object.entries(allSubs || {})) {
+          if (otherUser !== cleanUser && subs && subs[subKey]) await removePushSubscriptionFromDb(otherUser, subKey);
+        }
+      } catch (e) {}
+      await savePushSubscriptionToDb(cleanUser, subKey, {
+        endpoint: String(subscription.endpoint),
+        keys: { p256dh: String(subscription.keys.p256dh), auth: String(subscription.keys.auth) },
+        enableAnnouncements: enableAnnouncements !== false,
+        enableChat: enableChat !== false,
+        enableStatus: enableStatus !== false,
+        userAgent: String(req.headers['user-agent'] || '').substring(0, 200),
+        createdAt: Date.now()
+      });
+      jsonResponse(res, 200, { success: true, message: 'Push notifikasi aktif' });
+
+    } else if (parsedUrl.pathname === '/api/push/unsubscribe' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, token, endpoint } = JSON.parse(body || '{}');
+      if (!username || !endpoint) return jsonResponse(res, 400, { success: false });
+      const cleanUser = String(username).toLowerCase();
+      if (/[.#$\[\]\/\s]/.test(cleanUser)) return jsonResponse(res, 400, { success: false });
+      if (!(await validateSessionToken(cleanUser, token))) return jsonResponse(res, 401, { success: false, message: 'Sesi tidak valid' });
+      await removePushSubscriptionFromDb(cleanUser, pushSubKey(endpoint));
+      jsonResponse(res, 200, { success: true, message: 'Push notifikasi dinonaktifkan' });
 
     } else if (req.method === 'GET' && findFeatureByPath(parsedUrl.pathname)) {
       // Halaman tiap fitur (membuka aplikasi langsung di fitur terkait)
@@ -5456,7 +5737,9 @@ const server = http.createServer(async (req, res) => {
       let upResult;
       try {
         const ext = imgMime === 'image/png' ? 'png' : imgMime === 'image/webp' ? 'webp' : 'jpg';
-        upResult = await upscaleImage(imgBuffer, { contentType: imgMime, filename: 'image.' + ext });
+        const hdProto = (req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
+        const hdBase = process.env.PUBLIC_URL || (hdProto + '://' + req.headers.host);
+        upResult = await upscaleImage(imgBuffer, { contentType: imgMime, filename: 'image.' + ext, publicBase: hdBase, resolusi: UPSCALE_RESOLUSI });
       } catch (upErr) {
         let refilled = false;
         if (!userObj.isAdmin && !isVipActive) refilled = await refillQuotaIfNeeded(cleanUser, quotaEntry);
@@ -5916,6 +6199,7 @@ const server = http.createServer(async (req, res) => {
       const isVipActive = userObj.vipUntil && userObj.vipUntil > now;
       const msgId = 'msg_' + now + '_' + Math.random().toString(36).substring(2, 8);
       await saveGlobalChatMessageToDb(msgId, { username: cleanUser, message: trimmedMsg, timestamp: now, isAdmin: !!userObj.isAdmin, isVip: !!isVipActive });
+      pushInBackground({ title: '💬 ' + cleanUser, body: trimmedMsg.substring(0, 160), tag: 'chat-' + msgId, type: 'chat', url: '/' }, { category: 'chat', excludeUsers: [cleanUser] });
       jsonResponse(res, 200, { success: true, message: 'Pesan terkirim!' });
 
     } else if (parsedUrl.pathname === '/api/chat/delete' && req.method === 'POST') {
@@ -5962,6 +6246,7 @@ const server = http.createServer(async (req, res) => {
         type: 'poll',
         poll: { question: pollQuestion, options: pollOptions, closed: false }
       });
+      pushInBackground({ title: '📊 Polling Baru', body: pollQuestion.substring(0, 160), tag: 'chat-' + pollMsgId, type: 'chat', url: '/' }, { category: 'chat', excludeUsers: [String(adminUsername).toLowerCase()] });
       jsonResponse(res, 200, { success: true, message: 'Polling terkirim!', messageId: pollMsgId });
 
     } else if (parsedUrl.pathname === '/api/chat/vote' && req.method === 'POST') {
@@ -6136,6 +6421,10 @@ const server = http.createServer(async (req, res) => {
       const userObj = username ? await getUserFromDb(username.toLowerCase()) : null;
       if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false });
       await saveServerStatusToDb(status);
+      if (status !== currentServerStatus) {
+        if (status === 'offline') pushInBackground({ title: '⚠️ Server Offline', body: 'Server sedang offline. Generator dinonaktifkan.', tag: 'status', type: 'status', force: true, url: '/' }, { category: 'status' });
+        else if (status === 'online') pushInBackground({ title: '✅ Server Online', body: 'Server sudah online kembali!', tag: 'status', type: 'status', force: true, url: '/' }, { category: 'status' });
+      }
       jsonResponse(res, 200, { success: true, status });
 
     } else if (parsedUrl.pathname === '/api/admin/set-vip' && req.method === 'POST') {
@@ -6148,6 +6437,7 @@ const server = http.createServer(async (req, res) => {
       if (!targetObj) return jsonResponse(res, 400, { success: false, message: 'User target tidak ditemukan!' });
       targetObj.vipUntil = Date.now() + (days * 24 * 60 * 60 * 1000);
       await saveUserToDb(cleanTarget, targetObj);
+      pushInBackground({ title: '⭐ VIP Aktif!', body: 'Akun kamu mendapat VIP selama ' + days + ' hari.', tag: 'vip-admin-' + Date.now(), type: 'vip', url: '/' }, { onlyUsers: [cleanTarget] });
       jsonResponse(res, 200, { success: true, message: 'VIP ' + cleanTarget + ' aktif ' + days + ' hari!' });
 
     } else if (parsedUrl.pathname === '/api/admin/get-vip-list') {
@@ -6179,6 +6469,7 @@ const server = http.createServer(async (req, res) => {
       if (!userObj || !userObj.isAdmin) return jsonResponse(res, 403, { success: false });
       const id = 'info_' + Date.now();
       await saveAnnouncementToDb(id, { title, content, timestamp: Date.now() });
+      pushInBackground({ title: '📢 Pengumuman Baru: ' + String(title || ''), body: String(content || '').substring(0, 180), tag: 'ann-' + id, type: 'announcement', requireInteraction: true, url: '/' }, { category: 'announcements' });
       jsonResponse(res, 200, { success: true, message: 'Informasi dipublikasikan!' });
 
     } else if (parsedUrl.pathname === '/api/admin/update-announcement' && req.method === 'POST') {
@@ -6395,6 +6686,7 @@ server.listen(PORT, () => {
   console.log('║  📲 Bayar QR Otomatis + Aktivasi VIP Otomatis                ║');
   console.log('║  💬 Chat Global & Orderan                                    ║');
   console.log('║  🔔 Browser Notification (BARU!)                             ║');
+  console.log('║  📡 Web Push VAPID Real-time: ' + (pushEnabled ? 'AKTIF   ' : 'NONAKTIF') + '                       ║');
   console.log('║  ⚙️  Panel Admin Lengkap                                     ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
   console.log('🔗 Endpoint halaman tiap fitur:');
